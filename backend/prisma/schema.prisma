@@ -1,0 +1,165 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+enum Condition {
+  NEW
+  GOOD
+  FAIR
+  DAMAGED
+  BEYOND_REPAIR
+}
+
+enum ItemStatus {
+  ACTIVE
+  DISPOSED
+}
+
+enum RequestType {
+  TRANSFER
+  DISPOSAL
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AuditItemResult {
+  FOUND
+  MISSING
+  LOCATION_MISMATCH
+}
+
+model User {
+  id           String   @id @default(uuid())
+  fullName     String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+
+  ownedItems       Item[]         @relation("ItemOwner")
+  requestsCreated  Request[]      @relation("RequestedBy")
+  requestsReviewed Request[]      @relation("ReviewedBy")
+  auditsRun        AuditSession[] @relation("RunBy")
+  itemEdits        ItemEditLog[]
+  notifications    Notification[]
+}
+
+model Category {
+  id    String @id @default(uuid())
+  name  String @unique
+  items Item[]
+}
+
+model Item {
+  id             String      @id @default(uuid())
+  tagId          String      @unique
+  name           String
+  categoryId     String
+  category       Category    @relation(fields: [categoryId], references: [id])
+  department     String
+  building       String
+  floor          String
+  room           String
+  ownerId        String
+  owner          User        @relation("ItemOwner", fields: [ownerId], references: [id])
+  purchaseCost   Decimal
+  currentValue   Decimal?
+  condition      Condition
+  brand          String?
+  model          String?
+  serialNumber   String?
+  photoUrl       String?
+  notes          String?
+  status         ItemStatus  @default(ACTIVE)
+  disposalReason String?
+  disposedAt     DateTime?
+  registeredAt   DateTime    @default(now())
+  lastAuditedAt  DateTime?
+
+  accessories    Item[]      @relation("ItemAccessories")
+  parentItem     Item?       @relation("ItemAccessories", fields: [parentItemId], references: [id])
+  parentItemId   String?
+
+  requests       Request[]
+  editLogs       ItemEditLog[]
+  auditResults   AuditItemResultRow[]
+}
+
+model Request {
+  id              String        @id @default(uuid())
+  type            RequestType
+  status          RequestStatus @default(PENDING)
+  itemId          String
+  item            Item          @relation(fields: [itemId], references: [id])
+  requestedById   String
+  requestedBy     User          @relation("RequestedBy", fields: [requestedById], references: [id])
+  reviewedById    String?
+  reviewedBy      User?         @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  reason          String
+  rejectionReason String?
+
+  newLocationBuilding String?
+  newLocationFloor    String?
+  newLocationRoom     String?
+  newOwnerId          String?
+
+  createdAt DateTime  @default(now())
+  decidedAt DateTime?
+}
+
+model ItemEditLog {
+  id           String   @id @default(uuid())
+  itemId       String
+  item         Item     @relation(fields: [itemId], references: [id])
+  editedById   String
+  editedBy     User     @relation(fields: [editedById], references: [id])
+  fieldChanged String
+  oldValue     String?
+  newValue     String?
+  editedAt     DateTime @default(now())
+}
+
+model AuditSession {
+  id          String    @id @default(uuid())
+  scopeType   String
+  scopeValue  String?
+  runById     String
+  runBy       User      @relation("RunBy", fields: [runById], references: [id])
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  results AuditItemResultRow[]
+}
+
+model AuditItemResultRow {
+  id             String          @id @default(uuid())
+  auditSessionId String
+  auditSession   AuditSession    @relation(fields: [auditSessionId], references: [id])
+  itemId         String
+  item           Item            @relation(fields: [itemId], references: [id])
+  result         AuditItemResult
+  scannedAt      DateTime?
+}
+
+model Notification {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  message          String
+  relatedRequestId String?
+  isRead           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+}

@@ -1,9 +1,9 @@
-import type { NextFunction, Request, Response } from "express";
+import type { Request as ExpressRequest, NextFunction, Response } from "express";
 import jwt from "jsonwebtoken";
 
 export type UserRole = "ADMIN" | "STAFF";
 
-export interface AuthenticatedRequest extends Request {
+export interface AuthenticatedRequest extends ExpressRequest {
   user?: {
     id: string;
     role: UserRole;
@@ -57,4 +57,35 @@ export function requireRole(roles: UserRole[]) {
     }
     next();
   };
+}
+
+/**
+ * Optional authentication middleware.
+ * If a valid JWT is present in the Authorization header, attaches the decoded { id, role } to req.user.
+ * If no token is present, or if the token is invalid/expired, it continues without setting req.user.
+ * This is useful for public routes that can show more info to logged-in users but shouldn't block guests.
+ */
+export function optionalAuthenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    // No token? No problem. Just continue as a guest.
+    return next();
+  }
+
+  const token = authHeader.slice("Bearer ".length);
+
+  try {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error("JWT_SECRET is not set in environment variables");
+    }
+    const decoded = jwt.verify(token, secret) as JwtPayload;
+    req.user = { id: decoded.id, role: decoded.role };
+  } catch {
+    // If token is invalid or expired, we treat the request as unauthenticated/guest
+    // rather than rejecting it with 401.
+    req.user = undefined;
+  }
+  next();
 }

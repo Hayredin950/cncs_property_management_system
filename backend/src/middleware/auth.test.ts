@@ -1,19 +1,21 @@
+import type { Response } from "express";
 import jwt from "jsonwebtoken";
 import { describe, expect, it, vi } from "vitest";
-import { authenticate, AuthenticatedRequest, requireRole } from "./auth.js";
+import { authenticate, requireRole, type AuthenticatedRequest } from "./auth.js";
 
 process.env.JWT_SECRET = "test_secret";
 
 function mockRes() {
-  const res = {} as Response;
-  res.status = vi.fn().mockReturnValue(res);
-  res.json = vi.fn().mockReturnValue(res);
+  const res = {
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
+  } as unknown as Response;
   return res;
 }
 
 describe("authenticate", () => {
   it("rejects requests with no Authorization header", () => {
-    const req = { headers: {} } as AuthenticatedRequest;
+    const req = { headers: {} } as unknown as AuthenticatedRequest;
     const res = mockRes();
     const next = vi.fn();
 
@@ -25,7 +27,9 @@ describe("authenticate", () => {
 
   it("attaches req.user for a valid token", () => {
     const token = jwt.sign({ id: "user-1", role: "STAFF" }, "test_secret");
-    const req = { headers: { authorization: `Bearer ${token}` } } as AuthenticatedRequest;
+    const req = {
+      headers: { authorization: `Bearer ${token}` },
+    } as unknown as AuthenticatedRequest;
     const res = mockRes();
     const next = vi.fn();
 
@@ -36,7 +40,7 @@ describe("authenticate", () => {
   });
 
   it("rejects an invalid token", () => {
-    const req = { headers: { authorization: "Bearer garbage" } } as AuthenticatedRequest;
+    const req = { headers: { authorization: "Bearer garbage" } } as unknown as AuthenticatedRequest;
     const res = mockRes();
     const next = vi.fn();
 
@@ -49,7 +53,7 @@ describe("authenticate", () => {
 
 describe("requireRole", () => {
   it("blocks a role not in the allowed list", () => {
-    const req = { user: { id: "u1", role: "STAFF" } } as AuthenticatedRequest;
+    const req = { user: { id: "u1", role: "STAFF" } } as unknown as AuthenticatedRequest;
     const res = mockRes();
     const next = vi.fn();
 
@@ -60,7 +64,7 @@ describe("requireRole", () => {
   });
 
   it("allows a role in the allowed list", () => {
-    const req = { user: { id: "u1", role: "ADMIN" } } as AuthenticatedRequest;
+    const req = { user: { id: "u1", role: "ADMIN" } } as unknown as AuthenticatedRequest;
     const res = mockRes();
     const next = vi.fn();
 

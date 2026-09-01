@@ -4,10 +4,12 @@ import jwt from "jsonwebtoken";
 export type UserRole = "ADMIN" | "STAFF";
 
 export interface AuthenticatedRequest extends ExpressRequest {
-  user?: {
-    id: string;
-    role: UserRole;
-  };
+  user?:
+    | {
+        id: string;
+        role: UserRole;
+      }
+    | undefined;
 }
 
 interface JwtPayload {

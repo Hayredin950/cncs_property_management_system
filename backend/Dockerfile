@@ -1,5 +1,7 @@
 FROM node:22-alpine
 
+ENV CI=true
+
 WORKDIR /app
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./

@@ -1,6 +1,7 @@
 import cors from "cors";
 import express, { type Application, type Request, type Response } from "express";
 import morgan from "morgan";
+import authRouter from "./routes/auth.js";
 
 const app: Application = express();
 
@@ -12,4 +13,7 @@ app.get("/health", (req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
+app.use("/auth", authRouter);
+
 export default app;
+

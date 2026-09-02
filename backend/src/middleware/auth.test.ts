@@ -1,7 +1,12 @@
 import type { Response } from "express";
 import jwt from "jsonwebtoken";
 import { describe, expect, it, vi } from "vitest";
-import { authenticate, requireRole, type AuthenticatedRequest } from "./auth.js";
+import {
+  authenticate,
+  optionalAuthenticate,
+  requireRole,
+  type AuthenticatedRequest,
+} from "./auth.js";
 
 process.env.JWT_SECRET = "test_secret";
 
@@ -70,6 +75,44 @@ describe("requireRole", () => {
 
     requireRole(["ADMIN"])(req, res, next);
 
+    expect(next).toHaveBeenCalled();
+  });
+});
+
+describe("optionalAuthenticate", () => {
+  it("allows requests with no Authorization header and doesn't set req.user", () => {
+    const req = { headers: {} } as unknown as AuthenticatedRequest;
+    const res = mockRes();
+    const next = vi.fn();
+
+    optionalAuthenticate(req, res, next);
+
+    expect(req.user).toBeUndefined();
+    expect(next).toHaveBeenCalled();
+  });
+
+  it("attaches req.user for a valid token", () => {
+    const token = jwt.sign({ id: "user-1", role: "STAFF" }, "test_secret");
+    const req = {
+      headers: { authorization: `Bearer ${token}` },
+    } as unknown as AuthenticatedRequest;
+    const res = mockRes();
+    const next = vi.fn();
+
+    optionalAuthenticate(req, res, next);
+
+    expect(req.user).toEqual({ id: "user-1", role: "STAFF" });
+    expect(next).toHaveBeenCalled();
+  });
+
+  it("allows requests with an invalid token and doesn't set req.user", () => {
+    const req = { headers: { authorization: "Bearer garbage" } } as unknown as AuthenticatedRequest;
+    const res = mockRes();
+    const next = vi.fn();
+
+    optionalAuthenticate(req, res, next);
+
+    expect(req.user).toBeUndefined();
     expect(next).toHaveBeenCalled();
   });
 });

@@ -72,10 +72,11 @@ Schema lives in `backend/prisma/schema.prisma`. Migrations run against Neon via 
 **Auth & Access Control track (Lalu):**
 
 - [x] Auth middleware contract (`authenticate`, `requireRole`)
-- [ ] `optionalAuthenticate` middleware (for public browse/search routes)
+- [x] `optionalAuthenticate` middleware (for public browse/search routes)
 - [x] Register route (Admin-only account creation)
-- [ ] Login route (argon2id verify + JWT issue)
-- [ ] `/auth/me` route
+- [x] Login route (argon2id verify + JWT issue)
+- [x] `/auth/me` route
+
 
 
 **Items & Categories track — not started**

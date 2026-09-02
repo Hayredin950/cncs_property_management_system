@@ -2,6 +2,7 @@ import cors from "cors";
 import express, { type Application, type Request, type Response } from "express";
 import morgan from "morgan";
 import authRouter from "./routes/auth.js";
+import { tagsRouter } from "./routes/tags.js";
 
 const app: Application = express();
 
@@ -14,6 +15,7 @@ app.get("/health", (req: Request, res: Response) => {
 });
 
 app.use("/auth", authRouter);
+app.use("/items", tagsRouter);
 
 export default app;
 

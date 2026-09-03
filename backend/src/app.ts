@@ -3,6 +3,7 @@ import express, { type Application, type Request, type Response } from "express"
 import morgan from "morgan";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import authRouter from "./routes/auth.js";
+import { notificationsRouter } from "./routes/notifications.js";
 import { requestsRouter } from "./routes/requests.js";
 import { tagsRouter } from "./routes/tags.js";
 
@@ -26,6 +27,7 @@ app.get(["/api/v1/health", "/health"], (req: Request, res: Response) => {
  */
 app.use(["/api/v1/auth", "/auth"], authRouter);
 app.use(["/api/v1/items", "/items"], tagsRouter);
+app.use(["/api/v1/notifications", "/notifications"], notificationsRouter);
 app.use(["/api/v1/requests", "/requests"], requestsRouter);
 
 /**

@@ -11,7 +11,7 @@ import {
 } from "../middleware/auth.js";
 import { sanitizeItem } from "../utils/filterItemFields.js";
 
-export const itemsRouter = Router();
+export const itemsRouter: Router = Router();
 
 const ConditionEnum = z.enum(["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"]);
 
@@ -39,6 +39,19 @@ const updateItemSchema = createItemSchema.partial();
 function generateTagId(): string {
   const randomHex = crypto.randomBytes(4).toString("hex").toUpperCase();
   return `CNCS-${randomHex}`;
+}
+
+/**
+ * Strips keys with `undefined` values so Prisma satisfies `exactOptionalPropertyTypes`
+ */
+function cleanDefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const result: Partial<T> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      result[key as keyof T] = value as T[keyof T];
+    }
+  }
+  return result;
 }
 
 itemsRouter.get(
@@ -111,7 +124,11 @@ itemsRouter.get(
   optionalAuthenticate,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { tagId } = req.params;
+      const tagId = Array.isArray(req.params.tagId) ? req.params.tagId[0] : req.params.tagId;
+      if (!tagId) {
+        res.status(400).json({ error: "Tag ID is required" });
+        return;
+      }
 
       const item = await prisma.item.findUnique({
         where: { tagId },
@@ -157,15 +174,15 @@ itemsRouter.post(
         return;
       }
 
-      const itemData = parsed.data;
+      const cleaned = cleanDefined(parsed.data);
       const tagId = generateTagId();
 
       const newItem = await prisma.item.create({
         data: {
-          ...itemData,
+          ...(cleaned as Prisma.ItemUncheckedCreateInput),
           tagId,
-          purchaseCost: itemData.purchaseCost,
-          currentValue: itemData.currentValue ?? null,
+          purchaseCost: parsed.data.purchaseCost,
+          currentValue: parsed.data.currentValue ?? null,
         },
         include: {
           category: true,
@@ -185,7 +202,7 @@ itemsRouter.put(
   requireRole(["ADMIN", "STAFF"]),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
         res.status(400).json({ error: "Item ID is required" });
         return;
@@ -209,7 +226,7 @@ itemsRouter.put(
         return;
       }
 
-      const updates = parsed.data;
+      const updates = cleanDefined(parsed.data);
       const editorId = req.user!.id;
 
       const editLogEntries: Array<{
@@ -239,7 +256,7 @@ itemsRouter.put(
       const [updatedItem] = await prisma.$transaction([
         prisma.item.update({
           where: { id },
-          data: updates,
+          data: updates as Prisma.ItemUncheckedUpdateInput,
         }),
         ...(editLogEntries.length > 0
           ? [

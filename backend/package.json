@@ -16,13 +16,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "11.25.0",
-      "onFail": "download"
-    }
-  },
+
   "type": "module",
   "dependencies": {
     "@prisma/adapter-neon": "^7.10.0",
@@ -55,5 +49,5 @@
     "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.11"
   },
-  "packageManager": "pnpm@11.25.0+sha512.5cde925b4f075f725eb71fbae18a42ffe784524789f19b61c731cb8721ec28aaee160e01a8d5af4fedb2a42cdbf300efe23db356b0d4a17b4d63e11f8ab7c956"
+  "packageManager": "pnpm@11.10.0+sha512.5cde925b4f075f725eb71fbae18a42ffe784524789f19b61c731cb8721ec28aaee160e01a8d5af4fedb2a42cdbf300efe23db356b0d4a17b4d63e11f8ab7c956"
 }

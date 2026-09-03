@@ -1,38 +1,36 @@
-import { Router, type Request, type Response } from 'express';
-import { z } from 'zod';
-import { prisma } from '../lib/prisma.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { Router, type Request, type Response } from "express";
+import { z } from "zod";
+import { prisma } from "../lib/prisma.js";
+import { authenticate, requireRole } from "../middleware/auth.js";
 
 export const categoriesRouter = Router();
 
 const createCategorySchema = z.object({
-  name: z.string().trim().min(1, 'Category name is required'),
+  name: z.string().trim().min(1, "Category name is required"),
 });
 
-// GET /categories
-categoriesRouter.get('/', async (_req: Request, res: Response): Promise<void> => {
+categoriesRouter.get("/", async (_req: Request, res: Response): Promise<void> => {
   try {
     const categories = await prisma.category.findMany({
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
     });
     res.status(200).json(categories);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch categories' });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch categories" });
   }
 });
 
-// POST /categories
 categoriesRouter.post(
-  '/',
+  "/",
   authenticate,
-  requireRole(['ADMIN']),
+  requireRole(["ADMIN"]),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const parsed = createCategorySchema.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({ 
-          error: 'Validation failed', 
-          details: parsed.error.issues 
+        res.status(400).json({
+          error: "Validation failed",
+          details: parsed.error.issues,
         });
         return;
       }
@@ -44,7 +42,7 @@ categoriesRouter.post(
       });
 
       if (existing) {
-        res.status(409).json({ error: 'Category with this name already exists' });
+        res.status(409).json({ error: "Category with this name already exists" });
         return;
       }
 
@@ -53,8 +51,8 @@ categoriesRouter.post(
       });
 
       res.status(201).json(newCategory);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to create category' });
+    } catch {
+      res.status(500).json({ error: "Failed to create category" });
     }
   }
 );

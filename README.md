@@ -24,10 +24,19 @@ A standalone property/asset management system built as an internship deliverable
 
 ### Environment variables
 
-DATABASE_URL= # pooled connection, used at runtime
-DIRECT_URL= # unpooled connection, used for migrations
+```bash
+DATABASE_URL=          # pooled connection, used at runtime
+DIRECT_URL=            # unpooled connection, used for migrations
 JWT_SECRET=
 PORT=4000
+
+NOTIFY_EMAIL=false                        # email side-channel for notifications (SRS F8.3); transport is a stub
+UPLOADS_DIR=./uploads                     # where QR tag PNGs are written
+PUBLIC_BASE_URL=http://localhost:5173     # base URL encoded inside each QR code
+```
+
+The last three are optional — the code falls back to exactly these values. Copy
+`.env.example` and fill in the first three.
 
 ### Run locally
 
@@ -49,6 +58,8 @@ pnpm test
 ### Database
 
 Schema lives in `backend/prisma/schema.prisma`. Migrations run against Neon via `DIRECT_URL`. If you change the schema, coordinate with the team first — everyone builds on top of the same models.
+
+Phase 2 changed no models, so pulling it needs no migration and no `prisma:generate`.
 
 ## Branching & workflow
 
@@ -79,9 +90,51 @@ Schema lives in `backend/prisma/schema.prisma`. Migrations run against Neon via 
 
 
 
-**Items & Categories track — not started**
+**Items & Categories track — not started.** No `POST /items`, `GET /items`,
+`GET /items/:tagId`, `PUT /items/:id`, no `/categories` router, no tagId generator, and no
+SDS 3.2 public field filtering. Phase 2 built around this; see
+[`docs/phase-2.md`](docs/phase-2.md) → "Inherited gaps from Phase 1" and "Contract for the
+Items track" for what is waiting to be wired up.
 
-**Tags, Seed Data & CI polish track — not started**
+**Tags, Seed Data & CI polish track:**
+
+- [x] QR tag generator (`utils/qrGenerator.ts`) with unit tests
+- [x] `GET /items/:id/tag` and `POST /items/:id/tag/regenerate`
+- [x] Seed script (`prisma/seed.ts`) — categories, 2 users, demo items with QR tags
+- [x] GitHub Actions CI (lint / build / test / docker build)
+
+### Phase 2 — Workflows & Notifications (complete)
+
+Transfer and disposal approvals, item edit history, accessory bundles, and in-app
+notifications. Full write-up, decision register and manual walkthrough in
+[`docs/phase-2.md`](docs/phase-2.md).
+
+Every route is mounted twice — under `/api/v1` (the SDS path) and under its bare path, so
+Phase 1's paths keep working.
+
+**Requests & approvals track (Hayredin):**
+
+- [x] `POST /requests` — file a TRANSFER or DISPOSAL (Staff/Admin)
+- [x] `GET /requests`, `GET /requests/:id` — scoped: staff see their own, admin sees all
+- [x] `GET /requests/pending-count` — review-queue badge
+- [x] `POST /requests/:id/approve`, `POST /requests/:id/reject` — Admin only, one transaction
+- [x] `GET /items/:id/history` — edit trail, Staff/Admin, disposed items included
+- [x] Central error handler + `validate()` middleware + `HttpError`
+- [x] Approval services: `requestWorkflow`, `itemEditLog`, `notifications`, `itemVisibility`, `email`
+
+**Notifications & bundles track (John):**
+
+- [x] `GET /notifications` — own inbox only, `?unread=`, unread badge count
+- [x] `POST /notifications/:id/read` — scoped by `userId` (IDOR-safe)
+- [x] `POST /items/:id/accessories`, `DELETE /items/:id/accessories/:accessoryId`
+- [x] Cascade of an approved transfer/disposal onto a bundle's accessories
+
+**Deliberately not built:** a `canReview` flag (approval is ADMIN-only — the SRS leaves the
+reviewer role unresolved in §9 and ADMIN-only needs no migration), real SMTP (`NOTIFY_EMAIL`
+gates a stub transport), and anything under `/items` with a single path segment — that
+namespace belongs to the Items track.
+
+**Schema:** unchanged. Phase 2 added no columns, no indexes and no migration.
 
 ---
 

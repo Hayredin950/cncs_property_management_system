@@ -18,6 +18,36 @@ function isBodyParseError(err: unknown): boolean {
 }
 
 /**
+ * The three Prisma constraint failures that are the *client's* fault, and the
+ * status each deserves. Without this they all arrive as an unrecognised error
+ * and answer 500 — so `POST /items` with a well-formed uuid for a category that
+ * doesn't exist would report a server fault for a bad request.
+ *
+ * Messages are deliberately generic. Prisma's own text and its `meta.field_name`
+ * name tables, columns and constraints; a route that wants to say which field
+ * (`categoryId does not match an existing category`) checks for itself and gets
+ * there first. This is the net underneath, not the primary path.
+ */
+const PRISMA_ERROR_STATUS: Readonly<Record<string, { status: number; error: string }>> = {
+  P2002: { status: 409, error: "A record with that value already exists" },
+  P2003: { status: 400, error: "A referenced record does not exist" },
+  P2025: { status: 404, error: "Record not found" },
+};
+
+/**
+ * Duck-typed rather than `instanceof Prisma.PrismaClientKnownRequestError`, for
+ * the same reason `isBodyParseError` is: it keeps a value-level import of the
+ * generated client out of the middleware, so errorHandler.test.ts can construct
+ * a fixture without `prisma generate` having run.
+ */
+function prismaErrorCode(err: unknown): string | null {
+  if (!err || typeof err !== "object") return null;
+  const candidate = err as { name?: unknown; code?: unknown };
+  if (candidate.name !== "PrismaClientKnownRequestError") return null;
+  return typeof candidate.code === "string" ? candidate.code : null;
+}
+
+/**
  * Central error handler. Must declare all four parameters — Express decides
  * something is an error handler by `fn.length === 4`, so dropping the unused
  * `next` silently downgrades this to ordinary middleware and every thrown
@@ -63,6 +93,16 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 
   // Anything unrecognised is a bug, not a client problem: log it in full,
   // return nothing specific (an ORM error message can name columns).
+  const prismaCode = prismaErrorCode(err);
+  const mapped = prismaCode ? PRISMA_ERROR_STATUS[prismaCode] : undefined;
+  if (mapped) {
+    // Logged at warn, unlike other 4xx: reaching here means a route skipped a
+    // check it could have made, which is worth seeing in the log without being
+    // an outage.
+    console.warn(`${route} rejected by the database (${prismaCode})`);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+
   console.error(`Unhandled error on ${route}:`, err);
   return res.status(500).json({ error: "Internal server error" });
 };

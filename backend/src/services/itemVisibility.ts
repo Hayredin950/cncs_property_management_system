@@ -1,68 +1,36 @@
 /**
- * Item visibility rules: soft-deletion by status (SRS F7.2/F7.3) and the
- * server-side field filtering from SDS 3.2.
+ * Item visibility: soft-deletion by status (SRS F7.2/F7.3).
  *
- * ── Why this is a service and not a route ─────────────────────────────────
- * Phase 1's Items track was never built: there is no `GET /items` and no
- * `GET /items/:tagId` to put these rules in. Rather than ship a throwaway public
- * route just to get a green end-to-end test — which someone would then build
- * against — Phase 2 ships the rules as unit-tested helpers plus a written
- * contract. See "Contract for the Items track" in docs/phase-2.md.
+ * ── Why the where-clause helpers are a service ────────────────────────────
+ * "Disposed items disappear from active/default search results but remain
+ * queryable in reports/history" (F7.2) is one rule enforced at three call
+ * sites — the listing, the approval path, and Phase 3's reports. Written out
+ * at each of them it is one forgotten `status` key away from a disposed item
+ * reappearing in a public search, and nothing about a missing key looks wrong
+ * in review.
  *
- * Call sites the Items track must wire up:
- *   GET /items          → `where: activeItemsWhere({ ...filters })`
- *   GET /items/:tagId   → `publicItemView(item, req.user)`
+ * Call sites:
+ *   GET /items          → `where: activeItemsWhere({ ...filters })`  (routes/items.ts)
+ *   GET /items/:tagId   → `DISPOSED_PUBLIC_MESSAGE` behind the 410  (routes/items.ts)
  *   reports (Phase 3)   → `where: allItemsWhere({ ... })`
+ *
+ * ── Field filtering lives elsewhere ───────────────────────────────────────
+ * SDS 3.2's strip-before-sending rule is `sanitizeItem` in
+ * utils/filterItemFields.ts. This file deliberately does not duplicate it:
+ * Phase 2 shipped a second implementation while `GET /items/:tagId` did not
+ * exist yet, and two field lists that must agree forever is a bug with a
+ * delay on it. `sanitizeItem` won because SDS 3.2 prescribes its exact shape
+ * (strip a deny-list, with an owner branch) and its list matches SRS 3.4's
+ * table — `photoUrl` public, `brand`/`model` not.
  */
-
-/** F7.3 — what a public lookup of a disposed tag says. */
-export const DISPOSED_PUBLIC_MESSAGE =
-  "This item has been disposed and is no longer in active service.";
 
 /**
- * SDS 3.2 — an allow-list, not a deny-list. A deny-list leaks every column
- * added after it was written; with an allow-list a new Item field is private
- * until someone deliberately publishes it.
+ * F7.3, verbatim: a public tag lookup for a disposed item "shows 'this item is
+ * no longer in service', nothing else". Sentence-cased for a JSON `error`
+ * field; the wording is otherwise untouched, because the acceptance criterion
+ * quotes it.
  */
-export const PUBLIC_ITEM_FIELDS = [
-  "tagId",
-  "name",
-  "category",
-  "department",
-  "building",
-  "floor",
-  "room",
-  "condition",
-  "brand",
-  "model",
-  "status",
-] as const;
-
-/**
- * The fields that must never reach an unauthenticated viewer. Redundant with the
- * allow-list by construction — it exists so `itemVisibility.test.ts` can assert
- * on each one by name, and so a reviewer can see the intent without deriving it.
- */
-export const RESTRICTED_ITEM_FIELDS = [
-  "id",
-  "categoryId",
-  "ownerId",
-  "owner",
-  "purchaseCost",
-  "currentValue",
-  "serialNumber",
-  "photoUrl",
-  "notes",
-  "disposalReason",
-  "disposedAt",
-  "registeredAt",
-  "lastAuditedAt",
-  "parentItemId",
-  "accessories",
-  "editLogs",
-  "requests",
-  "auditResults",
-] as const;
+export const DISPOSED_PUBLIC_MESSAGE = "This item is no longer in service";
 
 /**
  * Default listing filter: active items only (F7.2 — disposal is a status change,
@@ -86,54 +54,4 @@ export function activeItemsWhere<T extends object = Record<string, never>>(
  */
 export function allItemsWhere<T extends object = Record<string, never>>(extra?: T): T {
   return (extra ?? {}) as T;
-}
-
-/** A logged-in viewer, or null/undefined for the public (guest) case. */
-export type ItemViewer = { role: "ADMIN" | "STAFF" } | null | undefined;
-
-function labelForCategory(value: unknown): string | undefined {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object") {
-    const name = (value as { name?: unknown }).name;
-    if (typeof name === "string") return name;
-  }
-  return undefined;
-}
-
-/**
- * Projects an Item row down to what the given viewer may see.
- *
- * Staff and admins get the row untouched — SDS 3.2 restricts the *public* view,
- * and internal users need cost and ownership to do their jobs. Guests get the
- * allow-listed subset, and a disposed item collapses to the F7.3 message rather
- * than 404: the tag is real and scanning it should say what happened to the item,
- * not imply the record was lost.
- */
-export function publicItemView(
-  item: Record<string, unknown>,
-  viewer: ItemViewer,
-): Record<string, unknown> {
-  if (viewer && (viewer.role === "ADMIN" || viewer.role === "STAFF")) {
-    return item;
-  }
-
-  if (item.status === "DISPOSED") {
-    return {
-      tagId: item.tagId,
-      name: item.name,
-      status: item.status,
-      message: DISPOSED_PUBLIC_MESSAGE,
-    };
-  }
-
-  const view: Record<string, unknown> = {};
-  for (const field of PUBLIC_ITEM_FIELDS) {
-    if (field === "category") {
-      const category = labelForCategory(item.category);
-      if (category !== undefined) view.category = category;
-      continue;
-    }
-    if (item[field] !== undefined) view[field] = item[field];
-  }
-  return view;
 }

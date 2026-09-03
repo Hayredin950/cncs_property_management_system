@@ -70,7 +70,7 @@ Phase 2 changed no models, so pulling it needs no migration and no `prisma:gener
 
 ## Project Status
 
-### Phase 1 — Foundation (in progress)
+### Phase 1 — Foundation (complete)
 
 **Bootstrap (complete):**
 
@@ -90,11 +90,14 @@ Phase 2 changed no models, so pulling it needs no migration and no `prisma:gener
 
 
 
-**Items & Categories track — not started.** No `POST /items`, `GET /items`,
-`GET /items/:tagId`, `PUT /items/:id`, no `/categories` router, no tagId generator, and no
-SDS 3.2 public field filtering. Phase 2 built around this; see
-[`docs/phase-2.md`](docs/phase-2.md) → "Inherited gaps from Phase 1" and "Contract for the
-Items track" for what is waiting to be wired up.
+**Items & Categories track (Yanet):**
+
+- [x] `POST /items` (Staff/Admin) with generated `CNCS-XXXXXXXX` tag IDs
+- [x] `GET /items` — pagination, `?search=`, `?categoryId=`, `?department=`
+- [x] `GET /items/:tagId` — public tag lookup
+- [x] `PUT /items/:id` — writes one `ItemEditLog` row per changed field
+- [x] `/categories` router — `GET /` (public), `POST /` (Admin)
+- [x] SDS 3.2 server-side field filtering (`utils/filterItemFields.ts`)
 
 **Tags, Seed Data & CI polish track:**
 
@@ -130,11 +133,25 @@ Phase 1's paths keep working.
 - [x] Cascade of an approved transfer/disposal onto a bundle's accessories
 
 **Deliberately not built:** a `canReview` flag (approval is ADMIN-only — the SRS leaves the
-reviewer role unresolved in §9 and ADMIN-only needs no migration), real SMTP (`NOTIFY_EMAIL`
-gates a stub transport), and anything under `/items` with a single path segment — that
-namespace belongs to the Items track.
+reviewer role unresolved in §9 and ADMIN-only needs no migration), and real SMTP (`NOTIFY_EMAIL`
+gates a stub transport).
 
 **Schema:** unchanged. Phase 2 added no columns, no indexes and no migration.
+
+**Integration with Phase 1 (Items & Categories):** Phase 2 was written before that track
+landed, so merging the two needed a pass over three files. What changed and why is in
+[`docs/phase-2.md`](docs/phase-2.md) → "Integration with the Items track"; the short version:
+
+- `GET /items` filters through `activeItemsWhere()`, so a disposed item leaves the default
+  listing (SRS F7.2) and no query string can put it back.
+- `GET /items/:tagId` answers a disposed tag with `410 { "error": "This item is no longer in
+  service" }` for the public (F7.3) and the full record for Staff/Admin (F7.2).
+- `PUT /items/:id` writes its history through `buildEditLogRows` + `writeEditLogRows`, the same
+  helpers the approval path uses, so one edit and one approval produce identical rows.
+- `parentItemId` is rejected by `POST`/`PUT /items` — `POST /items/:id/accessories` is the only
+  writer, because that is where the bundle rules live.
+- Field filtering is `utils/filterItemFields.ts` (`sanitizeItem`), Phase 1's implementation.
+  Phase 2's duplicate `publicItemView` was deleted rather than reconciled.
 
 ---
 

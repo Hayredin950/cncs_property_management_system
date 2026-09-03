@@ -1,15 +1,18 @@
-import { Router, type Response } from "express";
+import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import crypto from "crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { httpError } from "../lib/httpError.js";
 import {
   authenticate,
   requireRole,
   optionalAuthenticate,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
-import { sanitizeItem } from "../utils/filterItemFields.js";
+import { isPrivilegedViewer, sanitizeItem } from "../utils/filterItemFields.js";
+import { buildEditLogRows, writeEditLogRows } from "../services/itemEditLog.js";
+import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
 
 export const itemsRouter: Router = Router();
 
@@ -31,14 +34,73 @@ const createItemSchema = z.object({
   serialNumber: z.string().trim().optional().nullable(),
   photoUrl: z.string().url().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
-  parentItemId: z.string().uuid().optional().nullable(),
 });
 
 const updateItemSchema = createItemSchema.partial();
 
+/**
+ * `parentItemId` is deliberately absent from both schemas above.
+ *
+ * The column has exactly one write path — `POST /items/:id/accessories` and
+ * `DELETE /items/:id/accessories/:accessoryId` — because that path enforces the
+ * three bundle rules (no self-parenting, no cycles, max depth 2; decision D6 in
+ * docs/phase-2.md). Accepting it here as a plain uuid would give the same column
+ * a second, unguarded writer, and the cheapest consequence is the expensive one:
+ * a three-deep chain A → B → C makes the approval cascade — one
+ * `updateMany({ where: { parentItemId } })`, single level by design — move B and
+ * silently leave C behind, claiming a room it isn't in. That is the exact lie
+ * SRS F7.2 exists to prevent.
+ *
+ * Rejected loudly rather than stripped silently, so a caller who sends it learns
+ * where the field actually lives instead of watching it vanish.
+ */
+function rejectedBundleField(body: unknown): boolean {
+  return typeof body === "object" && body !== null && "parentItemId" in body;
+}
+
+const BUNDLE_FIELD_ERROR =
+  "parentItemId cannot be set here — use POST /items/:id/accessories to link an accessory";
+
 function generateTagId(): string {
   const randomHex = crypto.randomBytes(4).toString("hex").toUpperCase();
   return `CNCS-${randomHex}`;
+}
+
+/**
+ * 4 random bytes is 4.3 billion tags, which sounds like plenty and isn't: by the
+ * birthday bound a registry of 10,000 items has roughly a 1-in-100 chance that
+ * two of them draw the same tag. `tagId` is `@unique`, so that draw is a P2002 —
+ * an error the caller can do nothing about, on a value they never supplied.
+ *
+ * Retried rather than pre-checked with a `findUnique`: a check-then-create is
+ * itself a race, and the unique index is the only authority that isn't guessing.
+ * Narrowed to `tagId` so a collision on some other unique column still surfaces.
+ */
+const TAG_ID_ATTEMPTS = 5;
+
+function isTagIdCollision(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const candidate = err as { code?: unknown; meta?: { target?: unknown } };
+  if (candidate.code !== "P2002") return false;
+  const target = candidate.meta?.target;
+  return Array.isArray(target)
+    ? target.includes("tagId")
+    : String(target ?? "").includes("tagId");
+}
+
+async function createItemWithUniqueTag(data: Omit<Prisma.ItemUncheckedCreateInput, "tagId">) {
+  for (let attempt = 1; attempt <= TAG_ID_ATTEMPTS; attempt++) {
+    try {
+      return await prisma.item.create({
+        data: { ...data, tagId: generateTagId() },
+        include: { category: true },
+      });
+    } catch (err) {
+      if (attempt === TAG_ID_ATTEMPTS || !isTagIdCollision(err)) throw err;
+    }
+  }
+  /* Unreachable — the last attempt rethrows. Here so the control flow reads honestly. */
+  throw httpError(500, "Could not allocate a unique tag id");
 }
 
 /**
@@ -57,7 +119,7 @@ function cleanDefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
 itemsRouter.get(
   "/",
   optionalAuthenticate,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
@@ -65,24 +127,32 @@ itemsRouter.get(
 
       const { search, categoryId, department } = req.query;
 
-      const where: Prisma.ItemWhereInput = {
-        status: "ACTIVE",
-      };
+      const filters: Prisma.ItemWhereInput = {};
 
       if (typeof search === "string" && search.trim().length > 0) {
-        where.OR = [
+        filters.OR = [
           { name: { contains: search, mode: "insensitive" } },
           { tagId: { contains: search, mode: "insensitive" } },
         ];
       }
 
       if (typeof categoryId === "string") {
-        where.categoryId = categoryId;
+        filters.categoryId = categoryId;
       }
 
       if (typeof department === "string") {
-        where.department = { contains: department, mode: "insensitive" };
+        filters.department = { contains: department, mode: "insensitive" };
       }
+
+      /**
+       * SRS F7.2 — disposal is a status change, not a delete, so the default
+       * listing must exclude DISPOSED. `activeItemsWhere` spreads the caller's
+       * filters first and pins `status: "ACTIVE"` last, so a query string can
+       * never widen the result set; Phase 3's disposal report uses
+       * `allItemsWhere()` instead, which makes "disposed included on purpose"
+       * greppable.
+       */
+      const where = activeItemsWhere(filters);
 
       const [items, total] = await Promise.all([
         prisma.item.findMany({
@@ -113,8 +183,8 @@ itemsRouter.get(
           totalPages: Math.ceil(total / limit),
         },
       });
-    } catch {
-      res.status(500).json({ error: "Failed to fetch items" });
+    } catch (err) {
+      next(err);
     }
   }
 );
@@ -122,7 +192,7 @@ itemsRouter.get(
 itemsRouter.get(
   "/:tagId",
   optionalAuthenticate,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const tagId = Array.isArray(req.params.tagId) ? req.params.tagId[0] : req.params.tagId;
       if (!tagId) {
@@ -146,15 +216,26 @@ itemsRouter.get(
         return;
       }
 
-      if (item.status === "DISPOSED") {
-        res.status(410).json({ error: "This item is no longer in service" });
+      /**
+       * SRS F7.3 — "Disposed items are not scannable/viewable by the public (tag
+       * lookup for a disposed item shows 'this item is no longer in service',
+       * nothing else)." Hence 410 with only that sentence: no tagId, no name, no
+       * disposal reason. "Nothing else" is the operative phrase.
+       *
+       * Gated on the viewer, though, because F7.2 says a disposed item "remains
+       * queryable in reports/history" and the SRS 3.4 visibility table gives
+       * Staff/Admin every field. An admin scanning a disposed tag needs the
+       * record, not an error — the restriction is on the public, not on the row.
+       */
+      if (item.status === "DISPOSED" && !isPrivilegedViewer(req.user)) {
+        res.status(410).json({ error: DISPOSED_PUBLIC_MESSAGE });
         return;
       }
 
       const sanitized = sanitizeItem(item as unknown as Record<string, unknown>, req.user);
       res.status(200).json(sanitized);
-    } catch {
-      res.status(500).json({ error: "Failed to fetch item" });
+    } catch (err) {
+      next(err);
     }
   }
 );
@@ -163,8 +244,13 @@ itemsRouter.post(
   "/",
   authenticate,
   requireRole(["ADMIN", "STAFF"]),
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
+      if (rejectedBundleField(req.body)) {
+        res.status(400).json({ error: BUNDLE_FIELD_ERROR });
+        return;
+      }
+
       const parsed = createItemSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({
@@ -175,23 +261,16 @@ itemsRouter.post(
       }
 
       const cleaned = cleanDefined(parsed.data);
-      const tagId = generateTagId();
 
-      const newItem = await prisma.item.create({
-        data: {
-          ...(cleaned as Prisma.ItemUncheckedCreateInput),
-          tagId,
-          purchaseCost: parsed.data.purchaseCost,
-          currentValue: parsed.data.currentValue ?? null,
-        },
-        include: {
-          category: true,
-        },
+      const newItem = await createItemWithUniqueTag({
+        ...(cleaned as Omit<Prisma.ItemUncheckedCreateInput, "tagId">),
+        purchaseCost: parsed.data.purchaseCost,
+        currentValue: parsed.data.currentValue ?? null,
       });
 
       res.status(201).json(newItem);
-    } catch {
-      res.status(500).json({ error: "Failed to create item" });
+    } catch (err) {
+      next(err);
     }
   }
 );
@@ -200,11 +279,16 @@ itemsRouter.put(
   "/:id",
   authenticate,
   requireRole(["ADMIN", "STAFF"]),
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
         res.status(400).json({ error: "Item ID is required" });
+        return;
+      }
+
+      if (rejectedBundleField(req.body)) {
+        res.status(400).json({ error: BUNDLE_FIELD_ERROR });
         return;
       }
 
@@ -219,6 +303,7 @@ itemsRouter.put(
 
       const existingItem = await prisma.item.findUnique({
         where: { id },
+        include: { category: true },
       });
 
       if (!existingItem) {
@@ -226,50 +311,114 @@ itemsRouter.put(
         return;
       }
 
+      /**
+       * SRS F7.2 — disposal is terminal, so a disposed row is read-only. Editing
+       * one would let a caller quietly re-describe a record that reports and
+       * history are expected to preserve as it was at disposal. 409 rather than
+       * 404 because the item exists; the request conflicts with its state.
+       *
+       * `status`, `disposalReason` and `disposedAt` are absent from both schemas,
+       * so this endpoint can never dispose or un-dispose an item either — that
+       * transition belongs to the approval path alone.
+       */
+      if (existingItem.status === "DISPOSED") {
+        res.status(409).json({ error: "Item is already disposed" });
+        return;
+      }
+
       const updates = cleanDefined(parsed.data);
-      const editorId = req.user!.id;
 
-      const editLogEntries: Array<{
-        itemId: string;
-        editedById: string;
-        fieldChanged: string;
-        oldValue: string | null;
-        newValue: string | null;
-      }> = [];
+      /**
+       * `updateMany({ data: {} })` is not a well-formed UPDATE, and an empty diff
+       * has nothing to log, so an empty body short-circuits to the current row.
+       */
+      if (Object.keys(updates).length === 0) {
+        res.status(200).json(existingItem);
+        return;
+      }
 
-      const existingRecord = existingItem as Record<string, unknown>;
-      for (const [key, value] of Object.entries(updates)) {
-        if (value !== undefined) {
-          const oldVal = existingRecord[key];
-          if (String(oldVal) !== String(value)) {
-            editLogEntries.push({
-              itemId: id,
-              editedById: editorId,
-              fieldChanged: key,
-              oldValue: oldVal !== null && oldVal !== undefined ? String(oldVal) : null,
-              newValue: value !== null ? String(value) : null,
-            });
-          }
+      /**
+       * Foreign keys are logged as "<display name> (<id>)" (decision D1), which
+       * needs the names on both sides of the change — the old value's and the
+       * new one's. Fetched only when the column is actually changing, so the
+       * common edit (condition, notes, location) adds no queries.
+       *
+       * Re-verifying the new ids here also turns a dangling reference into a 400
+       * instead of a Prisma P2003 surfacing as a 500.
+       */
+      const labels: Record<string, string> = {};
+
+      if (typeof updates.ownerId === "string" && updates.ownerId !== existingItem.ownerId) {
+        const owners = await prisma.user.findMany({
+          where: { id: { in: [existingItem.ownerId, updates.ownerId] } },
+          select: { id: true, fullName: true },
+        });
+        if (!owners.some((owner) => owner.id === updates.ownerId)) {
+          res.status(400).json({ error: "ownerId does not match an existing user" });
+          return;
+        }
+        for (const owner of owners) {
+          labels[owner.id] = owner.fullName;
         }
       }
 
-      const [updatedItem] = await prisma.$transaction([
-        prisma.item.update({
-          where: { id },
-          data: updates as Prisma.ItemUncheckedUpdateInput,
-        }),
-        ...(editLogEntries.length > 0
-          ? [
-              prisma.itemEditLog.createMany({
-                data: editLogEntries,
-              }),
-            ]
-          : []),
-      ]);
+      if (typeof updates.categoryId === "string" && updates.categoryId !== existingItem.categoryId) {
+        const categories = await prisma.category.findMany({
+          where: { id: { in: [existingItem.categoryId, updates.categoryId] } },
+          select: { id: true, name: true },
+        });
+        if (!categories.some((category) => category.id === updates.categoryId)) {
+          res.status(400).json({ error: "categoryId does not match an existing category" });
+          return;
+        }
+        for (const category of categories) {
+          labels[category.id] = category.name;
+        }
+      }
+
+      /**
+       * SDS 3.2 / SRS F2.3 — "every change writes an ItemEditLog row". The diff
+       * comes from `buildEditLogRows` rather than a loop here so that this route
+       * and the approval cascade produce byte-identical rows for the same change:
+       * one row per field, Decimals at two places, foreign keys expanded, no-ops
+       * dropped, and `null` stored as SQL NULL rather than the string "null".
+       * See the header of services/itemEditLog.ts.
+       */
+      const editLogRows = buildEditLogRows({
+        itemId: id,
+        editedById: req.user!.id,
+        editedAt: new Date(),
+        before: existingItem,
+        after: updates,
+        labels,
+      });
+
+      const updatedItem = await prisma.$transaction(
+        async (tx) => {
+          /**
+           * Compare-and-swap on `status`, the same guard the approval transaction
+           * uses. The check above can go stale: a DISPOSAL approval committing in
+           * between would otherwise let this write land on a disposed row.
+           * Throwing rolls the transaction back, so no log row survives either.
+           */
+          const applied = await tx.item.updateMany({
+            where: { id, status: "ACTIVE" },
+            data: updates as Prisma.ItemUncheckedUpdateInput,
+          });
+          if (applied.count === 0) {
+            throw httpError(409, "Item is already disposed");
+          }
+
+          await writeEditLogRows(tx, editLogRows);
+
+          return tx.item.findUnique({ where: { id }, include: { category: true } });
+        },
+        { maxWait: 5000, timeout: 15000 }
+      );
 
       res.status(200).json(updatedItem);
-    } catch {
-      res.status(500).json({ error: "Failed to update item" });
+    } catch (err) {
+      next(err);
     }
   }
 );

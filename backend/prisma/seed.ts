@@ -61,11 +61,18 @@ async function main() {
   });
 
   console.log("Seeding sample items + QR tags...");
-  // tagId values are fixed/deterministic on purpose (not random) so this
-  // script stays idempotent across re-runs. NOTE: once Teammate B's
-  // POST /items handler lands with its real tagId-generation logic, mirror
-  // that format here so seeded items look identical to normally-created
-  // ones — flag this in the integration PR as a follow-up.
+  // tagId values are fixed/deterministic on purpose (not random) so this script
+  // stays idempotent across re-runs.
+  //
+  // They deliberately do NOT match the shape `POST /items` generates
+  // (`CNCS-` + 8 hex, from crypto.randomBytes(4) — see routes/items.ts). That
+  // was flagged here as a follow-up before the Items track landed; the decision
+  // now it has is to keep `CNCS-DEMO-000n`, because nothing reads the format —
+  // lookup is an equality match on the column, and the QR payload is a URL
+  // built around whatever the tagId is — while the walkthrough in
+  // docs/phase-2.md is copy-pasted by hand, where "DEMO-0001" is legible and
+  // "CNCS-8F2A91C4" is a typo waiting to happen. Recorded in docs/phase-2.md
+  // so it isn't reopened as an oversight.
   const sampleItems = [
     {
       tagId: "CNCS-DEMO-0001",

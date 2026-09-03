@@ -40,6 +40,21 @@ function buildApp(): Application {
     await Promise.reject(new Error("connection terminated unexpectedly"));
   });
 
+  /**
+   * Shaped like a `PrismaClientKnownRequestError` rather than constructed from
+   * one: the handler duck-types on `name` + `code`, which keeps a value-level
+   * import of the generated client out of both the middleware and this test.
+   */
+  app.get("/prisma/:code", (req) => {
+    const err = new Error("\nInvalid `prisma.item.create()` invocation:\nForeign key constraint");
+    err.name = "PrismaClientKnownRequestError";
+    Object.assign(err, {
+      code: req.params.code,
+      meta: { field_name: "Item_categoryId_fkey (index)" },
+    });
+    throw err;
+  });
+
   app.use(notFoundHandler);
   app.use(errorHandler);
   return app;
@@ -106,6 +121,51 @@ describe("errorHandler", () => {
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: "Internal server error" });
+
+    error.mockRestore();
+  });
+
+  it("maps the client's own constraint failures off 500", async () => {
+    // A well-formed uuid for a category that does not exist is a bad request, not
+    // a server fault. Without this branch every one of these read
+    // "Internal server error", which sends the caller looking in the wrong place.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const duplicate = await request(buildApp()).get("/prisma/P2002");
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body).toEqual({ error: "A record with that value already exists" });
+
+    const dangling = await request(buildApp()).get("/prisma/P2003");
+    expect(dangling.status).toBe(400);
+    expect(dangling.body).toEqual({ error: "A referenced record does not exist" });
+
+    const missing = await request(buildApp()).get("/prisma/P2025");
+    expect(missing.status).toBe(404);
+    expect(missing.body).toEqual({ error: "Record not found" });
+
+    warn.mockRestore();
+  });
+
+  it("never echoes the ORM's own text, which names tables and columns", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const res = await request(buildApp()).get("/prisma/P2003");
+
+    expect(JSON.stringify(res.body)).not.toContain("Item_categoryId_fkey");
+    expect(JSON.stringify(res.body)).not.toContain("prisma.item.create");
+
+    warn.mockRestore();
+  });
+
+  it("still hides an unmapped Prisma code behind the generic 500", async () => {
+    // P1001 is "can't reach the database" — an outage, and nothing the caller did.
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const res = await request(buildApp()).get("/prisma/P1001");
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "Internal server error" });
+    expect(error).toHaveBeenCalled();
 
     error.mockRestore();
   });

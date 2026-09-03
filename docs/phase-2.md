@@ -8,9 +8,10 @@ Two things to know before reading further:
 - **No schema change.** Phase 2 added no columns, no indexes and no migration, so pulling it
   requires nothing beyond `pnpm install`. Every design decision below that could have been
   solved with a new column was solved without one instead; where that cost something, it says so.
-- **Phase 1's Items track does not exist.** There is no `GET /items` or `PUT /items/:id` to hang
-  the item-facing rules on, so two exit criteria ship as unit-tested service contracts rather
-  than routes. See [Inherited gaps from Phase 1](#inherited-gaps-from-phase-1).
+- **Phase 1's Items track landed after Phase 2 was written**, and the two have since been merged.
+  The item-facing rules that shipped as service contracts are now wired into real routes; what
+  changed on both sides, and the two conflicts that had to be settled from the SRS/SDS, is in
+  [Integration with the Items track](#integration-with-the-items-track).
 
 ## What shipped
 
@@ -39,12 +40,13 @@ Supporting middleware and services, all with their own tests:
 | `middleware/validate.ts` | `validateBody` / `validateQuery` → `req.validated` (Express 5 makes `req.query` read-only). 400 body byte-identical to `routes/auth.ts`. |
 | `lib/httpError.ts` | `httpError(status, message, details?)` — the only way a rule inside a transaction can both roll it back and keep its status code. |
 | `services/requestWorkflow.ts` | The state machine and the one transaction that has to be right. |
-| `services/itemEditLog.ts` | D1 serialization + diffing. **The seam the Items track calls.** |
+| `services/itemEditLog.ts` | D1 serialization + diffing. **Called by `PUT /items/:id` and by the approval path.** |
 | `services/notifications.ts` | D2 fan-out and the D3 message templates. |
-| `services/itemVisibility.ts` | F7.2 / F7.3 / SDS 3.2 rules, as helpers because there is no route to put them in. |
+| `services/itemVisibility.ts` | The F7.2 `where`-clause helpers and F7.3's message. |
 | `services/email.ts` | `NOTIFY_EMAIL`-gated stub transport (F8.3). |
+| `utils/filterItemFields.ts` | SDS 3.2 field stripping (`sanitizeItem`) — Phase 1's, reused rather than duplicated. |
 
-14 test files, 194 tests. `pnpm run build` type-checks the tests too, so vitest passing is not
+17 test files, 236 tests. `pnpm run build` type-checks the tests too, so vitest passing is not
 the same as CI passing — run both.
 
 ## The state machine
@@ -389,111 +391,142 @@ Two departures from the approved Phase 2 plan, both narrowing:
   [Correlating one decision's rows](#correlating-one-decisions-rows) and in
   [What Phase 3 needs](#what-phase-3-needs).
 
-## Contract for the Items track
+## Integration with the Items track
 
-Three rules that belong on item routes that do not exist yet. They ship as tested helpers with call
-sites named here, rather than as a throwaway `/public/items/:tagId` route — someone would build
-against that route and then it would have to be supported.
+Phase 2 was written against a `main` where Phase 1's Items & Categories track did not exist. It
+landed afterwards, and merging the two is the work described here. The merge itself conflicted in
+exactly one file (`src/app.ts`, one mount line); everything below is deliberate integration on top
+of that.
 
-**`GET /items` — hide disposed items by default (F7.2)**
+Phase 1 brought `POST /items`, `GET /items`, `GET /items/:tagId`, `PUT /items/:id`, the
+`/categories` router, the `CNCS-XXXXXXXX` tag generator, and `utils/filterItemFields.ts`.
 
-```ts
-import { activeItemsWhere } from "../services/itemVisibility.js";
+### The three rules that were waiting for a call site
 
-const items = await prisma.item.findMany({ where: activeItemsWhere({ ...filters }) });
-```
+| Rule | Now enforced at | Test that proves it |
+|---|---|---|
+| F7.2 — disposed items leave the default listing | `GET /items` → `activeItemsWhere(filters)` | `routes/items.test.ts` → *"defaults to page 1 / limit 20 and only ever lists ACTIVE items"*, *"cannot be talked into listing disposed items from the query string"* |
+| F7.3 — public lookup of a disposed tag | `GET /items/:tagId` → `410 DISPOSED_PUBLIC_MESSAGE` | *"answers a disposed tag with F7.3's sentence and nothing else"* |
+| F2.3 — one history row per changed field | `PUT /items/:id` → `buildEditLogRows` + `writeEditLogRows` | *"writes one edit-log row per changed field and none for a no-op"* |
 
-`activeItemsWhere` spreads `extra` first and pins `status: "ACTIVE"` last, so a caller who passes
-`{ status: "DISPOSED" }` — from an unvalidated query string, say — cannot widen the filter. Proven by
-`services/itemVisibility.test.ts` → *"cannot be widened by a caller passing its own status"*.
+`allItemsWhere()` still has no caller. That is intended: it exists so Phase 3's disposal report can
+say "disposed rows are included on purpose" in a way that greps, because a `where` with no `status`
+key is indistinguishable from one that forgot it.
 
-Anywhere disposed items are wanted on purpose, wrap the filter in `allItemsWhere()` instead. It is an
-identity function; its only job is to make the intent greppable, because a `where` with no status key
-is indistinguishable from one that forgot it.
+### C1 — two implementations of SDS 3.2, one kept
 
-**`GET /items/:tagId` — strip restricted fields for the public (SDS 3.2, F7.3)**
+Phase 2 shipped `publicItemView` (an allow-list) while Phase 1 shipped `sanitizeItem` (a deny-list).
+Two field lists that must agree forever is a bug with a delay on it, so one had to go.
+**`sanitizeItem` was kept and `publicItemView` deleted**, for three reasons, in order of weight:
 
-```ts
-import { publicItemView } from "../services/itemVisibility.js";
+1. SDS 3.2 prescribes that exact shape: *"check if the requester is logged in AND their `id`
+   matches the item's `ownerId` (or they're Staff/Admin). If not, **strip** `ownerId`'s user
+   details, `purchaseCost`, `currentValue`, `brand`, `model`, `serialNumber`, `notes`, and
+   `accessories` from the response object before sending it."* Strip, plus the owner branch — that
+   is a deny-list, described field by field.
+2. Its list matches SRS 3.4's visibility table and Phase 2's did not. `publicItemView` published
+   `brand` and `model`, which the table hides, and omitted `photoUrl`, which the table shows. On
+   the question the specs actually settle, the surviving implementation was the correct one.
+3. It is already wired into three call sites with its own tests.
 
-res.json({ item: publicItemView(item, req.user) });   // req.user may be undefined
-```
+An allow-list is still the safer *mechanism* — a deny-list publishes any column added after it was
+written, and the SRS acceptance criterion is that the public never sees a hidden field "under any
+circumstance, including via direct URL manipulation". The mitigation, rather than overruling the
+SDS: `RESTRICTED_FIELDS` is kept wider than SRS 3.4's table. It also strips `parentItemId` (the
+inverse edge of `accessories` — the same relation, so publishing it would hand out a sibling item's
+id while hiding the list), `editLogs` and `requests` (edit history is ❌ for the public *and* the
+owner), and `disposalReason` / `disposedAt`. Re-read that set whenever `Item` grows a column.
 
-Staff and admins get the row untouched. A guest gets the `PUBLIC_ITEM_FIELDS` allow-list — an
-allow-list, not a deny-list, so a column added later is private until someone deliberately publishes
-it. A disposed item collapses to `DISPOSED_PUBLIC_MESSAGE` rather than 404: the tag is real, and
-scanning it should say what happened to the item, not imply the record was lost. Proven by
-*"strips every restricted field for a guest (SDS 3.2)"*, *"is an allow-list, so a column added later
-is private until published"*, and *"collapses a disposed item to the F7.3 message rather than 404"*.
+Note the owner branch is currently unreachable as a distinct case: `Role` has exactly two members,
+so every authenticated user is already Staff or Admin. It is kept because SRS F4.3 describes it and
+a third role would make it live.
 
-**`PUT /items/:id` — write a history row per changed field (F2.3)**
+### C2 — who the disposed-tag 410 applies to
 
-```ts
-import { buildEditLogRows, writeEditLogRows } from "../services/itemEditLog.js";
+Phase 1's `GET /items/:tagId` returned 410 to *everyone* for a disposed item. F7.3 is a rule about
+the public — "not scannable/viewable by the public" — while F7.2 says a disposed item "remains
+queryable in reports/history" and SRS 3.4 gives Staff/Admin every field. An admin who scans a
+disposed tag needs the record, not an error.
 
-await prisma.$transaction(async (tx) => {
-  const before = await tx.item.findUnique({ where: { id }, select: { /* the fields you will write */ } });
-  await tx.item.update({ where: { id }, data: changes });
-  await writeEditLogRows(tx, buildEditLogRows({
-    itemId: id,
-    editedById: req.user.id,
-    editedAt,              // one Date created before the transaction opens
-    before,
-    after: changes,
-    labels,                // { [userId]: fullName } etc., for foreign-key rows
-  }));
-});
-```
+So the 410 is now gated on `isPrivilegedViewer(req.user)`: the public gets F7.3's sentence, Staff
+and Admin get the row. The status code and the wording are Phase 1's and unchanged — 410 Gone is
+right for a tag that resolves to something deliberately withdrawn, and the message is the SRS's own
+sentence rather than a paraphrase. Proven by *"answers a disposed tag with F7.3's sentence and
+nothing else"* and *"still returns the record to an admin scanning a disposed tag (F7.2)"*.
 
-Do **not** reimplement diffing or value formatting there. The D1 rules are what make history rows
-comparable across the approval path and the edit path, and they are pinned by
-`services/itemEditLog.test.ts` → *"writes one row per changed field, all sharing editedById and
-editedAt"*, *"drops no-op changes rather than logging them"*, and *"maps null and undefined to SQL
-NULL, never the string \"null\""*.
+The body is `{ "error": "This item is no longer in service" }` and nothing else — no tagId, no
+name, no reason. "Nothing else" is F7.3's own phrase.
 
-The approval path already exercises this helper inside a real transaction, so the seam is proven —
-only the call site is missing.
+### Other changes made to Phase 1 files, and why
 
-**Also for whoever builds Items:** Phase 2 selects no cost fields anywhere, which is why it never
-had to solve `Decimal`-to-JSON serialization. `purchaseCost` and `currentValue` are
-`Prisma.Decimal`, and `JSON.stringify` does not render them as numbers. Decide that deliberately.
+- **`parentItemId` is rejected by `POST` and `PUT /items`** with a 400 naming the right endpoint.
+  It was accepted as a plain uuid on create. `POST /items/:id/accessories` is where the bundle
+  rules live (no self-parenting, no cycles, max depth 2 — D6); a second unguarded writer to the
+  same column lets a three-deep chain A → B → C form, and the approval cascade is one
+  `updateMany({ where: { parentItemId } })` by design, so it would move B and silently leave C
+  behind claiming a room it is not in. Rejected loudly rather than stripped silently, so the caller
+  learns where the field lives.
+- **`PUT /items/:id` had its own inline diff loop**, which stringified with `String(value)` — so a
+  `Decimal` logged as `45000` where the approval path logs `45000.00`, a `null` logged as the
+  string `"null"`, and an `ownerId` logged as a bare uuid. Two formats in one table make the
+  history unreadable across sources. It now calls the same helpers the approval path does.
+- **`PUT /items/:id` refuses a disposed item** with `409 Item is already disposed`, and its write
+  is a compare-and-swap on `status: "ACTIVE"` — the same guard the approval transaction uses,
+  because a DISPOSAL approval committing between the read and the write would otherwise be
+  overwritten. `status`, `disposalReason` and `disposedAt` are absent from the route's schemas, so
+  it cannot dispose or un-dispose an item either.
+- **`POST /items` retries a tag-id collision.** `tagId` is `@unique` and generated from four random
+  bytes; by the birthday bound a registry of 10,000 items has roughly a 1-in-100 chance of drawing
+  the same tag twice, and the caller — who never supplied the value — would read a constraint
+  error. Retried against the unique index rather than pre-checked with a `findUnique`, since
+  check-then-create is itself a race. Narrowed to `tagId`, so a collision on any other unique
+  column still surfaces.
+- **`PUT /items/:id` 400s a dangling `ownerId` or `categoryId`** instead of letting Prisma's P2003
+  surface as a 500, and reads both names in one query when a foreign key actually changes, for
+  D1's `"<display name> (<id>)"` form.
+- **`/categories` and `/items` now hand errors to the central handler.** Both had
+  `catch { res.status(500).json({ error: "Failed to ..." }) }`, which dropped the error object
+  entirely — a database outage produced a fixed string and no stack trace anywhere.
+- **`errorHandler` maps three Prisma constraint failures off 500**: P2002 → 409, P2003 → 400,
+  P2025 → 404, with generic messages so the ORM's own text (which names tables and columns) is
+  never echoed. Routes that can say something more specific still check first and get there first.
+
+### Still open
+
+- **`seed.ts`'s `CNCS-DEMO-000n` tags deliberately do not match the generated format.** Nothing
+  reads the format — lookup is an equality match and the QR payload is a URL built around whatever
+  the tag is — and the walkthrough below is pasted by hand, where `DEMO-0001` is legible and
+  `CNCS-8F2A91C4` is a typo waiting to happen. The follow-up comment that asked for re-alignment
+  has been closed with this reasoning; it is not an oversight.
+- **`purchaseCost` and `currentValue` are `Prisma.Decimal`** and `GET /items` now returns them to
+  Staff/Admin. `JSON.stringify` renders a Decimal as a string, not a number, so the frontend will
+  receive `"45000"`. Phase 2 selects no cost column anywhere and did not have to solve this;
+  whoever builds the UI should decide the shape deliberately rather than discover it.
+- **`docs/phase-1.md` still does not exist.** What Phase 1 shipped is recorded in `README.md`.
 
 ## Inherited gaps from Phase 1
 
-`docs/phase-1.md` was never written. This section stands in for it, as fact rather than complaint —
-anyone planning Phase 3 or the frontend needs it.
+Phase 1's Items & Categories track was not built when Phase 2 started, and this section recorded
+what that cost. It has since landed and been integrated — see
+[Integration with the Items track](#integration-with-the-items-track). The four exit criteria that
+shipped as service contracts are now enforced at real routes, with route tests:
 
-At `92c0841` (`main`, the base of this phase), Phase 1 shipped:
-
-- Bootstrap: repo, TypeScript, Docker, the full Prisma schema migrated to Neon, CI.
-- Auth: `authenticate`, `optionalAuthenticate`, `requireRole`, `POST /auth/register` (admin-only),
-  `POST /auth/login`, `GET /auth/me`.
-- Tags: `GET /items/:id/tag`, `POST /items/:id/tag/regenerate`, the QR generator, the seed script.
-
-**The Items & Categories track was never built.** Missing: `POST /items`, `GET /items`,
-`GET /items/:tagId`, `PUT /items/:id`, the `/categories` router, the tagId generator, and the SDS 3.2
-field-filtering behaviour that Phase 1's own plan called its highest-priority test. No open PR covers
-any of it. Three of Phase 1's five exit criteria are therefore unmet.
-
-What that cost Phase 2:
-
-| Exit criterion | Blocker | What shipped instead |
+| Exit criterion | Substitute at the time | Now |
 |---|---|---|
-| Disposed item disappears from default `GET /items` | No `GET /items` | `activeItemsWhere` + its override-resistance test, plus the [contract](#contract-for-the-items-track) |
-| …but is still fetchable via history and reports | No reports until Phase 3 | `GET /items/:id/history` returns 200 with full rows for a DISPOSED item |
-| F7.3 public lookup of a disposed tag | No `GET /items/:tagId` | `publicItemView` + `DISPOSED_PUBLIC_MESSAGE` unit tests |
-| Every `PUT /items/:id` writes a history row | No `PUT /items/:id` | Helper built and tested, call site documented; the approval path proves it works in a real transaction |
+| Disposed item disappears from default `GET /items` | `activeItemsWhere` + override-resistance test | `GET /items`, route-tested |
+| …but is still fetchable via history and reports | `GET /items/:id/history` on a DISPOSED item | unchanged — reports are Phase 3 |
+| F7.3 public lookup of a disposed tag | `DISPOSED_PUBLIC_MESSAGE` unit test | `GET /items/:tagId` → 410, route-tested |
+| Every `PUT /items/:id` writes a history row | helper tested, call site documented | `PUT /items/:id`, route-tested |
 
-**An integration PR is needed when Items lands** — roughly half a day:
-
-1. `GET /items` → `activeItemsWhere()`
-2. `GET /items/:tagId` → `publicItemView()`
-3. `PUT /items/:id` → `buildEditLogRows()` + `writeEditLogRows()`
-4. Replace the four substitute unit tests above with real route tests
-5. Re-align `prisma/seed.ts`'s hardcoded `CNCS-DEMO-####` tagIds with the real generator — there is
-   already a comment in that file asking for this
-
-Someone should own that by name.
+One gap outlives the merge: **there is still no test database.** Every route test is mock-based, in
+CI and locally. A mock cannot catch a wrong `where` clause — `where: { id }` in place of
+`where: { id, status: "PENDING" }` passes every assertion and silently removes the race guard that
+the whole approval design rests on. The [manual walkthrough](#manual-walkthrough) is the only thing
+that exercises the transaction against real Postgres, which is why it is a checklist and not
+polish. Standing it up needs a `db` service in `docker-compose.yaml`, a conditional adapter in
+`lib/prisma.ts` (the Neon WebSocket adapter cannot talk to a plain Postgres), and a `services:`
+block in the CI workflow. That is a change to shared infrastructure and belongs to whoever owns
+Phase 3.
 
 ## Schema change log
 
@@ -579,9 +612,20 @@ ADMIN=$(login admin@cncs.aau.edu.et 'Admin123!')
 | 11 | `GET /api/v1/requests` and `GET /requests` | Identical bodies |
 | 12 | `GET /nope` | 404 JSON `{"error":"Route not found"}`, not an HTML page |
 | 13 | `POST /requests` with `-d '{"type":'` | 400 `{"error":"Invalid JSON body"}`, not an HTML page |
+| 14 | `GET /items` with **no** token, after step 6 | The disposed laptop and charger are absent (F7.2); no `purchaseCost`, `brand`, `model`, `serialNumber`, `notes`, `ownerId` or `owner` on any row (SDS 3.2) |
+| 15 | `GET /items?status=DISPOSED` with no token | Still no disposed rows — the query string cannot widen the filter |
+| 16 | `GET /items/CNCS-DEMO-0001` with no token, then as admin | 410 `{"error":"This item is no longer in service"}` and nothing else for the public (F7.3); 200 with the full row including `disposalReason` for the admin (F7.2) |
+| 17 | `PUT /items/<desk-id>` as staff with `{"room":"105"}`, then `GET /items/<desk-id>/history` | 200, then one new row: `fieldChanged: "room"`, `oldValue: "101"`, `newValue: "105"` — and no row for any field you did not send |
+| 18 | `POST /items` as staff with `"parentItemId":"<any-id>"` | 400 pointing at `POST /items/:id/accessories` |
+
+Step 17 uses `CNCS-DEMO-0002` (Office Desk, room 101), not the laptop or the charger — those are
+DISPOSED by step 6, and `PUT` on a disposed item is a 409 on purpose. Its id is not in the seed's
+output; read it from `GET /items?search=Office%20Desk` with a staff token.
 
 Steps 3–4 are the ones worth reading carefully: they are the only end-to-end proof that the cascade
-touches the accessory and that both items' history rows land in one decision.
+touches the accessory and that both items' history rows land in one decision. Steps 14–17 are the
+integration's equivalent — the three item-facing rules that had no call site until Phase 1's Items
+track landed.
 
 Sample calls for the steps that need a body:
 
@@ -613,7 +657,7 @@ From `backend/`, per change:
 pnpm install
 pnpm run lint
 pnpm run build     # tsc — this type-checks the .test.ts files too, which is where CI usually breaks
-pnpm test          # 14 files, 194 tests
+pnpm test          # 17 files, 236 tests
 ```
 
 No `prisma generate` step is needed for Phase 2 specifically, since the schema did not change — but CI
@@ -644,10 +688,15 @@ Three things to pick up:
    [Seed data](#seed-data) resets the two demo items and `seed-req-0001`. If Phase 3 seeds audit
    fixtures on top of those rows, make it robust to that.
 
-Watch out for `Prisma.Decimal`: Phase 2 selects no cost fields anywhere, so it never had to decide how
-`purchaseCost` serializes to JSON. A report that sums costs will.
+Watch out for `Prisma.Decimal`. `GET /items` returns `purchaseCost` and `currentValue` to Staff and
+Admin, and `JSON.stringify` renders a Decimal as a *string* — so the API already answers `"45000"`,
+not `45000`. Phase 2 selects no cost field anywhere and did not have to settle the shape; a report
+that sums costs, and the frontend that renders them, both will. See
+[Still open](#still-open).
 
 ## File map
+
+Phase 2's own files:
 
 | Path | What |
 |---|---|
@@ -658,15 +707,26 @@ Watch out for `Prisma.Decimal`: Phase 2 selects no cost fields anywhere, so it n
 | `backend/src/services/requestWorkflow.ts` | `applyDecision` + the pure state machine |
 | `backend/src/services/itemEditLog.ts` | D1 serialization, diffing, row writing |
 | `backend/src/services/notifications.ts` | D2 fan-out, D3 templates, `parseNotificationMessage` |
-| `backend/src/services/itemVisibility.ts` | F7.2 / F7.3 / SDS 3.2 helpers |
+| `backend/src/services/itemVisibility.ts` | `activeItemsWhere` / `allItemsWhere` (F7.2) + F7.3's message |
 | `backend/src/services/email.ts` | `NOTIFY_EMAIL` stub transport |
 | `backend/src/lib/httpError.ts` | `httpError()` / `isHttpError()` |
 | `backend/src/middleware/errorHandler.ts` | `errorHandler`, `notFoundHandler` |
 | `backend/src/middleware/validate.ts` | `validateBody`, `validateQuery`, `validated*` accessors |
 | `backend/src/test-utils/index.ts` | `createToken`, `makeUser`, `makeItem`, `makeRequest`, `makeNotification` |
 
-Each of those has a `.test.ts` beside it except `httpError.ts` and `test-utils/`, which are covered
-through their callers.
+Phase 1 files this phase modified — all four covered under
+[Integration with the Items track](#integration-with-the-items-track):
+
+| Path | Change |
+|---|---|
+| `backend/src/routes/items.ts` | `PUT` rewritten around the shared edit-log helpers + a status CAS; tag-id collision retry; `parentItemId` rejected; `next(err)` |
+| `backend/src/routes/categories.ts` | `next(err)` instead of a bare `catch` that dropped the error |
+| `backend/src/utils/filterItemFields.ts` | `isPrivilegedViewer` export (the `:tagId` viewer gate) + a wider deny-list |
+| `backend/src/app.ts` | Router mounts, `notFoundHandler`, `errorHandler` |
+
+Each Phase 2 file has a `.test.ts` beside it except `httpError.ts` and `test-utils/`, which are
+covered through their callers. `routes/items.test.ts` and the additions to
+`utils/filterItemFields.test.ts` are the integration's own tests.
 
 
 

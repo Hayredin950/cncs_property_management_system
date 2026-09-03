@@ -16,13 +16,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "11.10.0",
-      "onFail": "download"
-    }
-  },
+
   "type": "module",
   "dependencies": {
     "@prisma/adapter-neon": "^7.10.0",
@@ -54,5 +48,6 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.11"
-  }
+  },
+  "packageManager": "pnpm@11.10.0"
 }

@@ -4,7 +4,9 @@ import morgan from "morgan";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { accessoriesRouter } from "./routes/accessories.js";
 import authRouter from "./routes/auth.js";
+import { categoriesRouter } from "./routes/categories.js";
 import { itemHistoryRouter } from "./routes/itemHistory.js";
+import { itemsRouter } from "./routes/items.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { requestsRouter } from "./routes/requests.js";
 import { tagsRouter } from "./routes/tags.js";
@@ -24,18 +26,22 @@ app.get(["/api/v1/health", "/health"], (req: Request, res: Response) => {
  * path, which is what Phase 1 shipped and what its tests still call. Keeping both
  * means the frontend can move to the versioned prefix without a flag day.
  *
- * One mount per line, sorted by mount path: each Phase 2 slice adds exactly one
- * line here, so git resolves the conflict mechanically instead of by hand.
+ * One mount per line, sorted by mount path: a later phase adds exactly one line
+ * here, so git resolves the conflict mechanically instead of by hand.
  *
- * The three `/items` mounts don't collide — Phase 2 only claims paths with two or
- * more segments after `:id` (`/:id/history`, `/:id/accessories`), and
- * `routes/items.ts` is deliberately absent: that filename belongs to the Items
- * track, which is not built yet.
+ * `itemsRouter` is mounted LAST of the four `/items` routers on purpose. Its
+ * `GET /:tagId` is a single-segment pattern, so it cannot swallow the two-segment
+ * paths the other three own (`/:id/tag`, `/:id/history`, `/:id/accessories`) —
+ * Express 5 matches on the complete path. But if anyone later adds a bare
+ * `GET /items/:id`, mounting order is the only thing that decides the winner, and
+ * last-place means the specific routes keep working.
  */
 app.use(["/api/v1/auth", "/auth"], authRouter);
+app.use(["/api/v1/categories", "/categories"], categoriesRouter);
 app.use(["/api/v1/items", "/items"], accessoriesRouter);
 app.use(["/api/v1/items", "/items"], itemHistoryRouter);
 app.use(["/api/v1/items", "/items"], tagsRouter);
+app.use(["/api/v1/items", "/items"], itemsRouter);
 app.use(["/api/v1/notifications", "/notifications"], notificationsRouter);
 app.use(["/api/v1/requests", "/requests"], requestsRouter);
 

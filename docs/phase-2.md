@@ -457,6 +457,16 @@ nothing else"* and *"still returns the record to an admin scanning a disposed ta
 The body is `{ "error": "This item is no longer in service" }` and nothing else — no tagId, no
 name, no reason. "Nothing else" is F7.3's own phrase.
 
+**The status code is the one thing here the SRS does not settle**, so it stayed as Phase 1 built it.
+F7.3 says only what the lookup "shows"; 410 and `200 { status, message }` both satisfy that
+sentence. 410 Gone is semantically exact for a tag that resolves to something deliberately
+withdrawn. The argument for 200 is a frontend one and it is not weak: this is a sticker on a
+physical object, and a scan handler that receives `410 { error }` will most likely render "scan
+failed" rather than "this asset was disposed" unless someone special-cases the one endpoint in the
+API that answers 410. If the frontend team wants 200 plus an explicit `status: "DISPOSED"` and the
+same sentence in a `message` field, that is a two-line change here and one test name — raise it
+before the UI is written, not after.
+
 ### Other changes made to Phase 1 files, and why
 
 - **`parentItemId` is rejected by `POST` and `PUT /items`** with a 400 naming the right endpoint.

@@ -16,7 +16,7 @@ document.
 | Item | State |
 |---|---|
 | Repo, `/backend`, `/frontend` placeholder, `.gitignore`, `.env.example`, `README.md` | done |
-| `docker-compose.yaml` + `backend/Dockerfile` | done — **one service, `backend`** (see deviations) |
+| `docker-compose.yaml` + `backend/Dockerfile` | done — **one service, `backend`** (see deviations); builds, but does not boot until #10 |
 | `package.json`, ESLint + Prettier, TypeScript strict | done |
 | Full Prisma schema — every SDS model, not just Phase 1's — migrated to Neon | done |
 | GitHub Actions: install → `prisma generate` → lint → build → test → docker build | done, green |
@@ -193,7 +193,7 @@ late, non-blocking step in both directions.
 
 | Criterion | State |
 |---|---|
-| `docker compose up` boots the backend | met |
+| `docker compose up` boots the backend | **not met on `main`** — the container starts, then the app exits with `SyntaxError: The requested module '@prisma/client' does not provide an export named 'PrismaClient'`. Fixed in #10 |
 | CI green on `main` | met |
 | Auth: admin-only registration, login, `/auth/me`, role middleware | met |
 | Item CRUD, categories, pagination, validation | met |
@@ -204,8 +204,17 @@ late, non-blocking step in both directions.
 | Branch protection on `main` | met — a PR needs one approving review before it can merge |
 | Integration test: full create → fetch → edit flow against a Dockerized test database | **not met** — there is no test database |
 
-Nine of ten. The one that is open is infrastructure, and it is not fixed by writing more application
-code.
+Eight of ten met, one open, one fixed but not yet merged. Both of the open-or-broken ones are
+infrastructure, and neither is fixed by writing more application code.
+
+The Docker one had been recorded as met, on the strength of the image building in CI. It does build.
+It just does not run: Prisma 7 dropped the automatic postinstall `generate`, so `pnpm install` leaves
+`@prisma/client` a stub, and generating on the host does not help because `docker-compose.yaml` masks
+`/app/node_modules` with an anonymous volume. CI's docker job never starts a container, so nothing
+ever asked. It surfaced when someone finally ran the Phase 2 walkthrough against a real database, and
+the one-line fix is #10 — which is the general lesson of this section rather than a footnote to it:
+**every criterion here that was verified by a green check rather than by use should be read as
+provisional.**
 
 ## Known gaps at the end of Phase 1
 
@@ -254,6 +263,11 @@ From the repo root, with a `.env` (copy `.env.example` and fill in the first thr
 docker compose up --build     # backend on :4000
 curl localhost:4000/health    # {"status":"ok"}
 ```
+
+Until #10 merges, that second line will not answer: the app exits at startup on a stub
+`@prisma/client`. If you have an older container lying around, `docker compose down -v` before `up` —
+the anonymous volume over `/app/node_modules` outlives the container and will hand a rebuilt image
+the previous `node_modules`.
 
 Then `pnpm prisma:seed` from `backend/` for two users, five categories, and demo items with QR tags.
 Credentials are printed by the seed and are also listed in `docs/phase-2.md` → "Seed data".

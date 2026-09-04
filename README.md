@@ -52,14 +52,20 @@ Schema lives in `backend/prisma/schema.prisma`. Migrations run against Neon via 
 
 ## Branching & workflow
 
-- `main` is protected — no direct pushes, all changes go through a PR with review.
+Full rules in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:
+
+- `main` is protected: no direct pushes, and a PR needs one approving review before GitHub will let
+  it merge.
 - Branch naming: `<track>/<short-description>` (e.g. `auth/login-route`, `items/pagination`).
 - Write tests alongside the code you're writing, not after — CI runs them on every push.
-- Don't touch `schema.prisma` outside your own track without a heads-up to the team.
+- Don't touch `schema.prisma` outside your own track without a heads-up to the team, and say in the
+  PR whether the migration was applied to Neon — CI cannot detect an unapplied one.
 
 ## Project Status
 
-### Phase 1 — Foundation (in progress)
+Per-phase write-ups: [`docs/phase-1.md`](docs/phase-1.md). Phase 2's arrives with its own PR.
+
+### Phase 1 — Foundation (complete)
 
 **Bootstrap (complete):**
 
@@ -79,9 +85,21 @@ Schema lives in `backend/prisma/schema.prisma`. Migrations run against Neon via 
 
 
 
-**Items & Categories track — not started**
+**Items & Categories track (Yanet):**
 
-**Tags, Seed Data & CI polish track — not started**
+- [x] `POST /items` (Staff/Admin) with generated `CNCS-XXXXXXXX` tag IDs
+- [x] `GET /items` — pagination, `?search=`, `?categoryId=`, `?department=`
+- [x] `GET /items/:tagId` — public tag lookup
+- [x] `PUT /items/:id` — writes one `ItemEditLog` row per changed field
+- [x] `/categories` router — `GET /` (public), `POST /` (Admin)
+- [x] SDS 3.2 server-side field filtering (`utils/filterItemFields.ts`)
+
+**Tags, Seed Data & CI polish track:**
+
+- [x] QR tag generator (`utils/qrGenerator.ts`) with unit tests
+- [x] `GET /items/:id/tag` and `POST /items/:id/tag/regenerate`
+- [x] Seed script (`prisma/seed.ts`) — categories, 2 users, demo items with QR tags
+- [x] GitHub Actions CI (lint / build / test / docker build)
 
 ---
 

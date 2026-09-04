@@ -152,6 +152,10 @@ checked before the status check because "you may not decide this at all" stays t
 what the status becomes. The test that an ADMIN requester still gets 403 is what proves this is not
 merely role-gating.
 
+A STAFF requester never reaches that check: `requireRole(["ADMIN"])` runs first and answers 403
+`Insufficient permissions`. Both are 403 and both refuse, so the guard is only *observable* on an
+ADMIN's own request — which is what step 2b of the walkthrough exercises.
+
 ## Notifications
 
 ### D2 — who is told a request needs review
@@ -593,8 +597,10 @@ in CI. Run it by hand and read the output.
 this sequence is the only place the approval transaction meets real Postgres — and a mock cannot catch
 a `where` clause that lost its `status` guard. It is verification, not polish.
 
-> **Status: not yet run.** No `.env` exists in this checkout, so nothing here has been executed
-> against Neon. Run it and paste the output into the integration PR before the final merge.
+> **Status: run on 2026-09-04** against the Neon database, from the containers this repo builds.
+> All 18 steps behaved as the table below says, and the full output is posted as a comment on the
+> Phase 2 PR. Two things the run corrected in this document are marked ✎ below. Re-run it after any
+> change to the approval transaction — it is still the only place that code meets real Postgres.
 
 ```bash
 docker compose up --build     # repo root; backend on :4000
@@ -613,7 +619,8 @@ ADMIN=$(login admin@cncs.aau.edu.et 'Admin123!')
 | # | Step | Expected |
 |---|---|---|
 | 1 | `GET /notifications` as admin, then as staff | Admin has an unread `[REQUEST_SUBMITTED]` row with `code: "REQUEST_SUBMITTED"` and **no** `[...]` prefix in `message`; staff's inbox is empty |
-| 2 | `POST /requests/seed-req-0001/approve` as **staff** | 403 `You cannot decide your own request`, and nothing changed |
+| 2 | `POST /requests/seed-req-0001/approve` as **staff** | ✎ 403 `Insufficient permissions`, and nothing changed. Not `You cannot decide your own request` — approval is ADMIN-only, so `requireRole` refuses a staff caller before the handler can notice whose request it is |
+| 2b | Admin files a TRANSFER of their own, then approves it | 403 `You cannot decide your own request`; the request is still `PENDING` with `reviewedById: null`. ✎ This is the only step that reaches the self-approval guard |
 | 3 | Same call as **admin** | 200. `cascadedItemIds` names the charger; `editLogRowCount` is 4 |
 | 4 | `GET /items/<laptop-id>/history` as admin | Rows for `floor` and `room` on both items, all four sharing one `editedAt`; `oldValue` `"3"` → `newValue` `"1"` |
 | 5 | Repeat step 3 | 409 `Request has already been decided` |
@@ -639,6 +646,15 @@ Steps 3–4 are the ones worth reading carefully: they are the only end-to-end p
 touches the accessory and that both items' history rows land in one decision. Steps 14–17 are the
 integration's equivalent — the three item-facing rules that had no call site until Phase 1's Items
 track landed.
+
+✎ Step 15 held for an admin token too, which the table does not ask about and which is worth
+stating plainly: **no endpoint lists disposed items.** `GET /items` routes every caller through
+`activeItemsWhere()`, and that pins `status: "ACTIVE"` last on purpose, so a role cannot widen it
+any more than a query string can. After step 6 the laptop and its charger are reachable three ways
+— `GET /items/:tagId`, `GET /items/:id/history`, and `GET /requests/:id` — and not by listing. That
+satisfies F7.2's "leaves the default listing" and is deliberately narrower than F7.2's "still
+available for reports", because the report is Phase 3's. Phase 3 should call `allItemsWhere()`
+rather than relax this helper; the greppable name exists for that purpose.
 
 Sample calls for the steps that need a body:
 

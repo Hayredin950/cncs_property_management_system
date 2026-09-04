@@ -599,8 +599,14 @@ a `where` clause that lost its `status` guard. It is verification, not polish.
 
 > **Status: run on 2026-09-04** against the Neon database, from the containers this repo builds.
 > All 18 steps behaved as the table below says, and the full output is posted as a comment on the
-> Phase 2 PR. Two things the run corrected in this document are marked ✎ below. Re-run it after any
-> change to the approval transaction — it is still the only place that code meets real Postgres.
+> Phase 2 PR. Two things the run corrected in this document are marked ✎ below.
+>
+> Re-run it after any change to the approval transaction — it is still the only place that code meets
+> real Postgres. `pnpm prisma:seed` first: it rewinds `seed-req-0001` to `PENDING` and puts the
+> laptop and charger back to ACTIVE in room 312, which is what makes steps 1–8 repeatable. It does
+> **not** clear the requests that steps 2b, 6 and 10 file, so on a second run those items already
+> have a PENDING request and steps 2b and 10 answer `409 This item already has a pending request`
+> instead of `201`. Delete those rows, or read the 409 as the expected result for a repeat run.
 
 ```bash
 docker compose up --build     # repo root; backend on :4000

@@ -21,7 +21,7 @@ document.
 | Full Prisma schema — every SDS model, not just Phase 1's — migrated to Neon | done |
 | GitHub Actions: install → `prisma generate` → lint → build → test → docker build | done, green |
 | `authenticate` / `requireRole` contract agreed before implementation | done |
-| Branch protection on `main` | **not done** — see [Known gaps](#known-gaps-at-the-end-of-phase-1) |
+| Branch protection on `main` | done — enforced by GitHub, not just agreed |
 | `CONTRIBUTING.md` with branch naming and PR rules | filed empty at bootstrap; written in Phase 2 |
 
 The schema was locked first, before any track split off, and that decision held: no phase since has
@@ -201,11 +201,11 @@ late, non-blocking step in both directions.
 | QR tag generation and regeneration | met |
 | Seed script | met |
 | `docs/phase-1.md` | met by this file — written late, during Phase 2 |
-| Branch protection on `main` | **not met** |
+| Branch protection on `main` | met — a PR needs one approving review before it can merge |
 | Integration test: full create → fetch → edit flow against a Dockerized test database | **not met** — there is no test database |
 
-Eight of ten. The two that are open are both infrastructure, and neither is fixed by writing more
-application code.
+Nine of ten. The one that is open is infrastructure, and it is not fixed by writing more application
+code.
 
 ## Known gaps at the end of Phase 1
 
@@ -229,14 +229,9 @@ half-built. Two ways to finish it:
 Either way, interactive transactions work, so Phase 2's approval transaction would finally be
 exercised for real.
 
-**2. `main` is not actually protected.** There are no branch protection rules and no rulesets on the
-repository, so direct pushes to `main` are possible and nothing requires a passing check or a review.
-The team has behaved as though the rule existed — everything has gone through a PR — but it is a
-convention, not an enforced setting. Only the repository owner can turn it on.
+**2. No frontend.** `/frontend` is an empty placeholder. React + Vite + Tailwind is planned.
 
-**3. No frontend.** `/frontend` is an empty placeholder. React + Vite + Tailwind is planned.
-
-**4. `GET /items` returns `Prisma.Decimal` cost fields to Staff and Admin.** `JSON.stringify`
+**3. `GET /items` returns `Prisma.Decimal` cost fields to Staff and Admin.** `JSON.stringify`
 renders a Decimal as a *string*, so the API answers `"45000"`, not `45000`. Nothing in the backend
 depends on this; the frontend and Phase 3's reports both will, and should settle the shape
 deliberately rather than discover it.
@@ -262,6 +257,16 @@ curl localhost:4000/health    # {"status":"ok"}
 
 Then `pnpm prisma:seed` from `backend/` for two users, five categories, and demo items with QR tags.
 Credentials are printed by the seed and are also listed in `docs/phase-2.md` → "Seed data".
+
+To check branch protection, ask the branch, not the rules. GraphQL's `branchProtectionRules` and
+`rulesets` both return an **empty list** to anyone who is not the repository owner, which reads
+exactly like "there is no protection" and is how this document originally got it wrong. The honest
+check works with plain read access:
+
+```bash
+gh api repos/<owner>/<repo>/branches/main --jq .protected        # true
+gh pr view <n> --json mergeStateStatus,reviewDecision            # BLOCKED / REVIEW_REQUIRED
+```
 
 ## Where to go next
 

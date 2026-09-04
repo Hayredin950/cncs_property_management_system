@@ -54,9 +54,8 @@ Schema lives in `backend/prisma/schema.prisma`. Migrations run against Neon via 
 
 Full rules in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:
 
-- All changes go through a PR with one review — no direct pushes to `main`. **Note:** this is a team
-  convention, not an enforced setting; there are currently no branch protection rules on the
-  repository. Only the repo owner can turn that on.
+- `main` is protected: no direct pushes, and a PR needs one approving review before GitHub will let
+  it merge.
 - Branch naming: `<track>/<short-description>` (e.g. `auth/login-route`, `items/pagination`).
 - Write tests alongside the code you're writing, not after — CI runs them on every push.
 - Don't touch `schema.prisma` outside your own track without a heads-up to the team, and say in the

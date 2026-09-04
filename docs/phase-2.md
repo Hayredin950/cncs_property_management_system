@@ -512,7 +512,10 @@ before the UI is written, not after.
   Staff/Admin. `JSON.stringify` renders a Decimal as a string, not a number, so the frontend will
   receive `"45000"`. Phase 2 selects no cost column anywhere and did not have to solve this;
   whoever builds the UI should decide the shape deliberately rather than discover it.
-- **`docs/phase-1.md` still does not exist.** What Phase 1 shipped is recorded in `README.md`.
+- **`docs/phase-1.md` arrives in #9**, along with a filled-in `CONTRIBUTING.md` and a CI workflow
+  that no longer skips docs-only PRs. Until that merges, the [Inherited gaps from Phase
+  1](#inherited-gaps-from-phase-1) section below is the only written record of what Phase 1 shipped
+  and what it left open.
 
 ## Inherited gaps from Phase 1
 

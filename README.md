@@ -63,12 +63,19 @@ Phase 2 changed no models, so pulling it needs no migration and no `prisma:gener
 
 ## Branching & workflow
 
-- `main` is protected — no direct pushes, all changes go through a PR with review.
+Full rules in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:
+
+- `main` is protected: no direct pushes, and a PR needs one approving review before GitHub will let
+  it merge.
 - Branch naming: `<track>/<short-description>` (e.g. `auth/login-route`, `items/pagination`).
 - Write tests alongside the code you're writing, not after — CI runs them on every push.
-- Don't touch `schema.prisma` outside your own track without a heads-up to the team.
+- Don't touch `schema.prisma` outside your own track without a heads-up to the team, and say in the
+  PR whether the migration was applied to Neon — CI cannot detect an unapplied one.
 
 ## Project Status
+
+Per-phase write-ups: [`docs/phase-1.md`](docs/phase-1.md) and
+[`docs/phase-2.md`](docs/phase-2.md).
 
 ### Phase 1 — Foundation (complete)
 

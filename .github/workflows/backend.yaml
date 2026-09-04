@@ -1,11 +1,17 @@
 name: Backend CI
 
+# No `paths` filter on purpose. It used to be `paths: ["backend/**"]`, which meant a
+# PR touching only docs/, README.md or this workflow ran zero checks — so the phase
+# docs the plan requires were the one thing CI could not verify, and once branch
+# protection requires a passing check, such a PR cannot merge at all (a required
+# check that never reports blocks the merge rather than passing it).
+#
+# The whole job is ~90 seconds, so running it on every PR is cheaper than the
+# confusion. If a frontend workflow lands later, split by job, not by path filter.
 on:
   pull_request:
-    paths: ["backend/**"]
   push:
     branches: [main]
-    paths: ["backend/**"]
 
 jobs:
   build-and-test:

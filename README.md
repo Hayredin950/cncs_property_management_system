@@ -24,10 +24,19 @@ A standalone property/asset management system built as an internship deliverable
 
 ### Environment variables
 
-DATABASE_URL= # pooled connection, used at runtime
-DIRECT_URL= # unpooled connection, used for migrations
+```bash
+DATABASE_URL=          # pooled connection, used at runtime
+DIRECT_URL=            # unpooled connection, used for migrations
 JWT_SECRET=
 PORT=4000
+
+NOTIFY_EMAIL=false                        # email side-channel for notifications (SRS F8.3); transport is a stub
+UPLOADS_DIR=./uploads                     # where QR tag PNGs are written
+PUBLIC_BASE_URL=http://localhost:5173     # base URL encoded inside each QR code
+```
+
+The last three are optional — the code falls back to exactly these values. Copy
+`.env.example` and fill in the first three.
 
 ### Run locally
 
@@ -50,6 +59,8 @@ pnpm test
 
 Schema lives in `backend/prisma/schema.prisma`. Migrations run against Neon via `DIRECT_URL`. If you change the schema, coordinate with the team first — everyone builds on top of the same models.
 
+Phase 2 changed no models, so pulling it needs no migration and no `prisma:generate`.
+
 ## Branching & workflow
 
 Full rules in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:
@@ -63,7 +74,8 @@ Full rules in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:
 
 ## Project Status
 
-Per-phase write-ups: [`docs/phase-1.md`](docs/phase-1.md). Phase 2's arrives with its own PR.
+Per-phase write-ups: [`docs/phase-1.md`](docs/phase-1.md) and
+[`docs/phase-2.md`](docs/phase-2.md).
 
 ### Phase 1 — Foundation (complete)
 
@@ -100,6 +112,53 @@ Per-phase write-ups: [`docs/phase-1.md`](docs/phase-1.md). Phase 2's arrives wit
 - [x] `GET /items/:id/tag` and `POST /items/:id/tag/regenerate`
 - [x] Seed script (`prisma/seed.ts`) — categories, 2 users, demo items with QR tags
 - [x] GitHub Actions CI (lint / build / test / docker build)
+
+### Phase 2 — Workflows & Notifications (complete)
+
+Transfer and disposal approvals, item edit history, accessory bundles, and in-app
+notifications. Full write-up, decision register and manual walkthrough in
+[`docs/phase-2.md`](docs/phase-2.md).
+
+Every route is mounted twice — under `/api/v1` (the SDS path) and under its bare path, so
+Phase 1's paths keep working.
+
+**Requests & approvals track (Hayredin):**
+
+- [x] `POST /requests` — file a TRANSFER or DISPOSAL (Staff/Admin)
+- [x] `GET /requests`, `GET /requests/:id` — scoped: staff see their own, admin sees all
+- [x] `GET /requests/pending-count` — review-queue badge
+- [x] `POST /requests/:id/approve`, `POST /requests/:id/reject` — Admin only, one transaction
+- [x] `GET /items/:id/history` — edit trail, Staff/Admin, disposed items included
+- [x] Central error handler + `validate()` middleware + `HttpError`
+- [x] Approval services: `requestWorkflow`, `itemEditLog`, `notifications`, `itemVisibility`, `email`
+
+**Notifications & bundles track (John):**
+
+- [x] `GET /notifications` — own inbox only, `?unread=`, unread badge count
+- [x] `POST /notifications/:id/read` — scoped by `userId` (IDOR-safe)
+- [x] `POST /items/:id/accessories`, `DELETE /items/:id/accessories/:accessoryId`
+- [x] Cascade of an approved transfer/disposal onto a bundle's accessories
+
+**Deliberately not built:** a `canReview` flag (approval is ADMIN-only — the SRS leaves the
+reviewer role unresolved in §9 and ADMIN-only needs no migration), and real SMTP (`NOTIFY_EMAIL`
+gates a stub transport).
+
+**Schema:** unchanged. Phase 2 added no columns, no indexes and no migration.
+
+**Integration with Phase 1 (Items & Categories):** Phase 2 was written before that track
+landed, so merging the two needed a pass over three files. What changed and why is in
+[`docs/phase-2.md`](docs/phase-2.md) → "Integration with the Items track"; the short version:
+
+- `GET /items` filters through `activeItemsWhere()`, so a disposed item leaves the default
+  listing (SRS F7.2) and no query string can put it back.
+- `GET /items/:tagId` answers a disposed tag with `410 { "error": "This item is no longer in
+  service" }` for the public (F7.3) and the full record for Staff/Admin (F7.2).
+- `PUT /items/:id` writes its history through `buildEditLogRows` + `writeEditLogRows`, the same
+  helpers the approval path uses, so one edit and one approval produce identical rows.
+- `parentItemId` is rejected by `POST`/`PUT /items` — `POST /items/:id/accessories` is the only
+  writer, because that is where the bundle rules live.
+- Field filtering is `utils/filterItemFields.ts` (`sanitizeItem`), Phase 1's implementation.
+  Phase 2's duplicate `publicItemView` was deleted rather than reconciled.
 
 ---
 

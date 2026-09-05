@@ -20,11 +20,14 @@ vi.mock("../lib/prisma.js", () => {
         findUnique: vi.fn(),
         update: vi.fn(),
       },
-      $transaction: vi.fn((cbOrPromises: any) => {
+      $transaction: vi.fn((cbOrPromises: unknown) => {
         if (Array.isArray(cbOrPromises)) {
           return Promise.all(cbOrPromises);
         }
-        return cbOrPromises(prisma);
+        if (typeof cbOrPromises === "function") {
+          return cbOrPromises(prisma);
+        }
+        return Promise.resolve(cbOrPromises);
       }),
     },
   };

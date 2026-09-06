@@ -2,6 +2,7 @@ import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import { computeAuditResults } from "../services/auditCompletion.js";
 
 export const auditsRouter: Router = Router();
 
@@ -11,15 +12,11 @@ const createAuditSchema = z.object({
 });
 
 /**
- * Scan requests never carry a `result`. The scanner is only asserting that an
- * item was physically found during the walkthrough — the server always
- * records that as FOUND. Whether an unscanned item counts as MISSING, or a
- * scanned item counts as LOCATION_MISMATCH, is calculated later by
- * POST /audits/:id/complete (Phase 3 Step 2), by comparing the audit's scope
- * against which items were and weren't scanned. Letting the client submit
- * MISSING or LOCATION_MISMATCH directly would let it decide the audit's
- * outcome before the audit is even complete.
+ * The scan endpoint should always record scanned items as FOUND.
+ * The client should not submit MISSING or LOCATION_MISMATCH; those results should be determined when the audit is completed based on which items
+ * were scanned and their locations.
  */
+
 const createScanSchema = z.object({
   itemId: z.string().uuid("Valid itemId is required"),
   scannedAt: z.coerce.date().optional(),
@@ -71,7 +68,7 @@ auditsRouter.post(
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 /**
@@ -113,7 +110,6 @@ auditsRouter.post(
 
       const { itemId, scannedAt } = parsed.data;
 
-      // Verify AuditSession exists
       const session = await prisma.auditSession.findUnique({
         where: { id },
       });
@@ -122,14 +118,11 @@ auditsRouter.post(
         return;
       }
 
-      // A completed audit is a closed record — its report should never
-      // change after the fact. Reject further scans against it.
       if (session.completedAt !== null) {
         res.status(409).json({ error: "Audit session is already completed" });
         return;
       }
 
-      // Verify Item exists
       const item = await prisma.item.findUnique({
         where: { id: itemId },
       });
@@ -140,8 +133,6 @@ auditsRouter.post(
 
       const scanTimestamp = scannedAt ?? new Date();
 
-      // A single write — no transaction needed now that the item update is
-      // gone. lastAuditedAt is set by the completion endpoint instead.
       const auditResultRow = await prisma.auditItemResultRow.create({
         data: {
           auditSessionId: id,
@@ -158,5 +149,112 @@ auditsRouter.post(
     } catch (err) {
       next(err);
     }
-  }
+  },
+);
+
+/**
+ * POST /api/v1/audits/:id/complete
+ * POST /audits/:id/complete
+ *
+ * Finalizes a department audit from its scans. LOCATION and any other scope
+ * types remain unsupported here: scopeValue has no documented, parseable
+ * location format, so guessing one would misclassify inventory.
+ */
+auditsRouter.post(
+  "/:id/complete",
+  authenticate,
+  requireRole(["ADMIN", "STAFF"]),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Audit session ID is required" });
+        return;
+      }
+
+      const session = await prisma.auditSession.findUnique({ where: { id } });
+      if (!session) {
+        res.status(404).json({ error: "Audit session not found" });
+        return;
+      }
+      if (session.completedAt !== null) {
+        res.status(409).json({ error: "Audit session is already completed" });
+        return;
+      }
+      if (session.scopeType !== "DEPARTMENT") {
+        res.status(400).json({
+          error: `Unsupported scopeType for audit completion: ${session.scopeType}`,
+        });
+        return;
+      }
+
+      // A non-null Item.department cannot equal a null scopeValue, so this is
+      // an explicitly empty scope rather than an invalid Prisma filter.
+      const inScopeItems =
+        session.scopeValue === null
+          ? []
+          : await prisma.item.findMany({
+              where: { department: session.scopeValue, status: "ACTIVE" },
+              select: { id: true },
+            });
+      const scanRows = await prisma.auditItemResultRow.findMany({
+        where: { auditSessionId: id },
+        select: { itemId: true },
+      });
+      const scannedItemIds = [...new Set(scanRows.map((row) => row.itemId))];
+      const results = computeAuditResults(
+        inScopeItems.map((item) => item.id),
+        scannedItemIds,
+      );
+      const completedAt = new Date();
+
+      await prisma.$transaction([
+        ...(results.locationMismatch.length > 0
+          ? [
+              prisma.auditItemResultRow.updateMany({
+                where: { auditSessionId: id, itemId: { in: results.locationMismatch } },
+                data: { result: "LOCATION_MISMATCH" },
+              }),
+            ]
+          : []),
+        ...(results.missing.length > 0
+          ? [
+              prisma.auditItemResultRow.createMany({
+                data: results.missing.map((itemId) => ({
+                  auditSessionId: id,
+                  itemId,
+                  result: "MISSING" as const,
+                  scannedAt: null,
+                })),
+              }),
+            ]
+          : []),
+        ...(results.found.length > 0
+          ? [
+              prisma.item.updateMany({
+                where: { id: { in: results.found } },
+                data: { lastAuditedAt: completedAt },
+              }),
+            ]
+          : []),
+        prisma.auditSession.updateMany({
+          where: { id, completedAt: null },
+          data: { completedAt },
+        }),
+      ]);
+
+      res.status(200).json({
+        auditSessionId: id,
+        completedAt,
+        counts: {
+          found: results.found.length,
+          missing: results.missing.length,
+          locationMismatch: results.locationMismatch.length,
+        },
+        ...results,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
 );

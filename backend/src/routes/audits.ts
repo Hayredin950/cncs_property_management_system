@@ -10,9 +10,18 @@ const createAuditSchema = z.object({
   scopeValue: z.string().trim().optional().nullable(),
 });
 
+/**
+ * Scan requests never carry a `result`. The scanner is only asserting that an
+ * item was physically found during the walkthrough — the server always
+ * records that as FOUND. Whether an unscanned item counts as MISSING, or a
+ * scanned item counts as LOCATION_MISMATCH, is calculated later by
+ * POST /audits/:id/complete (Phase 3 Step 2), by comparing the audit's scope
+ * against which items were and weren't scanned. Letting the client submit
+ * MISSING or LOCATION_MISMATCH directly would let it decide the audit's
+ * outcome before the audit is even complete.
+ */
 const createScanSchema = z.object({
   itemId: z.string().uuid("Valid itemId is required"),
-  result: z.enum(["FOUND", "MISSING", "LOCATION_MISMATCH"]),
   scannedAt: z.coerce.date().optional(),
 });
 
@@ -69,7 +78,12 @@ auditsRouter.post(
  * POST /api/v1/audits/:id/scan
  * POST /audits/:id/scan
  *
- * Records a scanned item result linked to an active AuditSession.
+ * Records that an item was physically scanned during an in-progress audit.
+ * Always persists result: "FOUND" — the final classification (FOUND /
+ * MISSING / LOCATION_MISMATCH) is computed by the completion endpoint, not
+ * here. Does NOT touch Item.lastAuditedAt: that field is owned by audit
+ * completion (Phase 3 Step 2), because an audit that is later abandoned
+ * should never leave an item looking like it was audited.
  */
 auditsRouter.post(
   "/:id/scan",
@@ -97,15 +111,21 @@ auditsRouter.post(
         return;
       }
 
-      const { itemId, result, scannedAt } = parsed.data;
+      const { itemId, scannedAt } = parsed.data;
 
       // Verify AuditSession exists
       const session = await prisma.auditSession.findUnique({
         where: { id },
       });
-
       if (!session) {
         res.status(404).json({ error: "Audit session not found" });
+        return;
+      }
+
+      // A completed audit is a closed record — its report should never
+      // change after the fact. Reject further scans against it.
+      if (session.completedAt !== null) {
+        res.status(409).json({ error: "Audit session is already completed" });
         return;
       }
 
@@ -113,7 +133,6 @@ auditsRouter.post(
       const item = await prisma.item.findUnique({
         where: { id: itemId },
       });
-
       if (!item) {
         res.status(404).json({ error: "Item not found" });
         return;
@@ -121,26 +140,19 @@ auditsRouter.post(
 
       const scanTimestamp = scannedAt ?? new Date();
 
-      // Record scan result and update item's lastAuditedAt
-      const [auditResultRow] = await prisma.$transaction([
-        prisma.auditItemResultRow.create({
-          data: {
-            auditSessionId: id,
-            itemId,
-            result,
-            scannedAt: scanTimestamp,
-          },
-          include: {
-            item: true,
-          },
-        }),
-        prisma.item.update({
-          where: { id: itemId },
-          data: {
-            lastAuditedAt: scanTimestamp,
-          },
-        }),
-      ]);
+      // A single write — no transaction needed now that the item update is
+      // gone. lastAuditedAt is set by the completion endpoint instead.
+      const auditResultRow = await prisma.auditItemResultRow.create({
+        data: {
+          auditSessionId: id,
+          itemId,
+          result: "FOUND",
+          scannedAt: scanTimestamp,
+        },
+        include: {
+          item: true,
+        },
+      });
 
       res.status(201).json(auditResultRow);
     } catch (err) {

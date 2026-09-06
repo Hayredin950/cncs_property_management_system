@@ -3,6 +3,7 @@ import express, { type Application, type Request, type Response } from "express"
 import morgan from "morgan";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { accessoriesRouter } from "./routes/accessories.js";
+import { auditsRouter } from "./routes/audits.js";
 import authRouter from "./routes/auth.js";
 import { categoriesRouter } from "./routes/categories.js";
 import { itemHistoryRouter } from "./routes/itemHistory.js";
@@ -36,6 +37,7 @@ app.get(["/api/v1/health", "/health"], (req: Request, res: Response) => {
  * `GET /items/:id`, mounting order is the only thing that decides the winner, and
  * last-place means the specific routes keep working.
  */
+app.use(["/api/v1/audits", "/audits"], auditsRouter);
 app.use(["/api/v1/auth", "/auth"], authRouter);
 app.use(["/api/v1/categories", "/categories"], categoriesRouter);
 app.use(["/api/v1/items", "/items"], accessoriesRouter);

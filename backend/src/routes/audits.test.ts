@@ -12,14 +12,21 @@ vi.mock("../lib/prisma.js", () => {
       auditSession: {
         findUnique: vi.fn(),
         create: vi.fn(),
+        updateMany: vi.fn(),
       },
       auditItemResultRow: {
         create: vi.fn(),
+        findMany: vi.fn(),
+        updateMany: vi.fn(),
+        createMany: vi.fn(),
       },
       item: {
         findUnique: vi.fn(),
         update: vi.fn(),
+        findMany: vi.fn(),
+        updateMany: vi.fn(),
       },
+      $transaction: vi.fn(),
     },
   };
 });
@@ -243,6 +250,114 @@ describe("Audit Endpoints", () => {
           }),
         })
       );
+    });
+  });
+
+  describe("POST /audits/:id/complete", () => {
+    const sessionId = "session-123";
+
+    it("returns 401 when Authorization header is missing", async () => {
+      const res = await request(app).post(`/api/v1/audits/${sessionId}/complete`);
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 404 when the audit session does not exist", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .post(`/api/v1/audits/${sessionId}/complete`)
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe("Audit session not found");
+    });
+
+    it("returns 409 when the audit session is already completed", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+        id: sessionId,
+        completedAt: new Date(),
+      } as never);
+
+      const res = await request(app)
+        .post(`/api/v1/audits/${sessionId}/complete`)
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("Audit session is already completed");
+    });
+
+    it("returns 400 for an unsupported scope type", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+        id: sessionId,
+        completedAt: null,
+        scopeType: "LOCATION",
+        scopeValue: "Building A / Room 101",
+      } as never);
+
+      const res = await request(app)
+        .post(`/api/v1/audits/${sessionId}/complete`)
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Unsupported scopeType for audit completion: LOCATION");
+    });
+
+    it("completes an audit with found, missing, and mismatched items", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+        id: sessionId,
+        completedAt: null,
+        scopeType: "DEPARTMENT",
+        scopeValue: "CNCS",
+      } as never);
+      vi.mocked(prisma.item.findMany).mockResolvedValueOnce([
+        { id: "item-found" },
+        { id: "item-missing" },
+      ] as never);
+      vi.mocked(prisma.auditItemResultRow.findMany).mockResolvedValueOnce([
+        { itemId: "item-found" },
+        { itemId: "item-found" },
+        { itemId: "item-mismatch" },
+      ] as never);
+      vi.mocked(prisma.auditItemResultRow.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+      vi.mocked(prisma.auditItemResultRow.createMany).mockResolvedValueOnce({ count: 1 } as never);
+      vi.mocked(prisma.item.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+      vi.mocked(prisma.auditSession.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+      vi.mocked(prisma.$transaction).mockImplementationOnce(
+        ((operations: Promise<unknown>[]) => Promise.all(operations)) as never,
+      );
+
+      const res = await request(app)
+        .post(`/api/v1/audits/${sessionId}/complete`)
+        .set("Authorization", `Bearer ${staffToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        auditSessionId: sessionId,
+        counts: { found: 1, missing: 1, locationMismatch: 1 },
+        found: ["item-found"],
+        missing: ["item-missing"],
+        locationMismatch: ["item-mismatch"],
+      });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.auditItemResultRow.updateMany).toHaveBeenCalledWith({
+        where: { auditSessionId: sessionId, itemId: { in: ["item-mismatch"] } },
+        data: { result: "LOCATION_MISMATCH" },
+      });
+      expect(prisma.auditItemResultRow.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            auditSessionId: sessionId,
+            itemId: "item-missing",
+            result: "MISSING",
+            scannedAt: null,
+          },
+        ],
+      });
+      expect(prisma.item.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["item-found"] } },
+        data: { lastAuditedAt: expect.any(Date) },
+      });
     });
   });
 });

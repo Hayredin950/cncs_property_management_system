@@ -14,8 +14,8 @@ over.
 
 | Endpoint                      | Step | Owner  | Notes                                                                                                            |
 | ----------------------------- | ---- | ------ | ---------------------------------------------------------------------------------------------------------------- |
-| `POST /audits`                | 1    | Aman   | Starts a session with a scope (`scopeType`/`scopeValue`)                                                         |
-| `POST /audits/:id/scan`       | 1    | Aman   | Records an item as physically scanned. Always persists `FOUND` — see [The audit lifecycle](#the-audit-lifecycle) |
+| `POST /audits`                | 1    | Ammar  | Starts a session with a scope (`scopeType`/`scopeValue`)                                                         |
+| `POST /audits/:id/scan`       | 1    | Ammar  | Records an item as physically scanned. Always persists `FOUND` — see [The audit lifecycle](#the-audit-lifecycle) |
 | `POST /audits/:id/complete`   | 2    | Latera | Computes `MISSING` / `LOCATION_MISMATCH`, closes the session, updates `lastAuditedAt`                            |
 | `GET /reports/inventory`      | 3    | Naomi  | CSV, all items (ACTIVE + DISPOSED)                                                                               |
 | `GET /reports/audit/:auditId` | 3    | Naomi  | CSV, one row per scan/classification                                                                             |
@@ -30,7 +30,7 @@ were migrated in Phase 1 and sat unused until this phase.
 | ---- | ---------------------------------------------------------- | ---------------------------------------- |
 | 1    | Create audit sessions and record scans                     | ✅ Implemented, merged to `main`         |
 | 2    | Complete audits, calculate `MISSING` / `LOCATION_MISMATCH` | ✅ Implemented, merged to `main`         |
-| 3    | Inventory / audit / disposal CSV reports                   | ✅ Implemented, CI green, ready to merge |
+| 3    | Inventory / audit / disposal CSV reports                   | ✅ Implemented, merged to `main`         |
 
 ## End-to-end workflow
 
@@ -65,7 +65,7 @@ were migrated in Phase 1 and sat unused until this phase.
 
 ## Step 1 — Create audits and record scans
 
-**Owner:** Aman.
+**Owner:** Ammar.
 
 ### `POST /audits`
 
@@ -121,7 +121,7 @@ review of the original Step 1 submission, which initially accepted a client-supp
 
 ## Step 2 — Complete an audit and calculate results
 
-**Owner:** Laterat.
+**Owner:** Latera.
 
 ### `POST /audits/:id/complete`
 

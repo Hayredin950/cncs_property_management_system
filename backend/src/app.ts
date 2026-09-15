@@ -9,6 +9,7 @@ import { categoriesRouter } from "./routes/categories.js";
 import { itemHistoryRouter } from "./routes/itemHistory.js";
 import { itemsRouter } from "./routes/items.js";
 import { notificationsRouter } from "./routes/notifications.js";
+import { reportsRouter } from "./routes/reports.js";
 import { requestsRouter } from "./routes/requests.js";
 import { tagsRouter } from "./routes/tags.js";
 
@@ -45,6 +46,7 @@ app.use(["/api/v1/items", "/items"], itemHistoryRouter);
 app.use(["/api/v1/items", "/items"], tagsRouter);
 app.use(["/api/v1/items", "/items"], itemsRouter);
 app.use(["/api/v1/notifications", "/notifications"], notificationsRouter);
+app.use(["/api/v1/reports", "/reports"], reportsRouter);
 app.use(["/api/v1/requests", "/requests"], requestsRouter);
 
 /**

@@ -43,7 +43,6 @@ The last three are optional — the code falls back to exactly these values. Cop
 ```bash
 git clone <repo-url>
 cd <repo-name>
-pnpm install
 docker compose up --build
 ```
 
@@ -52,6 +51,11 @@ The backend will be available at `http://localhost:4000`. Check `/health` to con
 ### Running tests
 
 ```bash
+cd backend
+pnpm install
+pnpm exec prisma generate
+pnpm run lint
+pnpm run build
 pnpm test
 ```
 
@@ -74,8 +78,10 @@ Full rules in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:
 
 ## Project Status
 
-Per-phase write-ups: [`docs/phase-1.md`](docs/phase-1.md) and
-[`docs/phase-2.md`](docs/phase-2.md).
+Per-phase write-ups: [`docs/phase-1.md`](docs/phase-1.md),
+[`docs/phase-2.md`](docs/phase-2.md), and [`docs/phase-3.md`](docs/phase-3.md).
+Frontend developers should start with the consolidated
+[`docs/backend-handoff.md`](docs/backend-handoff.md).
 
 ### Phase 1 — Foundation (complete)
 
@@ -159,6 +165,36 @@ landed, so merging the two needed a pass over three files. What changed and why 
   writer, because that is where the bundle rules live.
 - Field filtering is `utils/filterItemFields.ts` (`sanitizeItem`), Phase 1's implementation.
   Phase 2's duplicate `publicItemView` was deleted rather than reconciled.
+
+### Phase 3 — Audit, reconciliation & reporting (complete)
+
+Audit sessions and CSV reporting are complete. The full decision record, report formats,
+and known gaps are in [`docs/phase-3.md`](docs/phase-3.md).
+
+- [x] `POST /audits` — start an audit session (Staff/Admin)
+- [x] `POST /audits/:id/scan` — record a physical scan as `FOUND` (Staff/Admin)
+- [x] `POST /audits/:id/complete` — calculate `FOUND`, `MISSING`, and
+  `LOCATION_MISMATCH`, then update `lastAuditedAt` only for found items
+- [x] `GET /reports/inventory?format=csv` — active and disposed inventory export
+- [x] `GET /reports/audit/:auditId?format=csv` — audit result export
+- [x] `GET /reports/disposals?format=csv` — approved-disposal export
+
+Reports are Staff/Admin-only and CSV-only. Inventory exports include disposed rows as
+required by F7.2; disposal exports read approved `Request` history rather than current
+item status. Date-range upper bounds include the entire UTC `dateTo` day.
+
+**Current intentional limits:** PDF export, real SMTP email delivery, `LOCATION` audit
+completion, audit-history listing, and Swagger/OpenAPI are not built. The backend handoff
+also records the remaining audit-report duplicate-scan behavior and the lack of a real test
+database.
+
+### API and frontend handoff
+
+Every API router is available at both its bare path and `/api/v1` (for example,
+`/auth/login` and `/api/v1/auth/login`). Use `/api/v1` for new frontend work. There is no
+generated OpenAPI/Swagger contract; use [`docs/backend-handoff.md`](docs/backend-handoff.md)
+for the complete endpoint inventory, access rules, seed credentials, field-filtering rule,
+and known rough edges.
 
 ---
 

@@ -1,18 +1,18 @@
+import crypto from "crypto";
 import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
-import crypto from "crypto";
-import type { Prisma } from "@prisma/client";
-import { prisma } from "../lib/prisma.js";
+import type { Prisma } from "../generated/prisma/client.js";
 import { httpError } from "../lib/httpError.js";
+import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
-  requireRole,
   optionalAuthenticate,
+  requireRole,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
-import { isPrivilegedViewer, sanitizeItem } from "../utils/filterItemFields.js";
 import { buildEditLogRows, writeEditLogRows } from "../services/itemEditLog.js";
 import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
+import { isPrivilegedViewer, sanitizeItem } from "../utils/filterItemFields.js";
 
 export const itemsRouter: Router = Router();
 
@@ -83,9 +83,7 @@ function isTagIdCollision(err: unknown): boolean {
   const candidate = err as { code?: unknown; meta?: { target?: unknown } };
   if (candidate.code !== "P2002") return false;
   const target = candidate.meta?.target;
-  return Array.isArray(target)
-    ? target.includes("tagId")
-    : String(target ?? "").includes("tagId");
+  return Array.isArray(target) ? target.includes("tagId") : String(target ?? "").includes("tagId");
 }
 
 async function createItemWithUniqueTag(data: Omit<Prisma.ItemUncheckedCreateInput, "tagId">) {
@@ -171,7 +169,7 @@ itemsRouter.get(
       ]);
 
       const sanitizedItems = items.map((item) =>
-        sanitizeItem(item as unknown as Record<string, unknown>, req.user)
+        sanitizeItem(item as unknown as Record<string, unknown>, req.user),
       );
 
       res.status(200).json({
@@ -186,7 +184,7 @@ itemsRouter.get(
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 itemsRouter.get(
@@ -237,7 +235,7 @@ itemsRouter.get(
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 itemsRouter.post(
@@ -272,7 +270,7 @@ itemsRouter.post(
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 itemsRouter.put(
@@ -362,7 +360,10 @@ itemsRouter.put(
         }
       }
 
-      if (typeof updates.categoryId === "string" && updates.categoryId !== existingItem.categoryId) {
+      if (
+        typeof updates.categoryId === "string" &&
+        updates.categoryId !== existingItem.categoryId
+      ) {
         const categories = await prisma.category.findMany({
           where: { id: { in: [existingItem.categoryId, updates.categoryId] } },
           select: { id: true, name: true },
@@ -413,12 +414,12 @@ itemsRouter.put(
 
           return tx.item.findUnique({ where: { id }, include: { category: true } });
         },
-        { maxWait: 5000, timeout: 15000 }
+        { maxWait: 5000, timeout: 15000 },
       );
 
       res.status(200).json(updatedItem);
     } catch (err) {
       next(err);
     }
-  }
+  },
 );

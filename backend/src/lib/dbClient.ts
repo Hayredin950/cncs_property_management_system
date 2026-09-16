@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "../generated/prisma/client.js";
 
 /**
  * Anything that can run a query: the long-lived `prisma` singleton exported from

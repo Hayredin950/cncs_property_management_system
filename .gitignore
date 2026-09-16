@@ -225,3 +225,4 @@ dmypy.json
 *.pid
 *.seed
 dump.rdb
+generated

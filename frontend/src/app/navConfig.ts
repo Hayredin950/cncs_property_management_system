@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, ScanLine, type LucideIcon } from "lucide-react";
+import { Bell, ClipboardList, LayoutDashboard, Package, ScanLine, ShieldCheck, Tag, type LucideIcon } from "lucide-react";
 import type { Role } from "../types/enums";
 
 export interface NavItem {
@@ -11,18 +11,26 @@ export interface NavItem {
   /**
    * Which phase introduced this destination. The shell filters to
    * `phase <= CURRENT_PHASE` so the nav never links to a route that doesn't
-   * exist yet — Phase 2/3 append entries here instead of restructuring the
+   * exist yet — Phase 3 appends entries here instead of restructuring the
    * shell (see docs/frontend-phase-1.md).
    */
   phase: 1 | 2 | 3;
+  /** Renders the live pending-review count next to the label (admins only — the queue is theirs). */
+  badge?: "pending-count";
 }
 
-export const CURRENT_PHASE = 1;
+/** Phase 2: nav shows every route the role can use; Phase 3's audit/reports join below. */
+export const CURRENT_PHASE = 2;
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, roles: ["ADMIN", "STAFF"], phase: 1 },
   { label: "Scan", to: "/scan", icon: ScanLine, roles: ["ADMIN", "STAFF"], phase: 1, emphasized: true },
   { label: "Items", to: "/items", icon: Package, roles: ["ADMIN", "STAFF"], phase: 1 },
+  { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["ADMIN", "STAFF"], phase: 2, badge: "pending-count" },
+  { label: "Notifications", to: "/notifications", icon: Bell, roles: ["ADMIN", "STAFF"], phase: 2 },
+  { label: "New item", to: "/items/new", icon: Tag, roles: ["ADMIN", "STAFF"], phase: 2 },
+  { label: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["ADMIN"], phase: 2 },
+  { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["ADMIN"], phase: 2 },
 ];
 
 export function visibleNavItems(role: Role): NavItem[] {

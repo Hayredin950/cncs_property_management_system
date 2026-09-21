@@ -1,7 +1,13 @@
 import type { Item } from "../types/item";
 import type { Category } from "../types/category";
 import type { AuthUser, LoginResponse, MeResponse } from "../types/user";
-import type { PendingCountResponse, RequestSummary, RequestsListResponse } from "../types/request";
+import type {
+  PendingCountResponse,
+  RequestDetail,
+  RequestSummary,
+  RequestsListResponse,
+} from "../types/request";
+import type { AppNotification, NotificationsListResponse } from "../types/notification";
 
 /**
  * Fixtures shaped exactly like the backend's responses (docs/backend-handoff.md
@@ -92,6 +98,30 @@ export const ME_RESPONSE: MeResponse = { user: ADMIN_USER };
 
 export const PENDING_COUNT: PendingCountResponse = { pendingCount: 2 };
 
+export const NOTIFICATIONS_LIST: NotificationsListResponse = {
+  notifications: [
+    {
+      id: "n-1",
+      code: "REQUEST_SUBMITTED",
+      message: 'Transfer request for "Dell Latitude 5440" needs review.',
+      relatedRequestId: "req-1",
+      isRead: false,
+      createdAt: "2026-09-20T10:00:00.000Z",
+    },
+    {
+      id: "n-2",
+      code: "REQUEST_APPROVED",
+      message: 'Your transfer request for "Old projector" was approved.',
+      relatedRequestId: null,
+      isRead: true,
+      createdAt: "2026-09-19T08:00:00.000Z",
+    },
+  ] as AppNotification[],
+  unreadCount: 1,
+  limit: 50,
+  offset: 0,
+};
+
 export const REQUEST_FIXTURE: RequestSummary = {
   id: "req-1",
   type: "TRANSFER",
@@ -115,4 +145,22 @@ export const REQUESTS_LIST: RequestsListResponse = {
   total: 1,
   limit: 20,
   offset: 0,
+};
+
+/**
+ * `GET /requests/:id` returns a richer shape than the list (`REQUEST_DETAIL_SELECT`
+ * in the backend): the item row carries its location fields, and `reviewedBy`
+ * appears (null while pending).
+ */
+export const REQUEST_DETAIL_FIXTURE: RequestDetail = {
+  ...REQUEST_FIXTURE,
+  item: {
+    ...REQUEST_FIXTURE.item,
+    department: "Computer Science",
+    building: "Building 1",
+    floor: "Floor 2",
+    room: "Room 204",
+    parentItemId: null,
+  },
+  reviewedBy: null,
 };

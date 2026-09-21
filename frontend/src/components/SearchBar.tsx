@@ -42,10 +42,21 @@ export function SearchBar({
   // Externally-changed `value` (e.g. the browser's Back button restoring a
   // URL-held filter) replaces the draft — derived during render via the
   // prev-state pattern rather than a setState-in-effect (react-hooks rule).
+  //
+  // The guard is what keeps the two-way binding from truncating typing: a
+  // debounce can fire mid-keystroke and push a *prefix* of the current text up
+  // to the URL, and taking that echo back down would cut the user's text short.
+  // A value that is a prefix of the draft (or identical to it) is therefore our
+  // own echo and is ignored; anything else — Back/Forward, a cleared filter — is
+  // a genuine external change and is adopted. `""` is always adopted so an
+  // external clear still resets the box.
   const [prevValue, setPrevValue] = useState(value);
   if (prevValue !== value) {
     setPrevValue(value);
-    setDraft((current) => (current === value ? current : value));
+    const isOwnEcho = value !== "" && draft.startsWith(value);
+    if (!isOwnEcho) {
+      setDraft((current) => (current === value ? current : value));
+    }
   }
 
   return (

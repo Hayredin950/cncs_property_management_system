@@ -3,8 +3,10 @@ import { cn } from "../lib/cn";
 
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label: string;
-  hint?: string;
-  error?: string;
+  // See Input.tsx: `| undefined` is required under `exactOptionalPropertyTypes`
+  // for callers forwarding an optional value.
+  hint?: string | undefined;
+  error?: string | undefined;
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(

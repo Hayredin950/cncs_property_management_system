@@ -8,8 +8,12 @@ import { cn } from "../lib/cn";
  */
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
-  hint?: string;
-  error?: string;
+  // Explicit `| undefined`: this project uses `exactOptionalPropertyTypes`, so
+  // call sites that forward a `string | undefined` (e.g. `errors.x?.message`, or
+  // a picker passing its own optional `error` through) need the union to be part
+  // of the declared type.
+  hint?: string | undefined;
+  error?: string | undefined;
   leadingIcon?: ReactNode;
 }
 

@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchPendingCount, fetchRequests } from "../api/requests";
-import type { RequestsListQuery } from "../types/request";
+import type { RequestListQuery } from "../types/request";
 
-export function useRequests(query: RequestsListQuery) {
+export function useRequests(query: RequestListQuery) {
   return useQuery({
     queryKey: ["requests", query],
     queryFn: ({ signal }) => fetchRequests(query, signal),

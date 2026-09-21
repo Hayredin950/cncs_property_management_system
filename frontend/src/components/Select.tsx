@@ -12,8 +12,10 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   options: SelectOption[];
   /** Rendered as a disabled first option — e.g. "All categories". */
   placeholder?: string;
-  hint?: string;
-  error?: string;
+  // See Input.tsx: `| undefined` is required under `exactOptionalPropertyTypes`
+  // for callers forwarding an optional value.
+  hint?: string | undefined;
+  error?: string | undefined;
 }
 
 /**

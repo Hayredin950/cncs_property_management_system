@@ -1,5 +1,5 @@
 import { ClipboardList } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
@@ -102,10 +102,11 @@ export function RequestsListPage() {
       ) : (
         <ul className="flex flex-col gap-3">
           {requestsQuery.data.requests.map((request) => (
-            <li
-              key={request.id}
-              className="flex flex-col gap-2 rounded-md border border-slate-200 bg-white p-4 shadow-sm"
-            >
+            <li key={request.id}>
+              <Link
+                to={`/requests/${request.id}`}
+                className="flex flex-col gap-2 rounded-md border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
+              >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-900">{request.item.name}</p>
@@ -120,6 +121,7 @@ export function RequestsListPage() {
               <p className="text-xs text-slate-400">
                 {request.requestedBy.fullName} · {formatRelativeTime(request.createdAt)}
               </p>
+              </Link>
             </li>
           ))}
         </ul>

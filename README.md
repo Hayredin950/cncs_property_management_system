@@ -11,7 +11,7 @@ A standalone property/asset management system built as an internship deliverable
 - **Package manager:** pnpm
 - **Containerization:** Docker (from commit one)
 - **CI/CD:** GitHub Actions — lint, build, test, docker build on every push
-- **Frontend (planned):** React + Vite + Tailwind CSS
+- **Frontend:** React 19 + Vite + TypeScript (strict) + Tailwind CSS 4 — Phase 1 shipped, see [`docs/frontend-phase-1.md`](docs/frontend-phase-1.md)
 
 ## Getting Started
 
@@ -46,7 +46,54 @@ cd <repo-name>
 docker compose up --build
 ```
 
-The backend will be available at `http://localhost:4000`. Check `/health` to confirm it's running.
+The backend will be available at `http://localhost:4000`, the frontend at
+`http://localhost:5173`. Check `/health` to confirm the backend is running.
+
+### Running the frontend
+
+The frontend runs as the `frontend` service of the same `docker compose up` —
+no second command, no extra steps beyond the root `.env`. To work on it without
+Docker:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev          # http://localhost:5173
+```
+
+Frontend environment variables live in `frontend/.env.example`:
+
+```bash
+VITE_API_BASE_URL=http://localhost:4000   # baked into the browser bundle at dev/build time
+```
+
+The client appends the `/api/v1` prefix itself — set the base URL **without** it.
+
+> **`PUBLIC_BASE_URL` must point at the frontend origin.** The backend encodes
+> `${PUBLIC_BASE_URL}/item/:tagId` inside every printed QR sticker (default
+> `http://localhost:5173`). If the frontend's host ever changes, change
+> `PUBLIC_BASE_URL` with it or every existing sticker scans to a dead page —
+> and nothing in CI catches that, because both sides are behaving correctly.
+
+Frontend checks (CI runs all of these on every PR):
+
+```bash
+cd frontend
+pnpm run lint     # eslint (TS, react-hooks, jsx-a11y)
+pnpm run build    # tsc -b + vite build — type-checks test files too
+pnpm test         # vitest + React Testing Library + MSW
+```
+
+Seed credentials for the staff/admin screens: `admin@cncs.aau.edu.et` /
+`Admin123!` and `staff@cncs.aau.edu.et` / `Staff123!`.
+
+What ships in each frontend phase, and the full screen-by-screen contract, is
+in [`docs/Frontend_Three_Phase_Plan.md`](docs/Frontend_Three_Phase_Plan.md),
+[`docs/frontend-plan.md`](docs/frontend-plan.md), and
+[`docs/frontend-design-system.md`](docs/frontend-design-system.md). Phase 1's
+write-up — where the API client, auth shell, field-visibility rule, and the
+QR/`PUBLIC_BASE_URL` dependency live — is
+[`docs/frontend-phase-1.md`](docs/frontend-phase-1.md).
 
 ### Running tests
 

@@ -1,0 +1,107 @@
+/**
+ * Design tokens — implements docs/frontend-design-system.md §3.5 (colour) and §4/§5
+ * (fonts, radius). Treat this file as shared/frozen the same way `schema.prisma` is
+ * treated in CONTRIBUTING.md (see the design doc's §14): a new colour or spacing
+ * value is its own PR, announced first, because every component in every phase
+ * depends on the same palette.
+ *
+ * Values here alias Tailwind's own default scales (blue/slate/teal/emerald/amber/
+ * orange/red/violet/sky) — nothing here is a custom hex invention, this file just
+ * says which named shade means what. Components should reach for the Tailwind
+ * utility (`bg-brand-600`) generated from these variables, not the hex value
+ * directly, except in the handful of non-Tailwind contexts noted inline below.
+ */
+@import "tailwindcss";
+
+@theme {
+  /* Brand — Tailwind `blue` */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+
+  /* Accent — Tailwind `teal` — reserved for the scan/QR flagship flow (§3.1) */
+  --color-accent-50: #f0fdfa;
+  --color-accent-100: #ccfbf1;
+  --color-accent-200: #99f6e4;
+  --color-accent-500: #14b8a6;
+  --color-accent-600: #0d9488;
+  --color-accent-700: #0f766e;
+
+  /* Semantic: success */
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-200: #a7f3d0;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+
+  /* Semantic: warning — text always uses -700, per the "50/600/700 rule" (§3.1) */
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  /* Semantic: danger */
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-200: #fecaca;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+
+  /* Semantic: info */
+  --color-info-50: #f0f9ff;
+  --color-info-100: #e0f2fe;
+  --color-info-200: #bae6fd;
+  --color-info-500: #0ea5e9;
+  --color-info-600: #0284c7;
+  --color-info-700: #0369a1;
+
+  /* Condition-ramp extras not reused elsewhere (§3.2 "Damaged" / role "Admin") */
+  --color-orange-50: #fff7ed;
+  --color-orange-100: #ffedd5;
+  --color-orange-500: #f97316;
+  --color-orange-600: #ea580c;
+  --color-orange-700: #c2410c;
+
+  --color-violet-50: #f5f3ff;
+  --color-violet-100: #ede9fe;
+  --color-violet-500: #8b5cf6;
+  --color-violet-600: #7c3aed;
+  --color-violet-700: #6d28d9;
+
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Radius scale — §5.2 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+}
+
+/*
+ * Tabular figures for money/dates in tables/lists (§4) — Inter supports this via
+ * its own OpenType features, no extra font weight needed.
+ */
+.tabular-nums {
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tag IDs (§4): mono, uppercase, tracked-out so 0/O and 1/I/l read apart. */
+.tag-id {
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}

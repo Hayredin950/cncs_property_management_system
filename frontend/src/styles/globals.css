@@ -1,0 +1,76 @@
+@import "./tokens.css";
+
+/* Self-hosted fonts (§4 of the design doc) — no Google Fonts runtime request. */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+
+  /* Focus ring (§7): 2px brand-600, 2px offset, on every focusable element, always.
+     `outline: none` with no replacement is banned — this is the one global override
+     that makes that rule impossible to forget per component. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* §12: first focusable element on every page, visually hidden until focused. */
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50;
+    @apply focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold;
+    @apply focus:text-brand-700 focus:shadow-lg;
+  }
+
+  /* §7: honor prefers-reduced-motion globally rather than per-component. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Bottom tab bar safe-area handling for notched iPhones (§13). */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Print stylesheet for the tag sticker view (§10.6, §8 of frontend-plan.md). Scoped to
+   [data-print-tag] so nothing else on the page is affected when a staff/admin user
+   prints. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  [data-print-tag],
+  [data-print-tag] * {
+    visibility: visible;
+  }
+
+  [data-print-tag] {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+}

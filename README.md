@@ -214,6 +214,23 @@ Schema lives in `backend/prisma/schema.prisma`. Migrations run against Neon via 
 
 Phase 2 changed no models, so pulling it needs no migration and no `prisma:generate`.
 
+### Deployment
+
+Both halves are deployed on Vercel, built from this repository, with auto-deploys
+on push to `main`:
+
+| Piece | URL |
+| --- | --- |
+| Frontend | https://cncs-pms-web-hayredins-projects.vercel.app |
+| Backend API | https://cncs-pms-api-hayredins-projects.vercel.app |
+
+The backend runs as a **single serverless function** (`backend/api/index.js`)
+rather than a long-lived process, because Vercel has none. What that changes,
+the three failures it caused, and every environment variable needed are in
+[`docs/deployment.md`](docs/deployment.md) — read that before touching either
+project's settings, and note especially that `PUBLIC_BASE_URL` is baked into
+printed QR stickers.
+
 ## Branching & workflow
 
 Full rules in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:

@@ -93,6 +93,12 @@ including why they are JPEG rather than PNG and why they must stay well under
 300 KB (WhatsApp silently drops an `og:image` that is too heavy and falls back to
 a bare text link).
 
+Both sit on `frontend/scripts/og/gen.png`, a generated art piece — dark navy and
+clear on the left, a blue glow upper-right. The art deliberately contains no text
+and no crest; the real seal and the real type are composited on top by Chromium,
+because image models produce garbled lettering and invented university seals. The
+finished files are ~168 KB and ~160 KB.
+
 An item **with** a photograph does not use either file. Its `og:image` is the
 photo itself, with a Cloudinary transformation inserted into the delivery URL
 (`w_1200,h_630,c_fill,g_auto,q_auto,f_jpg`) so the CDN does the crop, the smart
@@ -172,15 +178,15 @@ inputs that would upgrade them from *consistent with the brand* to *designed*,
 in rough order of value:
 
 1. **One rights-cleared AAU or CNCS campus photograph**, landscape, at least
-   2400×1260, ideally 3000+ wide. Used as a duotone panel across the right
-   two-thirds of the default card, behind the crest and headline. This is the
-   single change that would stop the card reading as a template. Must be a photo
-   the university is happy to have redistributed by third parties — it will be
+   2400×1260, ideally 3000+ wide, as a replacement for the generated art layer
+   (`frontend/scripts/og/gen.png`). That slot now holds a generated piece, which
+   is the single change that currently keeps the card reading as a *designed*
+   template rather than a photograph of the place. Must be a photo the
+   university is happy to have redistributed by third parties — it will be
    re-hosted by every platform that renders the preview.
 2. **A high-resolution crest with transparency**, at least 1024×1024, SVG
-   preferred. The current asset is the 427×427 PNG from `aau.edu.et`. It is
-   sufficient as used (the card renders the seal at 96px, so it is downscaled,
-   not upscaled) but an SVG would remove the ceiling for larger formats.
+   preferred. The card renders the seal at 150px from the SVG already in
+   `public/aau/`, so the ceiling only matters for a print or app-icon format.
 3. **The `Noto Sans Ethiopic` font file (regular + medium).** The cards
    currently carry Amharic only where it is burnt into the crest artwork,
    because the card is rendered without that font installed and Ethiopic text

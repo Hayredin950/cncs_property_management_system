@@ -8,13 +8,18 @@
  * `brand-100 #b1d5ea`, `accent-600 #d9454c`), copied rather than imported
  * because a `@theme` block is not available outside the Tailwind build.
  *
- * Everything here is chosen to survive compression. The cards have to come in
- * well under ~300 KB: WhatsApp silently drops an `og:image` that heavy and
- * falls back to a bare text link, which is precisely the failure this whole
- * feature exists to avoid. That rules out high-frequency texture — an earlier
- * revision used a fine diagonal hairline weave and the PNG came out at 490 KB.
- * Smooth gradients, large flat shapes and the vector crest compress; dots and
- * hairlines do not.
+ * The base layer is `gen.png` — a generated piece of art kept beside this file,
+ * not in `public/`, because it is a render *source*: only the `.jpg` output is
+ * meant to be downloaded by a crawler. Everything the copy needs (crest, type,
+ * badge) is drawn by Chromium on top of it, so the art itself deliberately
+ * contains no text and no invented crest.
+ *
+ * Everything here is still chosen to survive compression. The cards have to
+ * come in well under ~300 KB: WhatsApp silently drops an `og:image` that heavy
+ * and falls back to a bare text link, which is precisely the failure this whole
+ * feature exists to avoid. That is why the art is a smooth, low-frequency image
+ * over a flat scrim, and why the type sits on top as flat colour rather than
+ * over a photograph.
  */
 
 @font-face {
@@ -44,17 +49,15 @@ body {
 }
 
 /*
- * Layered rather than flat, so the card does not read as a plain colour swatch
- * at thumbnail size — Telegram renders these at about 340px wide, where a flat
- * navy rectangle looks like a missing image:
+ * Three vertical zones, `space-between`, on a flat navy base:
  *
- *   1. a soft blue glow top-right, which is what gives it depth behind the
- *      watermark crest;
- *   2. one wide, low-contrast diagonal sheen (not a fine weave — see file
- *      comment on compression);
- *   3. the navy base, lightest at the top and darkest at the bottom, which is
- *      deliberate: the two-colour foot bar sits on the darkest end, and the
- *      AAU blue is only legible against it if the bottom is dark.
+ *   top     the university seal
+ *   middle  eyebrow + headline (the block that carries the message)
+ *   bottom  wordmark, with the QR badge in the opposite corner
+ *
+ * The navy base is a *fallback*. Every card is layered with `--art` below, but
+ * the flat colour means a missing or failed-to-load `gen.png` still renders a
+ * legible card rather than white text on white.
  */
 .card {
   position: relative;
@@ -63,161 +66,134 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 64px 72px 0;
+  padding: 64px;
   color: #fff;
-  background:
-    radial-gradient(760px 540px at 90% 4%, rgba(2, 108, 169, 0.6), transparent 64%),
-    linear-gradient(
-      45deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.045) 26%,
-      rgba(255, 255, 255, 0.045) 40%,
-      transparent 66%
-    ),
-    linear-gradient(180deg, #015484 0%, #014166 46%, #012a42 100%);
-}
-
-/* The university crest, blown up and dropped to a watermark behind the copy.
-   The seal is the one mark that says "official" faster than any wordmark, and
-   at 7.5% opacity it carries the brand without competing with the headline. */
-.watermark {
-  position: absolute;
-  right: -70px;
-  bottom: -110px;
-  width: 520px;
-  opacity: 0.075;
-}
-
-/* --- top lockup: crest · divider · two-line wordmark --------------------- */
-
-.lockup {
-  display: flex;
-  align-items: center;
-  gap: 26px;
+  background-color: #012a42;
 }
 
 /*
+ * The art, plus two scrims.
+ *
+ * `gen.png` is dark navy on the left and carries its glow on the right — which
+ * is why the copy column sits on the left. The scrims do not trust that though:
+ * the left one runs to nearly opaque so white type holds its contrast even if
+ * the art is later swapped for something brighter, and the top one keeps the
+ * seal legible where the glow is strongest. Both fade to fully transparent, so
+ * the right two-thirds of the art reads as intended.
+ *
+ * `cover` on a 1200x630 box crops a 1733x907 source by under a percent, so the
+ * framing is effectively exact and no focal detail is lost.
+ */
+.card--art {
+  background-image:
+    linear-gradient(
+      90deg,
+      rgba(1, 18, 32, 0.94) 0%,
+      rgba(1, 18, 32, 0.8) 34%,
+      rgba(1, 18, 32, 0.34) 60%,
+      rgba(1, 18, 32, 0) 80%
+    ),
+    linear-gradient(180deg, rgba(1, 18, 32, 0.5) 0%, rgba(1, 18, 32, 0) 34%),
+    url("gen.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* --- top: the seal ------------------------------------------------------- */
+
+/*
  * `public/aau/aau-logo-white.svg` is the university's *stacked* lockup: the
- * seal with its own Amharic + Latin wordmark baked in underneath. Used as-is
- * beside live wordmark text it renders "ADDIS ABABA UNIVERSITY" twice, once
- * illegibly small. So it is oversized and cropped to the circular seal alone.
+ * seal with its own Amharic + Latin wordmark baked in underneath. Placed as-is
+ * it would say "Addis Ababa University" twice, once illegibly small, so it is
+ * oversized inside a 150x150 window and offset so only the circular seal shows.
  *
  * The geometry is from the SVG's own viewBox (`0 0 308.85 279.57`): the seal is
  * the r=104.49 circle centred at (156.91, 104.49), so it occupies x 52.42–261.40
  * and y 0–208.98 — 67.66% of the width, 74.80% of the height, with transparent
- * padding on all sides. Scale 96/208.98 = 0.4594 gives:
- *   full SVG  308.85 x 279.57 -> 141.88 x 128.44 px
- *   seal offset              -> -24.08 px left, 0 top
- * which lands the seal at exactly 96x96 inside a 96x96 window.
+ * padding on all sides. Scale 150/208.98 = 0.7178 gives:
+ *   full SVG  308.85 x 279.57 -> 221.68 x 200.69 px
+ *   seal offset              -> -37.62 px left, 0 top
+ * which lands the seal at exactly 150x150 inside a 150x150 window.
  */
-.seal {
+.crest {
   position: relative;
   flex: none;
-  width: 96px;
-  height: 96px;
+  width: 150px;
+  height: 150px;
   overflow: hidden;
 }
 
-.seal img {
+.crest img {
   position: absolute;
   top: 0;
-  left: -24.08px;
-  width: 141.88px;
-  height: 128.44px;
+  left: -37.62px;
+  width: 221.68px;
+  height: 200.69px;
 }
 
-.lockup .rule {
-  width: 2px;
-  height: 88px;
-  background: rgba(255, 255, 255, 0.22);
+/* --- middle: eyebrow + headline ------------------------------------------ */
+
+.headline {
+  /* The copy never crosses into the art's bright right-hand third, so the
+     scrim only has to protect this much of the width. */
+  max-width: 760px;
 }
 
-.lockup .lines {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.university {
-  font-size: 21px;
+.eyebrow {
+  font-size: 30px;
   font-weight: 620;
   letter-spacing: 0.19em;
   color: #b1d5ea;
 }
 
-.college {
-  font-size: 25px;
-  font-weight: 500;
-  letter-spacing: 0.005em;
-  color: #ffffff;
-}
-
-.college-sub {
-  font-size: 17px;
-  font-weight: 440;
-  letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.62);
-}
-
-/* --- headline block ------------------------------------------------------ */
-
-.headline {
-  margin-top: 4px;
-}
-
 .headline h1 {
-  font-size: 58px;
+  /* Two lines at this width — "Campus property," / "verified by QR". Large
+     enough to be the focal point at WhatsApp's ~340px thumbnail, small enough
+     to stay inside the left column on one wrap. */
+  margin-top: 22px;
+  font-size: 78px;
   font-weight: 680;
   line-height: 1.06;
   letter-spacing: -0.021em;
-  max-width: 15ch;
 }
 
-.headline p {
-  margin-top: 16px;
-  font-size: 23px;
-  font-weight: 420;
-  letter-spacing: 0.004em;
-  color: rgba(255, 255, 255, 0.78);
-  max-width: 32ch;
-}
-
-/* --- bottom: capability pills + the two-colour AAU foot bar -------------- */
+/* --- bottom: wordmark + QR badge ----------------------------------------- */
 
 .footer {
-  position: relative;
-}
-
-.pills {
   display: flex;
-  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
 }
 
-.pill {
-  padding: 11px 20px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
-  border-radius: 999px;
-  font-size: 17px;
-  font-weight: 520;
-  letter-spacing: 0.03em;
-  color: rgba(255, 255, 255, 0.9);
-  white-space: nowrap;
+.footer-title {
+  font-size: 34px;
+  font-weight: 440;
+  letter-spacing: 0.004em;
+  color: rgba(255, 255, 255, 0.76);
 }
 
-/* The university's two brand colours, edge to edge. A single 6px rule is
-   enough to make the card read as AAU's own artwork rather than a screenshot. */
-.footbar {
+/*
+ * The badge is the one element that says "this is scan-and-go" without a
+ * sentence, and it is what makes the right half of the card purposeful rather
+ * than just empty art. A hairline outline compresses far better than a filled
+ * shape and reads correctly on both a light and a dark background.
+ */
+.qr-badge {
+  flex: none;
+  width: 90px;
+  height: 90px;
   display: flex;
-  height: 6px;
-  margin: 34px -72px 0;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid rgba(255, 255, 255, 0.5);
+  border-radius: 18px;
 }
 
-.footbar .blue {
-  flex: 5;
-  background: #026ca9;
+.qr-badge svg {
+  width: 50px;
+  height: 50px;
+  display: block;
 }
 
-.footbar .red {
-  flex: 2;
-  background: #d9454c;
-}

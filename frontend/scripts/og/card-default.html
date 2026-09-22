@@ -4,7 +4,12 @@
   the site itself (the home page, and any item whose record has no photograph).
 
   Rendered to `public/og/default.jpg` at exactly 1200x630 — the 1.91:1 ratio
-  every one of those platforms crops a large preview to. See README.md.
+  every one of those platforms crops a large preview to.
+
+  The background is `gen.png`, a generated art piece. It is deliberately free of
+  text and of any crest, because a diffusion model renders both badly: the type
+  and the seal are drawn here instead, as real vector/text over the art. See
+  README.md for the exact positions and the render command.
 -->
 <html lang="en">
   <head>
@@ -12,33 +17,37 @@
     <link rel="stylesheet" href="card.css" />
   </head>
   <body>
-    <div class="card">
-      <img class="watermark" src="../../public/aau/aau-logo-white.svg" alt="" />
-
-      <div class="lockup">
-        <span class="seal"><img src="../../public/aau/aau-logo-white.svg" alt="" /></span>
-        <div class="rule"></div>
-        <div class="lines">
-          <div class="university">ADDIS ABABA UNIVERSITY</div>
-          <div class="college">College of Natural and Computational Sciences</div>
-          <div class="college-sub">Property Management System</div>
-        </div>
-      </div>
+    <div class="card card--art">
+      <div class="crest"><img src="../../public/aau/aau-logo-white.svg" alt="" /></div>
 
       <div class="headline">
-        <h1>Campus property, verified by QR.</h1>
-        <p>Scan a tag or search the register to see any asset's record.</p>
+        <div class="eyebrow">ADDIS ABABA UNIVERSITY</div>
+        <h1>Campus property, verified by QR</h1>
       </div>
 
       <div class="footer">
-        <div class="pills">
-          <div class="pill">QR-tagged</div>
-          <div class="pill">Audit-ready</div>
-          <div class="pill">Searchable</div>
-        </div>
-        <div class="footbar">
-          <div class="blue"></div>
-          <div class="red"></div>
+        <div class="footer-title">CNCS Property Management System</div>
+
+        <!-- A QR finder-pattern mark rather than a literal encoded code: it is
+             the shape people recognise, it stays crisp at badge size, and a
+             real code would be unscannable at 50px anyway. -->
+        <div class="qr-badge">
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <g fill="none" stroke="#fff" stroke-width="3">
+              <rect x="3" y="3" width="15" height="15" rx="2.5" />
+              <rect x="30" y="3" width="15" height="15" rx="2.5" />
+              <rect x="3" y="30" width="15" height="15" rx="2.5" />
+            </g>
+            <g fill="#fff">
+              <rect x="8.5" y="8.5" width="4" height="4" />
+              <rect x="35.5" y="8.5" width="4" height="4" />
+              <rect x="8.5" y="35.5" width="4" height="4" />
+              <rect x="30" y="30" width="5" height="5" />
+              <rect x="39" y="30" width="5" height="5" />
+              <rect x="30" y="39" width="5" height="5" />
+              <rect x="39" y="39" width="5" height="5" />
+            </g>
+          </svg>
         </div>
       </div>
     </div>

@@ -174,14 +174,48 @@
  */
 .aau-wordmark {
   line-height: 1.375;
+  /*
+   * The lockup is exactly two lines — the Amharic name, then the Latin one — so
+   * neither line is allowed to wrap. On a phone the alternative is three or four
+   * lines, which stops reading as a lockup at all; the responsive sizes below
+   * are what hold it to two.
+   */
+  white-space: nowrap;
 }
 
+/*
+ * The two lines are a responsive pair, and these classes own their *size* as well
+ * as their tracking — the values only read correctly together, and this file is
+ * unlayered CSS, so a `text-[…]` / `tracking-[…]` utility in the component would
+ * lose to it anyway.
+ *
+ * The phone values exist for one reason: the whole lockup shares a ~360px bar
+ * with the 40px crest and the trailing controls, and aau.edu.et's desktop
+ * tracking — `3px` on a 17px Amharic line — is what pushed it past the edge.
+ */
 .aau-wordmark-amharic {
-  letter-spacing: 3px;
-  margin-top: -4px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  margin-top: -3px;
 }
 
 .aau-wordmark-latin {
-  letter-spacing: 0.025em;
-  margin-top: -5px;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  margin-top: -4px;
+}
+
+/* `sm` and up: the original aau.edu.et lockup metrics, unchanged. */
+@media (min-width: 640px) {
+  .aau-wordmark-amharic {
+    font-size: 18px;
+    letter-spacing: 3px;
+    margin-top: -4px;
+  }
+
+  .aau-wordmark-latin {
+    font-size: 13.5px;
+    letter-spacing: 0.025em;
+    margin-top: -5px;
+  }
 }

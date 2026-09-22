@@ -19,12 +19,17 @@ import { cn } from "../../lib/cn";
  * from aau.edu.et), not a redraw — a redrawn seal is exactly the thing that
  * makes a clone recognisable.
  *
- * Below `sm` the wordmark (and its blue divider) is dropped and only the crest
- * is shown. The lockup is wide — a tracked-out Amharic line plus the Latin line
- * — and on a phone-width bar it left the crest and the trailing controls
- * fighting over the same pixels, so the header read as cramped rather than
- * branded. The crest alone still carries the identity, and it does not move:
- * dropping the wordmark only shortens the bar's right edge.
+ * At every width the lockup is the crest, the divider and the two-line wordmark
+ * — never a truncated crest-only version. What changes on a phone is the
+ * wordmark's *scale*, not its content: `tokens.css` steps the pair down below
+ * `sm` and holds each line to one (`white-space: nowrap`), so the full Amharic
+ * name sits above the full Latin one instead of reflowing into three lines.
+ * "SINCE 1950" is the one thing that is genuinely dropped there — it is a third
+ * line, and on a phone it costs more height than it earns.
+ *
+ * `shrink-0` on both the crest and the wordmark is load-bearing: the header is a
+ * `justify-between` flex row, and without it the trailing controls squeeze the
+ * lockup rather than the lockup pushing back.
  */
 export function AauLogo({ className }: { className?: string }) {
   return (
@@ -41,15 +46,16 @@ export function AauLogo({ className }: { className?: string }) {
         /* The mark is decorative here: the wrapping link already carries the
            accessible name, so a second announcement of "Addis Ababa University"
            would just be noise. */
-        className="h-10 w-auto sm:h-12 md:h-[52px]"
+        className="h-10 w-auto shrink-0 sm:h-12 md:h-[52px]"
       />
 
-      <div className="hidden min-h-8 flex-col justify-center border-l-2 border-brand-600 pl-2 sm:flex sm:min-h-12 sm:pl-4">
+      <div className="flex min-h-8 shrink-0 flex-col justify-center border-l-2 border-brand-600 pl-2 sm:min-h-12 sm:pl-4">
         <div>
-          <div className="aau-wordmark aau-wordmark-amharic text-[17px] text-brand-600 sm:text-[18px]">
+          {/* Sizes and tracking come from `tokens.css` — see the note there. */}
+          <div className="aau-wordmark aau-wordmark-amharic text-brand-600">
             አዲስ አበባ ዩኒቨርሲቲ
           </div>
-          <div className="aau-wordmark aau-wordmark-latin text-[13px] font-medium text-accent-600 sm:text-[13.5px]">
+          <div className="aau-wordmark aau-wordmark-latin font-medium text-accent-600">
             ADDIS ABABA UNIVERSITY
           </div>
         </div>

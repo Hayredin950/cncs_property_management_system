@@ -15,7 +15,45 @@ import { tagsRouter } from "./routes/tags.js";
 
 const app: Application = express();
 
-app.use(cors());
+/**
+ * CORS allowlist.
+ *
+ * `CORS_ORIGINS` is a comma-separated list of the browsable frontend origins
+ * (e.g. `https://cncs-pms.vercel.app,https://cncs.aau.edu.et`).
+ *
+ * **Unset means "allow every origin"** — deliberately the previous behaviour, so
+ * local dev (5173/5174, whatever port Vite lands on), the docker compose stack
+ * and the test suite need no configuration and nothing about them changes. Lock
+ * it down by *setting* the variable in production; see docs/deployment.md §8.
+ *
+ * Note what this does and does not buy: the browser is the enforcer, so this stops
+ * other sites from calling the API with a signed-in user's token. It does not make
+ * the API private — `authenticate` does that.
+ */
+const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  CORS_ORIGINS.length > 0
+    ? cors({
+        origin(origin, callback) {
+          // No `Origin` header at all means a same-origin fetch, curl, or a
+          // server-to-server call. There is no browser cross-origin decision to
+          // make, so there is nothing to allow or deny.
+          if (!origin || CORS_ORIGINS.includes(origin)) {
+            callback(null, true);
+            return;
+          }
+          // Deny by omitting the headers rather than by throwing: a throw would
+          // surface through `errorHandler` as a 500, which reads as "the server is
+          // broken" for what is a deliberate policy decision.
+          callback(null, false);
+        },
+      })
+    : cors(),
+);
 app.use(express.json());
 app.use(morgan("dev"));
 

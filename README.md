@@ -231,6 +231,14 @@ the three failures it caused, and every environment variable needed are in
 project's settings, and note especially that `PUBLIC_BASE_URL` is baked into
 printed QR stickers.
 
+Links to this app render a real preview card when pasted into WhatsApp,
+Telegram, Slack or Discord: the item's own name, location and photograph for a
+`/item/:tagId` link, and the branded AAU card for everything else. Crawlers do
+not execute JavaScript, so this is impossible to do from the React app —
+`frontend/vercel.json` rewrites their requests to a Vercel Function instead.
+[`docs/social-previews.md`](docs/social-previews.md) covers how it works and the
+one build-time variable it needs.
+
 ## Branching & workflow
 
 Full rules in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:

@@ -9,8 +9,64 @@
     <meta name="theme-color" content="#026ca9" />
     <meta
       name="description"
-      content="Addis Ababa University CNCS — look up, register, and track campus property by QR tag."
+      content="Scan the QR tag on any Addis Ababa University CNCS property item, or search by name, to see its registered record."
     />
+
+    <!--
+      Social preview, for the home page and anything that is not an item.
+
+      Every URL below has to be **absolute**: WhatsApp, Telegram, Facebook and X
+      all discard a relative `og:image` outright rather than resolving it against
+      the page, so a `/og/default.jpg` here would produce no card at all.
+      `__SITE_ORIGIN__` is substituted at build time by the `cncs:site-origin`
+      plugin in `vite.config.ts`, which resolves it from `VITE_SITE_ORIGIN` when
+      set and otherwise from Vercel's own `VERCEL_PROJECT_PRODUCTION_URL` — so
+      this is correct on Vercel with no configuration, and correct behind a
+      custom domain as soon as that one variable is set.
+
+      This document is the *fallback*. `/item/:tagId` does not use it: those
+      requests are rewritten to `api/preview.ts`, which renders the real item's
+      name, location and photograph. See docs/social-previews.md.
+
+      `og:image:width`/`height` are declared rather than left for the crawler to
+      measure, because a platform that cannot work out the aspect ratio renders a
+      small square thumbnail instead of the large card. The card is exactly
+      1200x630 — see `scripts/og/README.md`.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Addis Ababa University — CNCS Property Management System" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="am_ET" />
+    <meta property="og:title" content="AAU CNCS campus property register" />
+    <meta
+      property="og:description"
+      content="Scan the QR tag on any Addis Ababa University CNCS property item, or search by name, to see its registered record."
+    />
+    <meta property="og:url" content="__SITE_ORIGIN__/" />
+    <meta property="og:image" content="__SITE_ORIGIN__/og/default.jpg" />
+    <meta property="og:image:secure_url" content="__SITE_ORIGIN__/og/default.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Addis Ababa University crest above the words “Campus property, verified by QR” on a navy background."
+    />
+
+    <!-- X/Twitter card. Telegram and Slack also fall back to these when a page
+         omits `og:*`, so both sets are emitted rather than only Open Graph. -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AAU CNCS campus property register" />
+    <meta
+      name="twitter:description"
+      content="Scan the QR tag on any Addis Ababa University CNCS property item, or search by name, to see its registered record."
+    />
+    <meta name="twitter:image" content="__SITE_ORIGIN__/og/default.jpg" />
+    <meta
+      name="twitter:image:alt"
+      content="Addis Ababa University crest above the words “Campus property, verified by QR” on a navy background."
+    />
+
     <!-- The university crest, the same PNG aau.edu.et serves as `/images/aauLogo.png`.
          A second hand-drawn favicon mark was the last place the old CNCS branding
          survived, so it is gone rather than kept alongside this one. -->

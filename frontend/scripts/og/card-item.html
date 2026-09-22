@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  The item fallback card.
+
+  Used as `og:image` when an item *was* found but has no `photoUrl` — a
+  photographed item uses the photo instead (see `api/_preview.ts`). Without
+  this the preview would fall back to the generic site card, which is what makes
+  a shared tag look like a broken link rather than a record.
+
+  Rendered to `public/og/item.jpg` at exactly 1200x630. See README.md.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="card.css" />
+  </head>
+  <body>
+    <div class="card">
+      <img class="watermark" src="../../public/aau/aau-logo-white.svg" alt="" />
+
+      <div class="lockup">
+        <span class="seal"><img src="../../public/aau/aau-logo-white.svg" alt="" /></span>
+        <div class="rule"></div>
+        <div class="lines">
+          <div class="university">ADDIS ABABA UNIVERSITY</div>
+          <div class="college">College of Natural and Computational Sciences</div>
+          <div class="college-sub">Property Management System</div>
+        </div>
+      </div>
+
+      <div class="headline">
+        <h1>Campus property record.</h1>
+        <p>Registered with Addis Ababa University CNCS and reachable by QR tag.</p>
+      </div>
+
+      <div class="footer">
+        <div class="pills">
+          <div class="pill">Registered</div>
+          <div class="pill">Tagged</div>
+          <div class="pill">Audited</div>
+        </div>
+        <div class="footbar">
+          <div class="blue"></div>
+          <div class="red"></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

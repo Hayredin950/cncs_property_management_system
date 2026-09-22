@@ -72,8 +72,20 @@ Set on **`cncs-pms-api`** (Production and Preview):
 | `NOTIFY_EMAIL` | `false`; the transport in `services/email.ts` is still a stub |
 | `CLOUDINARY_CLOUD_NAME` / `_API_KEY` / `_API_SECRET` | Omit all three to disable uploads (the route answers 503 and the item form falls back to a pasted URL) |
 
-Set on **`cncs-pms-web`**: `VITE_API_BASE_URL`. It is inlined into the browser
-bundle at **build** time, not read at runtime, so changing it needs a redeploy.
+Set on **`cncs-pms-web`** (Production and Preview):
+
+| Key | Notes |
+| --- | --- |
+| `VITE_API_BASE_URL` | Inlined into the browser bundle at **build** time, not read at runtime, so changing it needs a redeploy |
+| `API_BASE_URL` | Read at **runtime** by `api/preview.ts`, the social-preview function. Falls back to `VITE_API_BASE_URL` when unset, so it is only needed if the two should differ |
+| `VITE_SITE_ORIGIN` | Optional. Only used to build the absolute URLs in `index.html`'s social preview tags. Vercel infers it from `VERCEL_PROJECT_PRODUCTION_URL`, so set it only when a custom domain fronts the deployment |
+
+> **The project needs its own `api/` function directory.** `frontend/vercel.json`
+> rewrites crawler requests for `/item/:tagId` to `/api/preview`, which renders
+> the item's real name and photograph into the link preview. If the Vercel
+> project is ever configured to build only static files, those previews silently
+> degrade to the generic card rather than failing loudly. See
+> [social-previews.md](./social-previews.md) for how to verify it with `curl`.
 
 > **`PUBLIC_BASE_URL` is the one that bites later.** It is baked into every QR
 > sticker at print time. Change it after printing labels and every existing

@@ -6,6 +6,17 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/item/:tagId",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|Telegram|facebookexternalhit|Facebot|Pinterest|Embedly|Iframely|SkypeUriPreview|vkShare|W3C_Validator|MetaInspector|Snapchat|curl|Wget|httpie|bot|Bot|crawler|Crawler|spider|Spider).*"
+        }
+      ],
+      "destination": "/api/preview?tagId=:tagId"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

@@ -1,0 +1,223 @@
+/*
+ * Shared styling for the 1200x630 social preview cards.
+ *
+ * These cards are not built by Vite — they are static images checked into
+ * `public/og/`, rendered from the HTML in this folder. See README.md here for
+ * the exact render command. The palette values are the same literals as
+ * `src/styles/tokens.css` (`brand-900 #01324e`, `brand-600 #026ca9`,
+ * `brand-100 #b1d5ea`, `accent-600 #d9454c`), copied rather than imported
+ * because a `@theme` block is not available outside the Tailwind build.
+ *
+ * Everything here is chosen to survive compression. The cards have to come in
+ * well under ~300 KB: WhatsApp silently drops an `og:image` that heavy and
+ * falls back to a bare text link, which is precisely the failure this whole
+ * feature exists to avoid. That rules out high-frequency texture — an earlier
+ * revision used a fine diagonal hairline weave and the PNG came out at 490 KB.
+ * Smooth gradients, large flat shapes and the vector crest compress; dots and
+ * hairlines do not.
+ */
+
+@font-face {
+  font-family: "Geist Card";
+  src: url("../../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2")
+    format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 1200px;
+  height: 630px;
+  overflow: hidden;
+}
+
+body {
+  font-family: "Geist Card", "Geist", system-ui, sans-serif;
+  background: #fff;
+}
+
+/*
+ * Layered rather than flat, so the card does not read as a plain colour swatch
+ * at thumbnail size — Telegram renders these at about 340px wide, where a flat
+ * navy rectangle looks like a missing image:
+ *
+ *   1. a soft blue glow top-right, which is what gives it depth behind the
+ *      watermark crest;
+ *   2. one wide, low-contrast diagonal sheen (not a fine weave — see file
+ *      comment on compression);
+ *   3. the navy base, lightest at the top and darkest at the bottom, which is
+ *      deliberate: the two-colour foot bar sits on the darkest end, and the
+ *      AAU blue is only legible against it if the bottom is dark.
+ */
+.card {
+  position: relative;
+  width: 1200px;
+  height: 630px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 64px 72px 0;
+  color: #fff;
+  background:
+    radial-gradient(760px 540px at 90% 4%, rgba(2, 108, 169, 0.6), transparent 64%),
+    linear-gradient(
+      45deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.045) 26%,
+      rgba(255, 255, 255, 0.045) 40%,
+      transparent 66%
+    ),
+    linear-gradient(180deg, #015484 0%, #014166 46%, #012a42 100%);
+}
+
+/* The university crest, blown up and dropped to a watermark behind the copy.
+   The seal is the one mark that says "official" faster than any wordmark, and
+   at 7.5% opacity it carries the brand without competing with the headline. */
+.watermark {
+  position: absolute;
+  right: -70px;
+  bottom: -110px;
+  width: 520px;
+  opacity: 0.075;
+}
+
+/* --- top lockup: crest · divider · two-line wordmark --------------------- */
+
+.lockup {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+
+/*
+ * `public/aau/aau-logo-white.svg` is the university's *stacked* lockup: the
+ * seal with its own Amharic + Latin wordmark baked in underneath. Used as-is
+ * beside live wordmark text it renders "ADDIS ABABA UNIVERSITY" twice, once
+ * illegibly small. So it is oversized and cropped to the circular seal alone.
+ *
+ * The geometry is from the SVG's own viewBox (`0 0 308.85 279.57`): the seal is
+ * the r=104.49 circle centred at (156.91, 104.49), so it occupies x 52.42–261.40
+ * and y 0–208.98 — 67.66% of the width, 74.80% of the height, with transparent
+ * padding on all sides. Scale 96/208.98 = 0.4594 gives:
+ *   full SVG  308.85 x 279.57 -> 141.88 x 128.44 px
+ *   seal offset              -> -24.08 px left, 0 top
+ * which lands the seal at exactly 96x96 inside a 96x96 window.
+ */
+.seal {
+  position: relative;
+  flex: none;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+}
+
+.seal img {
+  position: absolute;
+  top: 0;
+  left: -24.08px;
+  width: 141.88px;
+  height: 128.44px;
+}
+
+.lockup .rule {
+  width: 2px;
+  height: 88px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.lockup .lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.university {
+  font-size: 21px;
+  font-weight: 620;
+  letter-spacing: 0.19em;
+  color: #b1d5ea;
+}
+
+.college {
+  font-size: 25px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  color: #ffffff;
+}
+
+.college-sub {
+  font-size: 17px;
+  font-weight: 440;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* --- headline block ------------------------------------------------------ */
+
+.headline {
+  margin-top: 4px;
+}
+
+.headline h1 {
+  font-size: 58px;
+  font-weight: 680;
+  line-height: 1.06;
+  letter-spacing: -0.021em;
+  max-width: 15ch;
+}
+
+.headline p {
+  margin-top: 16px;
+  font-size: 23px;
+  font-weight: 420;
+  letter-spacing: 0.004em;
+  color: rgba(255, 255, 255, 0.78);
+  max-width: 32ch;
+}
+
+/* --- bottom: capability pills + the two-colour AAU foot bar -------------- */
+
+.footer {
+  position: relative;
+}
+
+.pills {
+  display: flex;
+  gap: 12px;
+}
+
+.pill {
+  padding: 11px 20px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 999px;
+  font-size: 17px;
+  font-weight: 520;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+}
+
+/* The university's two brand colours, edge to edge. A single 6px rule is
+   enough to make the card read as AAU's own artwork rather than a screenshot. */
+.footbar {
+  display: flex;
+  height: 6px;
+  margin: 34px -72px 0;
+}
+
+.footbar .blue {
+  flex: 5;
+  background: #026ca9;
+}
+
+.footbar .red {
+  flex: 2;
+  background: #d9454c;
+}

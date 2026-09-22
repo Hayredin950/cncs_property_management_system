@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  The default share card: what WhatsApp, Telegram, Slack, Discord and X show for
+  the site itself (the home page, and any item whose record has no photograph).
+
+  Rendered to `public/og/default.jpg` at exactly 1200x630 — the 1.91:1 ratio
+  every one of those platforms crops a large preview to. See README.md.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="card.css" />
+  </head>
+  <body>
+    <div class="card">
+      <img class="watermark" src="../../public/aau/aau-logo-white.svg" alt="" />
+
+      <div class="lockup">
+        <span class="seal"><img src="../../public/aau/aau-logo-white.svg" alt="" /></span>
+        <div class="rule"></div>
+        <div class="lines">
+          <div class="university">ADDIS ABABA UNIVERSITY</div>
+          <div class="college">College of Natural and Computational Sciences</div>
+          <div class="college-sub">Property Management System</div>
+        </div>
+      </div>
+
+      <div class="headline">
+        <h1>Campus property, verified by QR.</h1>
+        <p>Scan a tag or search the register to see any asset's record.</p>
+      </div>
+
+      <div class="footer">
+        <div class="pills">
+          <div class="pill">QR-tagged</div>
+          <div class="pill">Audit-ready</div>
+          <div class="pill">Searchable</div>
+        </div>
+        <div class="footbar">
+          <div class="blue"></div>
+          <div class="red"></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

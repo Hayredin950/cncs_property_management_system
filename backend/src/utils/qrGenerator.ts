@@ -14,7 +14,10 @@ export interface GeneratedTag {
   buffer: Buffer;
   /** data:image/png;base64,... string — useful for embedding in JSON */
   dataUrl: string;
-  /** Where the PNG was persisted on disk */
+  /**
+   * Where the PNG was cached on disk. Present even when the cache write failed —
+   * it is where the file *would* live, and `readTagFile` checks that path.
+   */
   filePath: string;
 }
 
@@ -34,8 +37,8 @@ async function ensureTagsDir(): Promise<void> {
 }
 
 /**
- * Generates a QR PNG for the given tagId, encoding a link to the public
- * item page, and persists it under uploads/tags/<tagId>.png.
+ * Generates a QR PNG for the given tagId, encoding a link to the public item
+ * page, and best-effort caches it under `uploads/tags/<tagId>.png`.
  *
  * Called from:
  *  - POST /items                      (Teammate B, on item creation)
@@ -55,9 +58,27 @@ export async function generateTagQR(tagId: string): Promise<GeneratedTag> {
     width: 512,
   });
 
-  await ensureTagsDir();
   const filePath = tagFilePath(tagId);
-  await fs.writeFile(filePath, buffer);
+
+  // The disk copy is a **cache, not a requirement**. Both callers use `buffer`
+  // directly — `POST /items` embeds `dataUrl`, `GET /items/:id/tag` streams the
+  // bytes — and `readTagFile` treats a miss as "regenerate", so a failed write
+  // costs one regeneration and nothing else.
+  //
+  // That distinction only became load-bearing when a deployment target with a
+  // read-only filesystem was on the table: the previous unconditional write made
+  // `POST /items` — i.e. registering an item at all — fail with `EROFS`, as well
+  // as the sticker endpoint. A cache write must never fail the request it is
+  // caching for. See docs/deployment.md §2.
+  try {
+    await ensureTagsDir();
+    await fs.writeFile(filePath, buffer);
+  } catch (err) {
+    console.warn(
+      `Could not cache QR PNG for ${tagId} at ${filePath}; it will be regenerated on demand.`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 
   const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
 

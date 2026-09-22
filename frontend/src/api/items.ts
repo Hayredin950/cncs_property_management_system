@@ -52,6 +52,23 @@ export function createItem(payload: CreateItemPayload): Promise<Item> {
 }
 
 /** `PUT /items/:id` — partial update; a disposed item answers 409 (terminal, F7.2). */
+/**
+ * `POST /items/:id/photo` — uploads an item's photograph as `multipart/form-data`.
+ *
+ * Resolves with the **updated item**, not just the URL: the server owns the
+ * stored value (it is whatever Cloudinary returned), so the client reads the
+ * result rather than assuming what it will be. The field name `photo` is part
+ * of the API contract — `routes/items.ts` reads that exact key.
+ *
+ * A photo can only be attached to an existing row, which is why this takes an
+ * item id and why the form offers it in edit mode only.
+ */
+export function uploadItemPhoto(id: string, file: File): Promise<Item> {
+  const form = new FormData();
+  form.append("photo", file);
+  return apiClient.postForm<Item>(`/items/${id}/photo`, form);
+}
+
 export function updateItem(id: string, payload: Partial<CreateItemPayload>): Promise<Item> {
   return apiClient.put<Item>(`/items/${encodeURIComponent(id)}`, payload);
 }

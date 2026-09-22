@@ -81,9 +81,16 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, query, signal } = options;
+  /**
+   * `multipart/form-data` is the one body this client must not describe. The
+   * browser has to append its own `boundary` to the Content-Type, and setting
+   * `application/json` here would strip it — the server would then see a
+   * multipart body it cannot parse and report no file at all.
+   */
+  const isFormData = body instanceof FormData;
   const headers = authHeaders({
     Accept: "application/json",
-    ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    ...(body !== undefined && !isFormData ? { "Content-Type": "application/json" } : {}),
   });
 
   let res: Response;
@@ -91,7 +98,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     res = await fetch(buildUrl(path, query), {
       method,
       headers,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(body !== undefined
+        ? { body: isFormData ? (body as FormData) : JSON.stringify(body) }
+        : {}),
       ...(signal ? { signal } : {}),
     });
   } catch (err) {
@@ -159,5 +168,17 @@ export const apiClient = {
     request<T>(path, { method: "PUT", ...(body !== undefined ? { body } : {}), ...(signal ? { signal } : {}) }),
   delete: <T>(path: string, signal?: AbortSignal) =>
     request<T>(path, { method: "DELETE", ...(signal ? { signal } : {}) }),
+  /**
+   * A `multipart/form-data` POST. Used for item photos: the file has to travel
+   * as bytes, so it cannot go through `JSON.stringify`. Goes through the same
+   * `request()` as everything else, so a 401 here still clears the token and
+   * routes to `/login` like any other call.
+   */
+  postForm: <T>(path: string, form: FormData, signal?: AbortSignal) =>
+    request<T>(path, {
+      method: "POST",
+      body: form as unknown as JsonBody,
+      ...(signal ? { signal } : {}),
+    }),
   blob: requestBlob,
 };

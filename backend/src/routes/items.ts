@@ -1,5 +1,6 @@
 import crypto from "crypto";
-import { Router, type NextFunction, type Response } from "express";
+import { Router, type NextFunction, type Request, type Response } from "express";
+import multer from "multer";
 import { z } from "zod";
 import type { Prisma } from "../generated/prisma/client.js";
 import { httpError } from "../lib/httpError.js";
@@ -11,12 +12,63 @@ import {
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
 import { buildEditLogRows, writeEditLogRows } from "../services/itemEditLog.js";
+import {
+  PhotoUploadError,
+  readPhotoUploadConfig,
+  uploadItemPhoto,
+} from "../services/photoStorage.js";
 import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
 import { isPrivilegedViewer, sanitizeItem } from "../utils/filterItemFields.js";
 
 export const itemsRouter: Router = Router();
 
 const ConditionEnum = z.enum(["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"]);
+
+/** 5 MB: comfortably above a phone photo, well under a serverless body limit. */
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * MIME types accepted for an item photo. Checked against the *declared* type
+ * rather than the bytes, which is why the list is short and the files are not
+ * served from our own origin: the value ends up as an `<img src>` pointing at
+ * Cloudinary's CDN, so a mislabelled file cannot execute in the app's origin.
+ */
+const ALLOWED_PHOTO_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+const photoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: PHOTO_MAX_BYTES, files: 1 },
+});
+
+/**
+ * Run multer, then translate its own failures into this API's status codes.
+ * Without this an oversized upload reaches the central error handler as a bare
+ * `MulterError` and comes back as a 500 — "the server is broken" for what is
+ * plainly a client mistake.
+ */
+function acceptPhotoUpload(req: Request, res: Response, next: NextFunction): void {
+  photoUpload.single("photo")(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err instanceof multer.MulterError) {
+      const tooLarge = err.code === "LIMIT_FILE_SIZE";
+      res.status(tooLarge ? 413 : 400).json({
+        error: tooLarge
+          ? "Photo must be 5 MB or smaller"
+          : `Photo upload rejected: ${err.code}`,
+      });
+      return;
+    }
+    next(err);
+  });
+}
 
 const createItemSchema = z.object({
   name: z.string().trim().min(1, "Item name is required"),
@@ -268,6 +320,92 @@ itemsRouter.post(
 
       res.status(201).json(newItem);
     } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * POST /api/v1/items/:id/photo — Staff/Admin. Uploads an item's photograph.
+ *
+ * `multipart/form-data` with the image in a field named `photo`. Staff/Admin
+ * only, matching every other write to an item: the photo is a field of the
+ * record, not a public contribution.
+ */
+itemsRouter.post(
+  "/:id/photo",
+  authenticate,
+  requireRole(["ADMIN", "STAFF"]),
+  acceptPhotoUpload,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Item ID is required" });
+        return;
+      }
+
+      // Configuration first: a deployment without Cloudinary keys should say so
+      // before it has consumed and discarded the caller's upload.
+      if (!readPhotoUploadConfig()) {
+        res.status(503).json({ error: "Photo uploads are not configured on this server" });
+        return;
+      }
+
+      if (!req.file) {
+        res.status(400).json({ error: "Attach the image in a form field named `photo`" });
+        return;
+      }
+
+      if (!ALLOWED_PHOTO_TYPES.has(req.file.mimetype)) {
+        res.status(415).json({
+          error: `Photo must be a JPEG, PNG, WebP or GIF image (received ${req.file.mimetype})`,
+        });
+        return;
+      }
+
+      const existingItem = await prisma.item.findUnique({ where: { id } });
+      if (!existingItem) {
+        res.status(404).json({ error: "Item not found" });
+        return;
+      }
+
+      // Same rule as PUT /items/:id: disposal is terminal, so a disposed row is
+      // read-only (SRS F7.2). 409 rather than 404 — the item exists.
+      if (existingItem.status === "DISPOSED") {
+        res.status(409).json({ error: "Item is already disposed" });
+        return;
+      }
+
+      const photoUrl = await uploadItemPhoto(req.file.buffer, existingItem.tagId);
+
+      // One transaction, so the row and its history entry cannot disagree about
+      // what the photo is — the same guarantee every other item write makes.
+      const updatedItem = await prisma.$transaction(async (tx) => {
+        const updated = await tx.item.update({ where: { id }, data: { photoUrl } });
+
+        const editLogRows = buildEditLogRows({
+          itemId: id,
+          editedById: req.user!.id,
+          editedAt: new Date(),
+          before: { photoUrl: existingItem.photoUrl },
+          after: { photoUrl },
+          labels: { photoUrl: "Photo" },
+        });
+        await writeEditLogRows(tx, editLogRows);
+
+        return updated;
+      });
+
+      res.status(200).json(updatedItem);
+    } catch (err) {
+      // An upload failure is upstream, not a bug in the request: 502 says "the
+      // thing we depend on did not answer", which is what an operator needs to
+      // see to check the Cloudinary account rather than the item.
+      if (err instanceof PhotoUploadError) {
+        next(httpError(502, "The photo could not be uploaded"));
+        return;
+      }
       next(err);
     }
   },

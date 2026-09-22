@@ -10,6 +10,7 @@ import { DepartmentPicker } from "../../components/DepartmentPicker";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
 import { PhotoFrame } from "../../components/PhotoFrame";
+import { PhotoUploadField } from "../../components/PhotoUploadField";
 import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
 import { Textarea } from "../../components/Textarea";
@@ -431,13 +432,21 @@ function EditItemInner({
               <Input label="Brand" error={errors.brand?.message} {...register("brand")} />
               <Input label="Model" error={errors.model?.message} {...register("model")} />
               <Input label="Serial number" error={errors.serialNumber?.message} {...register("serialNumber")} />
-              <Input label="Photo URL" error={errors.photoUrl?.message} {...register("photoUrl")} />
+              <Input
+                label="Photo URL (optional)"
+                error={errors.photoUrl?.message}
+                {...register("photoUrl")}
+                disabled={disposed}
+                hint="A link to a photo hosted elsewhere. Uploading a file above replaces it."
+              />
             </div>
-            {photoUrl ? (
-              <div className="w-40">
-                <PhotoFrame src={photoUrl} alt="Photo preview" />
-              </div>
-            ) : null}
+            {/*
+              Upload first, then the URL field: the picker is the supported path
+              now, and the field stays for a photo that is already hosted
+              somewhere (the seeded demo items use exactly that). The upload is
+              immediate, so this is the item's *saved* photo, not a pending edit.
+            */}
+            <PhotoUploadField itemId={itemId} photoUrl={photoUrl || null} disabled={disposed} />
             <Textarea label="Notes" error={errors.notes?.message} {...register("notes")} />
           </FormSection>
 

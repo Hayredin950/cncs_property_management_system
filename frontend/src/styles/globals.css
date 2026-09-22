@@ -1,10 +1,16 @@
 @import "./tokens.css";
 
-/* Self-hosted fonts (§4 of the design doc) — no Google Fonts runtime request. */
-@import "@fontsource/inter/400.css";
-@import "@fontsource/inter/500.css";
-@import "@fontsource/inter/600.css";
-@import "@fontsource/inter/700.css";
+/*
+ * Self-hosted fonts (§4 of the design doc) — no third-party font request at
+ * runtime, same as aau.edu.et which serves its Geist Sans build from its own
+ * origin. `@fontsource-variable/geist` ships the same variable face with
+ * `unicode-range` per subset, so the browser only fetches what a page uses.
+ *
+ * Inter was the previous `--font-sans`; it is gone rather than kept as a
+ * fallback because the two faces have different metrics and a silent per-glyph
+ * mix is worse than a clean fallback chain.
+ */
+@import "@fontsource-variable/geist";
 @import "@fontsource/jetbrains-mono/500.css";
 
 @layer base {
@@ -14,12 +20,13 @@
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-aau-gray-50 text-aau-gray-900 antialiased;
   }
 
-  /* Focus ring (§7): 2px brand-600, 2px offset, on every focusable element, always.
-     `outline: none` with no replacement is banned — this is the one global override
-     that makes that rule impossible to forget per component. */
+  /* Focus ring (§7): 2px brand-600 — now the official AAU blue — on every
+     focusable element, always. `outline: none` with no replacement is banned;
+     this is the one global override that makes that rule impossible to forget
+     per component. */
   :focus-visible {
     outline: 2px solid var(--color-brand-600);
     outline-offset: 2px;

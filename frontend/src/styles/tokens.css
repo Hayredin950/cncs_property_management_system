@@ -1,38 +1,85 @@
 /**
  * Design tokens — implements docs/frontend-design-system.md §3.5 (colour) and §4/§5
- * (fonts, radius). Treat this file as shared/frozen the same way `schema.prisma` is
- * treated in CONTRIBUTING.md (see the design doc's §14): a new colour or spacing
- * value is its own PR, announced first, because every component in every phase
- * depends on the same palette.
+ * (fonts, radius).
  *
- * Values here alias Tailwind's own default scales (blue/slate/teal/emerald/amber/
- * orange/red/violet/sky) — nothing here is a custom hex invention, this file just
- * says which named shade means what. Components should reach for the Tailwind
- * utility (`bg-brand-600`) generated from these variables, not the hex value
- * directly, except in the handful of non-Tailwind contexts noted inline below.
+ * ## AAU rebrand (this revision)
+ *
+ * The shipped product must be indistinguishable from the official Addis Ababa
+ * University web properties, so the token *values* are no longer invented here —
+ * they are lifted verbatim from the Tailwind theme that `aau.edu.et` ships in its
+ * own stylesheet, and from the markup of its header/footer. Sources, so a future
+ * reader can re-verify rather than trust this comment:
+ *
+ *   - `https://aau.edu.et/_next/static/css/a50e6886638c154e.css` — the colour scale
+ *     (`blue-50..900`, `gray-50..900`, `red-50..800`), plus the two project-custom
+ *     entries `gray-line` = `#E0E0E0` and `customBlue-main` = `#005F9F`.
+ *   - `https://aau.edu.et/_next/static/css/6e09fc4a51e39a40.css` — `font-family`,
+ *     which is Geist Sans (`__GeistSans_fb8f2c`). We use the self-hosted
+ *     `@fontsource-variable/geist` build of the same face.
+ *   - `app/(landing)/layout` chunk + the server-rendered footer payload — the
+ *     header/footer composition, mirrored in `components/aau/*`.
+ *
+ * AAU's own `blue-900` (`#01324E`) is the navy their entire footer sits on, and
+ * their `blue-600` (`#026CA9`) is the interactive blue used by their nav, buttons
+ * and links. Rather than add a parallel `aau-*` ramp and have two blues in the
+ * app, `brand-*` is **repointed** onto AAU's ramp: every existing component that
+ * already reaches for `bg-brand-600` / `text-brand-700` picks up the official
+ * blue with no per-component edit. That is the whole point of this file.
+ *
+ * The same reasoning drives `accent-*` (was Tailwind teal for the scan flow) —
+ * it is repointed onto AAU's red scale, which is the university's second brand
+ * colour and appears in their own wordmark lockup.
+ *
+ * Tailwind generates `bg-brand-600` etc. from these variables, so components still
+ * use the utility name and never the hex, except in the non-Tailwind contexts
+ * noted inline below.
  */
 @import "tailwindcss";
 
 @theme {
-  /* Brand — Tailwind `blue` */
-  --color-brand-50: #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e40af;
-  --color-brand-900: #1e3a8a;
+  /* Brand — AAU official blue. Repointed from Tailwind `blue` to the exact
+     `rgb()` values in aau.edu.et's stylesheet. `brand-900` is the footer navy. */
+  --color-brand-50: #e6f1f8;
+  --color-brand-100: #b1d5ea;
+  --color-brand-200: #8bc0df;
+  --color-brand-300: #55a4d1;
+  --color-brand-400: #3592c8;
+  --color-brand-500: #0277ba;
+  --color-brand-600: #026ca9;
+  --color-brand-700: #015484;
+  --color-brand-800: #014166;
+  --color-brand-900: #01324e;
 
-  /* Accent — Tailwind `teal` — reserved for the scan/QR flagship flow (§3.1) */
-  --color-accent-50: #f0fdfa;
-  --color-accent-100: #ccfbf1;
-  --color-accent-200: #99f6e4;
-  --color-accent-500: #14b8a6;
-  --color-accent-600: #0d9488;
-  --color-accent-700: #0f766e;
+  /* Accent — AAU red. Repointed off teal: still reserved for the scan/QR
+     flagship flow (§3.1), now in the university's own secondary brand colour. */
+  --color-accent-50: #ffeceb;
+  --color-accent-100: #ffc5c1;
+  --color-accent-200: #ffa9a3;
+  --color-accent-500: #ef4c54;
+  --color-accent-600: #d9454c;
+  --color-accent-700: #aa363c;
+
+  /* AAU's own named extras (aau.edu.et `theme.extend.colors`). Named verbatim so
+     a search for the upstream token finds its counterpart here. */
+  --color-aau-navy: #01324e; /* their `blue-900`; the footer background */
+  --color-aau-custom-blue: #005f9f; /* their `customBlue-main`; dropdown group labels */
+  --color-aau-gray-line: #e0e0e0; /* their `gray-line`; header border + dividers */
+  --color-aau-yellow: #ffcc00; /* portal card headings (portal.aau.edu.et) */
+
+  /* AAU gray scale (aau.edu.et's overridden `gray-*`). Kept under an `aau-` prefix
+     on purpose: `slate-*` is the incumbent neutral across ~40 existing components,
+     and repointing *that* would restyle screens nobody asked to change. The new
+     AAU chrome uses `aau-gray-*`; older screens stay `slate-*` until touched. */
+  --color-aau-gray-50: #f9fafb;
+  --color-aau-gray-100: #f8f9fc;
+  --color-aau-gray-200: #e4e7ec;
+  --color-aau-gray-300: #d0d5dd;
+  --color-aau-gray-400: #98a2b3;
+  --color-aau-gray-500: #667085;
+  --color-aau-gray-600: #475467;
+  --color-aau-gray-700: #344054;
+  --color-aau-gray-800: #1d2939;
+  --color-aau-gray-900: #101828;
 
   /* Semantic: success */
   --color-success-50: #ecfdf5;
@@ -50,13 +97,13 @@
   --color-warning-600: #d97706;
   --color-warning-700: #b45309;
 
-  /* Semantic: danger */
-  --color-danger-50: #fef2f2;
-  --color-danger-100: #fee2e2;
-  --color-danger-200: #fecaca;
-  --color-danger-500: #ef4444;
-  --color-danger-600: #dc2626;
-  --color-danger-700: #b91c1c;
+  /* Semantic: danger — AAU's red scale, so alerts and their wordmark agree. */
+  --color-danger-50: #ffeceb;
+  --color-danger-100: #ffc5c1;
+  --color-danger-200: #ffa9a3;
+  --color-danger-500: #ef4c54;
+  --color-danger-600: #d9454c;
+  --color-danger-700: #aa363c;
 
   /* Semantic: info */
   --color-info-50: #f0f9ff;
@@ -79,8 +126,14 @@
   --color-violet-600: #7c3aed;
   --color-violet-700: #6d28d9;
 
+  /* Geist Sans — the face aau.edu.et actually renders in (`__GeistSans_fb8f2c`),
+     self-hosted so the font is bundled rather than requested from a third party.
+     `Noto Sans Ethiopic` sits mid-chain so the Amharic wordmark renders as Amharic
+     rather than tofu on a machine with no Ethiopic default. It only ever matches
+     Ethiopic codepoints, so it cannot change how Latin text looks. */
   --font-sans:
-    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    "Noto Sans Ethiopic", Roboto, sans-serif;
   --font-mono:
     "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
@@ -91,7 +144,7 @@
 }
 
 /*
- * Tabular figures for money/dates in tables/lists (§4) — Inter supports this via
+ * Tabular figures for money/dates in tables/lists (§4) — Geist supports this via
  * its own OpenType features, no extra font weight needed.
  */
 .tabular-nums {
@@ -104,4 +157,26 @@
   font-family: var(--font-mono);
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+/*
+ * AAU header lockup. Copied from `app/(landing)/layout` on aau.edu.et, where the
+ * two wordmark lines are set in Geist with *positive* tracking and are pulled
+ * tight against each other with negative margins. Kept as a class rather than
+ * utilities because the values are a lockup, not a spacing decision: they only
+ * read correctly together, and `tracking-[3px]` on the Amharic line in particular
+ * is not obvious from the utility name alone.
+ */
+.aau-wordmark {
+  line-height: 1.375;
+}
+
+.aau-wordmark-amharic {
+  letter-spacing: 3px;
+  margin-top: -4px;
+}
+
+.aau-wordmark-latin {
+  letter-spacing: 0.025em;
+  margin-top: -5px;
 }

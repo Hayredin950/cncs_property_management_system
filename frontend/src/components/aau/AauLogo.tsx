@@ -18,6 +18,13 @@ import { cn } from "../../lib/cn";
  * The crest is the university's real asset (`public/aau/aau-logo.png`, served
  * from aau.edu.et), not a redraw — a redrawn seal is exactly the thing that
  * makes a clone recognisable.
+ *
+ * Below `sm` the wordmark (and its blue divider) is dropped and only the crest
+ * is shown. The lockup is wide — a tracked-out Amharic line plus the Latin line
+ * — and on a phone-width bar it left the crest and the trailing controls
+ * fighting over the same pixels, so the header read as cramped rather than
+ * branded. The crest alone still carries the identity, and it does not move:
+ * dropping the wordmark only shortens the bar's right edge.
  */
 export function AauLogo({ className }: { className?: string }) {
   return (
@@ -37,7 +44,7 @@ export function AauLogo({ className }: { className?: string }) {
         className="h-10 w-auto sm:h-12 md:h-[52px]"
       />
 
-      <div className="flex min-h-8 flex-col justify-center border-l-2 border-brand-600 pl-2 sm:min-h-12 sm:pl-4">
+      <div className="hidden min-h-8 flex-col justify-center border-l-2 border-brand-600 pl-2 sm:flex sm:min-h-12 sm:pl-4">
         <div>
           <div className="aau-wordmark aau-wordmark-amharic text-[17px] text-brand-600 sm:text-[18px]">
             አዲስ አበባ ዩኒቨርሲቲ

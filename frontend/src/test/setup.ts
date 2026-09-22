@@ -4,9 +4,12 @@ import "@testing-library/jest-dom/vitest";
 import { server } from "./msw/server";
 
 // CI machines and dev boxes running the docker stack alongside the suite can
-// push the login → rehydrate → render chain past RTL's 1s default — these are
-// timing flakes, not logic, so the wait budget is set once here.
-configure({ asyncUtilTimeout: 4000 });
+// push the login → rehydrate → render chain past RTL's 1s default. Every screen
+// here sits behind `GET /auth/me`, so nothing renders until that resolves, and a
+// starved worker turns that into a "can't find the heading" failure. These are
+// timing flakes, not logic, so the wait budget is set once, generously, here.
+// It only caps *how long* a failing query waits — a passing test never sits on it.
+configure({ asyncUtilTimeout: 10_000 });
 
 // MSW intercepts at the network layer so the tests exercise the real
 // `apiClient` — fetch, headers, error normalization and all — rather than a

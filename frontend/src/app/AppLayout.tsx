@@ -3,10 +3,12 @@ import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "../components/BrandMark";
 import { Button } from "../components/Button";
+import { HealthIndicator } from "../components/HealthIndicator";
 import { Modal } from "../components/Modal";
 import { RoleBadge } from "../components/StatusBadges";
 import { usePendingCount } from "../hooks/useRequests";
 import { cn } from "../lib/cn";
+import { AppErrorBoundary } from "./AppErrorBoundary";
 import { useAuth } from "./AuthContext";
 import { visibleNavItems, type NavItem } from "./navConfig";
 
@@ -90,6 +92,7 @@ export function AppLayout() {
           })}
         </nav>
         <div className="border-t border-slate-200 p-3">
+          <HealthIndicator className="mb-2 justify-start" />
           <Button variant="ghost" fullWidth leftIcon={<LogOut className="h-4 w-4" />} onClick={signOut}>
             Sign out
           </Button>
@@ -110,7 +113,10 @@ export function AppLayout() {
 
         <main id="main-content" className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
           <div className="mx-auto w-full max-w-7xl">
-            <Outlet />
+            {/* Boundary lives inside the shell so a broken screen keeps the nav (§8). */}
+            <AppErrorBoundary heading="Something went wrong on this screen">
+              <Outlet />
+            </AppErrorBoundary>
           </div>
         </main>
       </div>

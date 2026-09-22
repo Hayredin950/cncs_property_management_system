@@ -27,11 +27,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     css: true,
-    // jsdom environment creation dominates the runtime here (the whole suite
-    // is ~30s with most of it in `environment`), and Vitest's 5s default is
-    // wall-clock, not logic — a slow CI box would flake the longest flow tests
-    // that pass comfortably in isolation. 20s is a real hang, not a slow test.
-    testTimeout: 20_000,
-    hookTimeout: 20_000,
+    // jsdom environment creation dominates the runtime here, and Vitest's 5s
+    // default is wall-clock, not logic — a slow CI box would flake the longest
+    // flow tests that pass comfortably in isolation. The Phase 3 cross-phase
+    // walkthroughs render the real route tree and click through a dozen screens,
+    // so the budget has to cover a fully loaded parallel run, not one file alone.
+    // 30s is still a real hang, not a slow test.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

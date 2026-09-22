@@ -11,6 +11,12 @@
       content="Look up, register, and track CNCS campus property by QR tag."
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- PWA-lite (design doc §2): staff scan repeatedly through a shift, so "Add to Home
+         Screen" is worth the two lines. A real PNG icon set is still a follow-up — the
+         manifest points at the existing mark. -->
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>CNCS Property</title>
   </head>
   <body>

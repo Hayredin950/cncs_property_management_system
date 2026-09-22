@@ -52,9 +52,14 @@ export function LandingPage() {
           </div>
 
           <SearchBar value="" onChange={handleSearch} debounceMs={500} />
-          <Link to="/items" className="text-sm text-brand-700 underline-offset-4 hover:underline">
-            Browse all items →
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
+            <Link to="/items" className="text-brand-700 underline-offset-4 hover:underline">
+              Browse all items →
+            </Link>
+            <Link to="/map" className="text-brand-700 underline-offset-4 hover:underline">
+              Browse by building →
+            </Link>
+          </div>
         </div>
       </section>
 

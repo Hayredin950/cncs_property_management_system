@@ -1,0 +1,18 @@
+{
+  "name": "CNCS Property Management System",
+  "short_name": "CNCS Property",
+  "description": "Look up, register, and track CNCS campus property by QR tag.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

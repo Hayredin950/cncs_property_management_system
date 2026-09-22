@@ -1,20 +1,26 @@
 import { createBrowserRouter, type RouteObject } from "react-router-dom";
 import { AdminCategoriesPage } from "../features/admin/AdminCategoriesPage";
 import { AdminUsersPage } from "../features/admin/AdminUsersPage";
+import { AuditNewPage } from "../features/audits/AuditNewPage";
+import { AuditReportPage } from "../features/audits/AuditReportPage";
+import { AuditScanPage } from "../features/audits/AuditScanPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { ItemFormPage } from "../features/items/ItemFormPage";
 import { ItemStaffPage } from "../features/items/ItemStaffPage";
 import { ItemsBrowsePage } from "../features/items/ItemsBrowsePage";
 import { NotificationsPage } from "../features/notifications/NotificationsPage";
+import { ReportsPage } from "../features/reports/ReportsPage";
 import { RequestDetailPage } from "../features/requests/RequestDetailPage";
 import { RequestFormPage } from "../features/requests/RequestFormPage";
 import { RequestsListPage } from "../features/requests/RequestsListPage";
 import { ItemDetailPage } from "../features/public/ItemDetailPage";
 import { LandingPage } from "../features/public/LandingPage";
+import { MapPage } from "../features/public/MapPage";
 import { NotFoundPage } from "../features/public/NotFoundPage";
 import { ScanPage } from "../features/public/ScanPage";
 import { AppLayout } from "./AppLayout";
+import { RootErrorElement } from "./AppErrorBoundary";
 import { PublicLayout } from "./PublicLayout";
 import { RequireAuth } from "./RequireAuth";
 import { RootProviders } from "./RootProviders";
@@ -43,6 +49,11 @@ import { RootProviders } from "./RootProviders";
  */
 export const appRoutes: RouteObject[] = [
   {
+    // Only reached by a throw from a layout/provider itself, or a loader error —
+    // a page-level crash is caught by each shell's own `AppErrorBoundary`, which
+    // keeps the chrome. Without this, React Router substitutes its own bare
+    // "Unexpected Application Error!" screen instead.
+    errorElement: <RootErrorElement />,
     element: <RootProviders />,
     children: [
       {
@@ -51,6 +62,7 @@ export const appRoutes: RouteObject[] = [
           { path: "/", element: <LandingPage /> },
           { path: "/items", element: <ItemsBrowsePage /> },
           { path: "/scan", element: <ScanPage /> },
+          { path: "/map", element: <MapPage /> },
           { path: "/item/:tagId", element: <ItemDetailPage /> },
           { path: "/login", element: <LoginPage /> },
           { path: "*", element: <NotFoundPage /> },
@@ -71,6 +83,11 @@ export const appRoutes: RouteObject[] = [
           { path: "/requests/new", element: <RequestFormPage /> },
           { path: "/requests/:id", element: <RequestDetailPage /> },
           { path: "/notifications", element: <NotificationsPage /> },
+          // Phase 3: audit walkthrough (F9) and the CSV exports (F10).
+          { path: "/audit/new", element: <AuditNewPage /> },
+          { path: "/audit/:id/scan", element: <AuditScanPage /> },
+          { path: "/audit/:id/report", element: <AuditReportPage /> },
+          { path: "/reports", element: <ReportsPage /> },
           // Admin-only screens still render behind the shared staff shell;
           // RequireAuth's roles check turns a staff deep-link into the same
           // 404 as any unknown path (frontend-plan.md §6, §9.1).

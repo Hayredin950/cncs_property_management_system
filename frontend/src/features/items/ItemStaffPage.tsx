@@ -108,7 +108,7 @@ export function ItemStaffPage() {
             Edit item
           </Button>
         </Link>
-        <Link to={`/items/${id}/request?tag=${encodeURIComponent(item.tagId)}`}>
+        <Link to={`/requests/new?item=${encodeURIComponent(item.tagId)}`}>
           <Button variant="outline" size="sm">
             File transfer / disposal
           </Button>

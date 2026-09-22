@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
@@ -83,15 +83,33 @@ export function RequestFormPage() {
     register,
     handleSubmit,
     watch,
+    setValue,
+    getValues,
     formState: { errors },
   } = useForm<RequestFormValues>({
     resolver: zodResolver(requestSchema),
     defaultValues: {
       type: "TRANSFER",
-      itemId: preset?.id ?? "",
+      itemId: "",
       reason: "",
     },
   });
+
+  /**
+   * `?item=<tagId>` preselects the item — but `defaultValues` is read on the
+   * first render, when `GET /items` hasn't answered yet, so the preset is always
+   * undefined by then and the select silently stayed empty. Applying it in an
+   * effect is the only way the "file a request from this item" path can work.
+   *
+   * `!getValues("itemId")` matters: once the user has chosen an item by hand, a
+   * late-arriving list must not overwrite that choice.
+   */
+  const presetItemId = preset?.id ?? "";
+  useEffect(() => {
+    if (presetItemId && !getValues("itemId")) {
+      setValue("itemId", presetItemId);
+    }
+  }, [presetItemId, getValues, setValue]);
 
   const type = watch("type");
 

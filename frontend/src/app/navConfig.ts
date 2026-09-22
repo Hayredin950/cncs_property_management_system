@@ -1,4 +1,15 @@
-import { Bell, ClipboardList, LayoutDashboard, Package, ScanLine, ShieldCheck, Tag, type LucideIcon } from "lucide-react";
+import {
+  Bell,
+  ClipboardCheck,
+  ClipboardList,
+  FileBarChart,
+  LayoutDashboard,
+  Package,
+  ScanLine,
+  ShieldCheck,
+  Tag,
+  type LucideIcon,
+} from "lucide-react";
 import type { Role } from "../types/enums";
 
 export interface NavItem {
@@ -19,8 +30,8 @@ export interface NavItem {
   badge?: "pending-count";
 }
 
-/** Phase 2: nav shows every route the role can use; Phase 3's audit/reports join below. */
-export const CURRENT_PHASE = 2;
+/** Phase 3: the last of the plan's destinations — audit and reports — is now in the nav. */
+export const CURRENT_PHASE = 3;
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, roles: ["ADMIN", "STAFF"], phase: 1 },
@@ -29,6 +40,8 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["ADMIN", "STAFF"], phase: 2, badge: "pending-count" },
   { label: "Notifications", to: "/notifications", icon: Bell, roles: ["ADMIN", "STAFF"], phase: 2 },
   { label: "New item", to: "/items/new", icon: Tag, roles: ["ADMIN", "STAFF"], phase: 2 },
+  { label: "Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["ADMIN", "STAFF"], phase: 3 },
+  { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["ADMIN", "STAFF"], phase: 3 },
   { label: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["ADMIN"], phase: 2 },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["ADMIN"], phase: 2 },
 ];

@@ -11,7 +11,7 @@ A standalone property/asset management system built as an internship deliverable
 - **Package manager:** pnpm
 - **Containerization:** Docker (from commit one)
 - **CI/CD:** GitHub Actions — lint, build, test, docker build on every push
-- **Frontend:** React 19 + Vite + TypeScript (strict) + Tailwind CSS 4 — Phase 1 shipped, see [`docs/frontend-phase-1.md`](docs/frontend-phase-1.md)
+- **Frontend:** React 19 + Vite + TypeScript (strict) + Tailwind CSS 4 — all three phases shipped, see [`docs/frontend-handoff.md`](docs/frontend-handoff.md)
 
 ## Getting Started
 
@@ -87,13 +87,37 @@ pnpm test         # vitest + React Testing Library + MSW
 Seed credentials for the staff/admin screens: `admin@cncs.aau.edu.et` /
 `Admin123!` and `staff@cncs.aau.edu.et` / `Staff123!`.
 
-What ships in each frontend phase, and the full screen-by-screen contract, is
-in [`docs/Frontend_Three_Phase_Plan.md`](docs/Frontend_Three_Phase_Plan.md),
+### Frontend routes
+
+Public (no sign-in): `/` (landing + search), `/items` (browse), `/scan`,
+`/item/:tagId` (the QR destination), `/map`, `/login`.
+
+Staff/Admin (behind the auth guard): `/dashboard`, `/items/new`,
+`/items/:id/edit`, `/items/:id`, `/requests`, `/requests/new`, `/requests/:id`,
+`/notifications`, `/audit/new`, `/audit/:id/scan`, `/audit/:id/report`,
+`/reports`, `/admin/users`, `/admin/categories`.
+
+> `/item/:tagId` (singular, public) and `/items/:id` (plural, staff) are different
+> routes on purpose — `qrGenerator.ts` encodes the singular form.
+
+### Demo walkthrough
+
+Anonymous lookup → scan a seeded tag → disposed tag (410) → sign in as staff →
+register an item → link an accessory → file a transfer → approve it as admin →
+audit a department → complete → download the CSV exports → stop the backend and
+watch the footer say "System unreachable". The annotated version is in
+[`docs/frontend-handoff.md`](docs/frontend-handoff.md).
+
+What ships in each frontend phase, and the full screen-by-screen contract, is in
+[`docs/Frontend_Three_Phase_Plan.md`](docs/Frontend_Three_Phase_Plan.md),
 [`docs/frontend-plan.md`](docs/frontend-plan.md), and
-[`docs/frontend-design-system.md`](docs/frontend-design-system.md). Phase 1's
-write-up — where the API client, auth shell, field-visibility rule, and the
-QR/`PUBLIC_BASE_URL` dependency live — is
-[`docs/frontend-phase-1.md`](docs/frontend-phase-1.md).
+[`docs/frontend-design-system.md`](docs/frontend-design-system.md). The per-phase
+write-ups are [`docs/frontend-phase-1.md`](docs/frontend-phase-1.md),
+[`docs/frontend-phase-2.md`](docs/frontend-phase-2.md) and
+[`docs/frontend-phase-3.md`](docs/frontend-phase-3.md);
+[`docs/frontend-handoff.md`](docs/frontend-handoff.md) is the consolidated
+version, including the rule that **field visibility is server-enforced and the
+frontend never duplicates it**.
 
 ### Running tests
 
@@ -234,6 +258,31 @@ item status. Date-range upper bounds include the entire UTC `dateTo` day.
 completion, audit-history listing, and Swagger/OpenAPI are not built. The backend handoff
 also records the remaining audit-report duplicate-scan behavior and the lack of a real test
 database.
+
+### Phase 3 — Frontend (complete)
+
+The frontend's own three phases mirror the backend's: Phase 1 (foundation and the
+public QR lookup), Phase 2 (staff and admin workflows), Phase 3 (audit,
+reporting and wrap-up). All three shipped — see
+[`docs/frontend-handoff.md`](docs/frontend-handoff.md) for the route list,
+decisions, deliberately-cut work and the spec-vs-backend gaps, and
+[`docs/frontend-phase-3.md`](docs/frontend-phase-3.md) for the audit and
+reporting write-up.
+
+- [x] `/` (landing + search), `/items`, `/scan`, `/item/:tagId`, `/map`
+- [x] Auth shell, role-aware nav, route guards
+- [x] Item registration/edit, accessories bundle, tag download/regenerate, edit history
+- [x] Requests queue, file a transfer/disposal, approve/reject, notifications inbox
+- [x] Audit walkthrough (`/audit/new` → `/audit/:id/scan` → `/audit/:id/report`)
+- [x] CSV exports: inventory, disposals, audit session
+- [x] Admin: create accounts, create categories
+- [x] Vitest + React Testing Library + MSW suite, gated in CI alongside lint and build
+
+**Current intentional frontend limits:** CSV only (no PDF), no upload endpoint so
+photos are URLs, `/map` is building grouping rather than a real map, and the audit
+list exists only while a session is in progress (the API has no audit read
+endpoint). Everything in this list is explained in
+[`docs/frontend-handoff.md`](docs/frontend-handoff.md).
 
 ### API and frontend handoff
 

@@ -2,7 +2,9 @@ import { LayoutDashboard, LogOut } from "lucide-react";
 import { Link, Outlet } from "react-router-dom";
 import { BrandMark } from "../components/BrandMark";
 import { Button } from "../components/Button";
+import { HealthIndicator } from "../components/HealthIndicator";
 import { RoleBadge } from "../components/StatusBadges";
+import { AppErrorBoundary } from "./AppErrorBoundary";
 import { useAuth } from "./AuthContext";
 
 /**
@@ -52,12 +54,17 @@ export function PublicLayout() {
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto w-full max-w-7xl px-4 py-8 lg:px-8">
-          <Outlet />
+          {/* Boundary lives inside the shell so a broken screen keeps the header/footer (§8). */}
+          <AppErrorBoundary heading="Something went wrong on this page">
+            <Outlet />
+          </AppErrorBoundary>
         </div>
       </main>
 
       <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-400">
-        CNCS Property Management System — College of Natural and Computational Sciences
+        <p>CNCS Property Management System — College of Natural and Computational Sciences</p>
+        {/* The public footer is where "is the backend up?" gets asked, so the answer lives here (§go-further). */}
+        <HealthIndicator className="mt-2" />
       </footer>
     </div>
   );

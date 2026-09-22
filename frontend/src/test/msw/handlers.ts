@@ -1,6 +1,11 @@
 import { http, HttpResponse } from "msw";
 import {
+  AUDIT_COMPLETION_BODY,
+  AUDIT_SCAN_ROW,
+  AUDIT_SESSION,
+  CSV_BODY,
   DISPOSED_ITEM,
+  HISTORY_FIXTURE,
   ITEMS_LIST,
   LOGIN_RESPONSE,
   ME_RESPONSE,
@@ -32,10 +37,26 @@ const unauthorized = () => HttpResponse.json({ error: "Not authenticated" }, { s
 const tagPng = () =>
   new HttpResponse("<fake-png-bytes>", { headers: { "Content-Type": "image/png" } });
 
+/** Every screen renders the health indicator, so this handler is load-bearing for the whole suite. */
+const healthOk = () => HttpResponse.json({ status: "ok" });
+
+const csv = () =>
+  new HttpResponse(CSV_BODY, {
+    headers: {
+      "Content-Type": "text/csv",
+      "Content-Disposition": 'attachment; filename="report.csv"',
+    },
+  });
+
+/** The session id the complete/409 tests use — completing it again is refused by the API. */
+export const COMPLETED_AUDIT_ID = "audit-done";
+
 export const handlers = [
   http.post(`${API}/auth/login`, () => HttpResponse.json(LOGIN_RESPONSE)),
 
   http.get(`${API}/auth/me`, () => (getToken() ? HttpResponse.json(ME_RESPONSE) : unauthorized())),
+
+  http.get(`${API}/health`, healthOk),
 
   http.get(`${API}/categories`, () => HttpResponse.json([{ id: "cat-1", name: "Laptops" }])),
 
@@ -77,6 +98,10 @@ export const handlers = [
 
   http.get(`${API}/items/:id/tag`, () => (getToken() ? tagPng() : unauthorized())),
 
+  http.get(`${API}/items/:id/history`, () =>
+    getToken() ? HttpResponse.json(HISTORY_FIXTURE) : unauthorized(),
+  ),
+
   http.get(`${API}/requests`, () => (getToken() ? HttpResponse.json(REQUESTS_LIST) : unauthorized())),
 
   http.get(`${API}/requests/pending-count`, () =>
@@ -108,4 +133,37 @@ export const handlers = [
   http.post(`${API}/notifications/:id/read`, () =>
     getToken() ? HttpResponse.json({ id: "n-1", isRead: true }) : unauthorized(),
   ),
+
+  /**
+   * Audit sessions (F9). The scan endpoint answers with the persisted row, whose
+   * `result` is always FOUND — the same shape the real handler returns, so a page
+   * that tried to submit its own result would fail these tests.
+   */
+  http.post(`${API}/audits`, () =>
+    getToken() ? HttpResponse.json(AUDIT_SESSION, { status: 201 }) : unauthorized(),
+  ),
+
+  http.post(`${API}/audits/:id/scan`, () =>
+    getToken() ? HttpResponse.json(AUDIT_SCAN_ROW, { status: 201 }) : unauthorized(),
+  ),
+
+  http.post(`${API}/audits/:id/complete`, ({ params }) => {
+    if (!getToken()) return unauthorized();
+    const id = params.id as string;
+    if (id === COMPLETED_AUDIT_ID) {
+      // Byte-for-byte the message the backend sends from its 409 branch.
+      return HttpResponse.json({ error: "Audit session is already completed" }, { status: 409 });
+    }
+    return HttpResponse.json(AUDIT_COMPLETION_BODY(id));
+  }),
+
+  /**
+   * Report exports (F10) — CSV only, behind `authenticate`. The `format=csv`
+   * default matches the server's `z.enum(["csv"]).default("csv")`, so a client
+   * that forgot the parameter would still get a file here but a 400 in real life;
+   * the download tests assert the parameter explicitly for that reason.
+   */
+  http.get(`${API}/reports/inventory`, () => (getToken() ? csv() : unauthorized())),
+  http.get(`${API}/reports/disposals`, () => (getToken() ? csv() : unauthorized())),
+  http.get(`${API}/reports/audit/:auditId`, () => (getToken() ? csv() : unauthorized())),
 ];

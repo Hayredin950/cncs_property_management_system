@@ -1,18 +1,24 @@
 {
-  "name": "CNCS Property Management System",
-  "short_name": "CNCS Property",
-  "description": "Look up, register, and track CNCS campus property by QR tag.",
+  "name": "Addis Ababa University — CNCS Property Management System",
+  "short_name": "AAU Property",
+  "description": "Look up, register, and track AAU CNCS campus property by QR tag.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#2563eb",
+  "background_color": "#ffffff",
+  "theme_color": "#026ca9",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "/aau/aau-logo.png",
+      "sizes": "427x427",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/aau/aau-logo-white.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any"
+      "purpose": "maskable"
     }
   ]
 }

@@ -65,6 +65,11 @@
   --color-aau-custom-blue: #005f9f; /* their `customBlue-main`; dropdown group labels */
   --color-aau-gray-line: #e0e0e0; /* their `gray-line`; header border + dividers */
   --color-aau-yellow: #ffcc00; /* portal card headings (portal.aau.edu.et) */
+  /* The pale green the student portal highlights the active sidebar row with.
+     Sampled from the portal screenshots rather than from CSS (that app renders
+     its shell client-side), so it is the one AAU value here that is an
+     eyeball match, not a copied literal. */
+  --color-aau-portal-active: #eaf4ea;
 
   /* AAU gray scale (aau.edu.et's overridden `gray-*`). Kept under an `aau-` prefix
      on purpose: `slate-*` is the incumbent neutral across ~40 existing components,

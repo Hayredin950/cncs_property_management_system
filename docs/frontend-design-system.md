@@ -65,8 +65,17 @@
 
 ## 2. Brand identity
 
-No logo asset exists in the repository today (flagged as an open question in
-`frontend-plan.md` §14). Until the property office supplies one, ship this system:
+> **Superseded.** The open question this section answered — "no logo asset exists" — was
+> resolved by the university supplying its own identity: the app now ships AAU's real crest,
+> its own Tailwind palette, and Geist Sans, so it reads as part of the same estate as
+> `aau.edu.et`. See [`frontend-aau-rebrand.md`](frontend-aau-rebrand.md) for the palette,
+> asset provenance and the provenance of every value. The mark, favicon and `theme-color`
+> bullets below are **no longer what ships**; the voice bullet still stands.
+>
+> The original text is kept for context on the decisions that came before:
+>
+> No logo asset existed in the repository (flagged as an open question in
+> `frontend-plan.md` §14). Until the property office supplied one, the system shipped this:
 
 - **Wordmark:** `CNCS` in `font-bold`, `tracking-wide`, brand-700, followed by `Property` in
   `font-normal`, slate-500, same baseline. One lockup, used at every size — don't design a
@@ -215,6 +224,14 @@ and a second value block, not a rewrite. If a phase has spare time, this is a sa
   phase builds on.
 
 ### 3.5 Implementation — CSS variables + Tailwind theme
+
+> **Values superseded.** The block below is the original invented palette. What ships is
+> `frontend/src/styles/tokens.css`, whose `brand-*` and `accent-*` are repointed onto
+> **Addis Ababa University's own Tailwind theme** — `brand-*` to their `blue` scale (so
+> `brand-600` is `#026ca9`, `brand-900` is the `#01324e` footer navy) and `accent-*` to their
+> `red`. The structure, the `@theme` mechanism and the self-hosted-font rule below all still
+> hold; only the hex values differ. `frontend-aau-rebrand.md` §2 has the authoritative table.
+> The font is `@fontsource-variable/geist`, not Inter.
 
 Ship as `frontend/src/styles/tokens.css`, imported once in `main.tsx`. Written for Tailwind
 v4's CSS-first `@theme` (if the team pins Tailwind v3 instead, the same values move into

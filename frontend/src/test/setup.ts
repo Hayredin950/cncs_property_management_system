@@ -3,6 +3,25 @@ import { cleanup, configure } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { server } from "./msw/server";
 
+/**
+ * jsdom implements no `ResizeObserver`, and `AppLayout` uses one to keep the
+ * sidebar's sticky offset in sync with the header's measured height (the header
+ * is `sticky top-0` and content-sized, so a hardcoded `top-16` is a guess that
+ * would bury the nav behind an opaque bar). Without this, every authenticated
+ * test dies in the shell's mount effect with "ResizeObserver is not defined".
+ *
+ * A no-op is the truthful stub: jsdom has no layout, so every observed element
+ * measures 0×0 anyway. The *default* offset on the shell's inline style is what
+ * the tests see, and the real value is a browser concern.
+ */
+if (!("ResizeObserver" in globalThis)) {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
 // CI machines and dev boxes running the docker stack alongside the suite can
 // push the login → rehydrate → render chain past RTL's 1s default. Every screen
 // here sits behind `GET /auth/me`, so nothing renders until that resolves, and a

@@ -26,6 +26,23 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+/**
+ * Sidebar rail state (frontend-design-system.md §5.5, shell B/C).
+ *
+ * In `localStorage`, not `sessionStorage`: a reviewer who collapses the nav rail
+ * to keep the table wide wants it that way tomorrow too. Re-collapsing it on
+ * every reload would read as the preference not being honoured.
+ */
+const SIDEBAR_COLLAPSED_KEY = "cncs.ui.sidebar-collapsed";
+
+export function getSidebarCollapsed(): boolean {
+  return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+}
+
+export function setSidebarCollapsed(collapsed: boolean): void {
+  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+}
+
 const DRAFT_PREFIX = "cncs.draft.";
 
 export function saveDraft<T>(key: string, value: T): void {

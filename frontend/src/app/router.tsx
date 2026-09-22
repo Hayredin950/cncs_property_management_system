@@ -24,6 +24,7 @@ import { RootErrorElement } from "./AppErrorBoundary";
 import { PublicLayout } from "./PublicLayout";
 import { RequireAuth } from "./RequireAuth";
 import { RootProviders } from "./RootProviders";
+import { SmartLayout } from "./SmartLayout";
 
 /**
  * The route map from `frontend-plan.md` §6. Two shells, exactly as
@@ -33,6 +34,11 @@ import { RootProviders } from "./RootProviders";
  *   `/login`: open to everyone, including anonymous visitors.
  * - **Shell B/C** (`AppLayout` behind `RequireAuth`) — everything staff/admin:
  *   dashboard, item management, requests, notifications, admin screens.
+ * - **SmartLayout** — `/items` and `/scan` only. Both are staff sidebar entries
+ *   *and* public surfaces, so the shell is chosen per request
+ *   (signed in → workbench, anonymous → Shell A). See `SmartLayout.tsx` for the
+ *   bug that made this necessary: without it, two sidebar links dropped the
+ *   whole nav.
  *
  * `*` lives under the public shell so an unknown path still gets a header and
  * footer rather than a bare error box — and it's the same 404 a role-scoped
@@ -60,12 +66,20 @@ export const appRoutes: RouteObject[] = [
         element: <PublicLayout />,
         children: [
           { path: "/", element: <LandingPage /> },
-          { path: "/items", element: <ItemsBrowsePage /> },
-          { path: "/scan", element: <ScanPage /> },
           { path: "/map", element: <MapPage /> },
           { path: "/item/:tagId", element: <ItemDetailPage /> },
           { path: "/login", element: <LoginPage /> },
           { path: "*", element: <NotFoundPage /> },
+        ],
+      },
+      // Shared addresses: staff sidebar destinations that are also public
+      // surfaces. Must not be duplicated in the Shell A block above — React
+      // Router matches one route per path, so a second copy would be dead.
+      {
+        element: <SmartLayout />,
+        children: [
+          { path: "/items", element: <ItemsBrowsePage /> },
+          { path: "/scan", element: <ScanPage /> },
         ],
       },
       {

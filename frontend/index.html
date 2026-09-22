@@ -5,19 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- Internal property register, not a marketing site — see frontend-design-system.md §2. -->
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="theme-color" content="#2563eb" />
+    <!-- AAU `blue-600` (`#026CA9`) — what aau.edu.et's own mobile browser chrome uses. -->
+    <meta name="theme-color" content="#026ca9" />
     <meta
       name="description"
-      content="Look up, register, and track CNCS campus property by QR tag."
+      content="Addis Ababa University CNCS — look up, register, and track campus property by QR tag."
     />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <!-- PWA-lite (design doc §2): staff scan repeatedly through a shift, so "Add to Home
-         Screen" is worth the two lines. A real PNG icon set is still a follow-up — the
-         manifest points at the existing mark. -->
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <!-- The university crest, the same PNG aau.edu.et serves as `/images/aauLogo.png`.
+         A second hand-drawn favicon mark was the last place the old CNCS branding
+         survived, so it is gone rather than kept alongside this one. -->
+    <link rel="icon" type="image/png" href="/aau/aau-logo.png" />
+    <link rel="apple-touch-icon" href="/aau/aau-logo.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>CNCS Property</title>
+    <title>AAU | CNCS Property Management System</title>
   </head>
   <body>
     <div id="root"></div>

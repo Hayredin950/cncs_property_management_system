@@ -35,12 +35,15 @@ export function LandingPage() {
 
         <div className="flex w-full max-w-md flex-col gap-3">
           <Link to="/scan">
-            <Button
-              size="lg"
-              fullWidth
-              leftIcon={<ScanLine className="h-5 w-5" />}
-              className="bg-accent-600 hover:bg-accent-700 focus-visible:ring-accent-600"
-            >
+            {/* Was overridden to the teal `accent-600`; the accent token now
+                carries AAU's red, and a red primary CTA would be the one button
+                on this page the official site has no equivalent for. AAU's own
+                CTAs are all `blue-600`, so this is the default primary variant
+                — and dropping the override also stops the class from silently
+                doing nothing, which it did: `bg-brand-600` from the variant and
+                `bg-accent-600` here have equal specificity, and Tailwind emits
+                `brand-600` last, so the button has rendered blue regardless. */}
+            <Button size="lg" fullWidth leftIcon={<ScanLine className="h-5 w-5" />}>
               Scan a tag
             </Button>
           </Link>

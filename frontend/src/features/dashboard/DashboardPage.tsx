@@ -1,6 +1,7 @@
 import { ClipboardList, Package, ScanLine } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
+import { PortalPageHeader, PortalTile } from "../../components/aau/PortalPageHeader";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { EmptyState } from "../../components/EmptyState";
@@ -36,40 +37,39 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Welcome back{user ? `, ${user.fullName.split(" ")[0]}` : ""} — here&rsquo;s where things
-          stand.
-        </p>
-      </div>
+      {/* The portal's own page banner. The heading text stays exactly "Dashboard"
+          because that is the route-level landmark the flow tests assert on. */}
+      <PortalPageHeader
+        title="Dashboard"
+        description={`Welcome back${user ? `, ${user.fullName.split(" ")[0]}` : ""} — here's where things stand.`}
+        actions={
+          <StatCard
+            label={isAdmin ? "Pending review" : "Pending requests"}
+            value={pendingQuery.data?.pendingCount ?? "—"}
+            icon={<ClipboardList className="h-5 w-5" />}
+            tone="warning"
+            to="/requests"
+            className="w-52"
+          />
+        }
+      />
 
-      <div className="grid gap-4 sm:max-w-xs">
-        <StatCard
-          label={isAdmin ? "Pending review" : "Pending requests"}
-          value={pendingQuery.data?.pendingCount ?? "—"}
-          icon={<ClipboardList className="h-5 w-5" />}
-          tone="warning"
-          to="/requests"
+      {/* The portal's action tiles, doing the portal's job: the two things a
+          staff member arrives on this screen to do. */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <PortalTile
+          to="/scan"
+          icon={<ScanLine className="h-7 w-7" />}
+          title="Scan a tag"
+          description="Point the camera at a QR tag to open its record or count it in an audit."
+        />
+        <PortalTile
+          to="/items"
+          icon={<Package className="h-7 w-7" />}
+          title="Browse items"
+          description="Search the register by name, tag ID, department or building."
         />
       </div>
-
-      <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <Link to="/scan" className="sm:w-auto">
-          <Button
-            fullWidth
-            className="bg-accent-600 hover:bg-accent-700 focus-visible:ring-accent-600"
-            leftIcon={<ScanLine className="h-4 w-4" />}
-          >
-            Scan a tag
-          </Button>
-        </Link>
-        <Link to="/items" className="sm:w-auto">
-          <Button variant="outline" fullWidth leftIcon={<Package className="h-4 w-4" />}>
-            Browse items
-          </Button>
-        </Link>
-      </Card>
 
       <Card className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-3">

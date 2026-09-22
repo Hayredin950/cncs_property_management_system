@@ -84,12 +84,19 @@ pnpm run build    # tsc -b + vite build — type-checks test files too
 pnpm test         # vitest + React Testing Library + MSW
 ```
 
+The UI is branded as an Addis Ababa University property: the header, footer and newsletter
+band reproduce the ones on [`aau.edu.et`](https://aau.edu.et/), and the signed-in shell uses
+`portal.aau.edu.et`'s sidebar and page banner, with the university's real crest and its own
+palette. [`docs/frontend-aau-rebrand.md`](docs/frontend-aau-rebrand.md) records where every
+colour, font and asset came from and every deliberate difference from the originals.
+
 ### Signing in for testing
 
 The staff/admin screens need an account. There is **no self-signup** — accounts exist only
 because the seed script creates them, or because an admin creates them at `/admin/users`
 (which can create only; see the frontend handoff's G2). Sign in at
-[`http://localhost:5173/login`](http://localhost:5173/login).
+[`http://localhost:5173/login`](http://localhost:5173/login), or via the **Staff Sign In**
+button in the top-right of every public page.
 
 | Role | Email | Password | Use it for |
 | --- | --- | --- | --- |

@@ -43,6 +43,14 @@ context (`app/AuthContext.tsx`), one TanStack Query client, one shared component
 (`app/AppErrorBoundary.tsx`), and a token layer in `src/styles/tokens.css` that the design doc
 treats as frozen.
 
+**Chrome — built to match the official AAU sites.** The header, footer and newsletter band are
+reproductions of the ones on `aau.edu.et`, and the authenticated sidebar and dashboard banner
+come from `portal.aau.edu.et`, using the university's real crest and its own Tailwind palette.
+`components/aau/` holds all of it. The palette, asset provenance, and every deliberate
+difference from upstream are recorded in [`frontend-aau-rebrand.md`](frontend-aau-rebrand.md) —
+read that before changing anything visual, and read its §7 before using a Tailwind `space-x-*`
+next to a child `mx-*`.
+
 **Testing:** `vitest` + React Testing Library + MSW (`src/test/`). Nine suites, run in CI on every
 PR alongside lint and the type-checking build.
 
@@ -226,8 +234,12 @@ A walkthrough that touches every phase, in the sequence that tells the story:
 
 - [`frontend-plan.md`](frontend-plan.md) — functional reference: route map, per-screen API
   contract, the SRS §3.4 field-visibility table, and gaps G1–G9 in full.
+- [`frontend-aau-rebrand.md`](frontend-aau-rebrand.md) — where every AAU colour, font and asset
+  came from, the header/footer/sidebar composition, deviations from upstream, and the one
+  mocked surface (newsletter capture).
 - [`frontend-design-system.md`](frontend-design-system.md) — colour, type, spacing, component
-  states, and a mobile + desktop blueprint for every screen.
+  states, and a mobile + desktop blueprint for every screen. Its §2 brand identity and §3.5
+  token block are **superseded** by the rebrand doc above; the rest still applies.
 - [`Frontend_Three_Phase_Plan.md`](Frontend_Three_Phase_Plan.md) — what shipped when.
 - [`frontend-phase-1.md`](frontend-phase-1.md), [`frontend-phase-2.md`](frontend-phase-2.md),
   [`frontend-phase-3.md`](frontend-phase-3.md) — the per-phase decision records.

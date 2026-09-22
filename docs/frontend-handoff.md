@@ -142,7 +142,40 @@ into the browser bundle at dev/build time, so it must be the backend's published
 never a Docker service name. The root `.env`'s `PUBLIC_BASE_URL` must point at the frontend
 origin.
 
-Seed credentials: `admin@cncs.aau.edu.et` / `Admin123!`, `staff@cncs.aau.edu.et` / `Staff123!`.
+### Signing in for testing
+
+There is no self-signup. Two accounts come from `backend/prisma/seed.ts` (`SEED_USERS`), and
+an admin can create more at `/admin/users` (create-only — see G2):
+
+| Role | Email | Password | Differences that matter when testing |
+| --- | --- | --- | --- |
+| `ADMIN` | `admin@cncs.aau.edu.et` | `Admin123!` | Only role that can approve/reject; sees Accounts + Categories nav; sees every request in the queue |
+| `STAFF` | `staff@cncs.aau.edu.et` | `Staff123!` | Filing requests only; sees *its own* filings; a decision control forced on it gets the API's `403` |
+
+Reset them any time with an idempotent seed — fixed emails, tag IDs and request IDs behind
+`upsert`:
+
+```bash
+cd backend && pnpm prisma:seed
+```
+
+It prints the credentials and the demo item IDs, and it also **resets** the demo transfer
+request to `PENDING` and the demo laptop/charger back to `ACTIVE`, which is what makes a
+walkthrough repeatable after you have approved or disposed something. `ItemEditLog` history is
+not rewound — that trail is append-only.
+
+Seeded so the screens aren't empty on a fresh database: four items with QR tags
+(`CNCS-DEMO-0001` laptop, `-0002` desk, `-0003` microscope, `-0004` charger bundled with the
+laptop), one `PENDING` transfer filed by the staff account, and one unread notification in the
+admin's inbox.
+
+> **No seeded item is disposed.** To see the disposal state and the public `410`, approve a
+disposal through the UI. A disposed item is *not* waiting in the seed data — and the
+`CNCS-DEAD0000` tag the frontend tests use is an MSW fixture, not a seeded row.
+
+Session behaviour that trips people up: the JWT **expires in 1 day** (`expiresIn: "1d"`, no
+refresh), sign out is client-side only (there is no logout endpoint), and the token lives in
+`localStorage` — so testing anonymous field visibility needs a private window, not a sign-out.
 
 Without Docker:
 
@@ -166,13 +199,22 @@ A walkthrough that touches every phase, in the sequence that tells the story:
 2. **The flagship flow.** Go to `/scan`, type a seeded tag (the camera needs a secure context —
    use `localhost`, not a LAN IP over plain HTTP), land on `/item/:tagId`, and note that the
    sensitive fields are simply absent.
-3. **Disposed tag.** Look up the seeded disposed item as an anonymous visitor — F7.3's exact
-   sentence and a 410, not a 404.
-4. **Staff work.** Sign in as staff. `/items/new` to register an item (tag ID generated for you),
-   then open the item and link an accessory.
-5. **Request.** From the item, "File transfer / disposal" → `/requests/new`, submit a transfer.
-6. **Approval.** Switch to the admin account, open `/notifications` (the requester's filing is
-   there), then `/requests` → approve. The pending badge on the Requests nav item drops.
+3. **Staff work.** Sign in as staff (`staff@cncs.aau.edu.et` / `Staff123!`). `/items/new` to
+   register an item (tag ID generated for you), then open the item and link an accessory.
+4. **Request.** From the item, "File transfer / disposal" → `/requests/new`, submit a transfer.
+5. **Approval.** Switch to the admin account (`admin@cncs.aau.edu.et` / `Admin123!`), open
+   `/notifications` (the requester's filing is there), then `/requests` → approve. The pending
+   badge on the Requests nav item drops. Note the seeded laptop already has a `PENDING`
+   transfer waiting, so the queue is never empty on a fresh seed.
+6. **Disposed tag (F7.3).** Back as **staff**, file a `DISPOSAL` on a demo item — use
+   `CNCS-DEMO-0003` (the microscope): the seeded laptop already carries a `PENDING` request, so a
+   second one on it answers `409`. Then sign in as **admin** and approve it. Two rules make this
+   a two-account step, and both are worth showing: an admin **cannot decide their own request**
+   (`403 You cannot decide your own request`), and staff cannot decide anything at all.
+   Finally, open that item's `/item/:tagId` in a **private window** — a `410` with F7.3's exact
+   sentence, not a `404`. Nothing in the seed data is disposed, so this state has to be produced
+   by hand; `pnpm prisma:seed` puts the laptop and charger back to `ACTIVE` so the step is
+   repeatable (the edit-log rows that decision wrote stay, by design).
 7. **Audit.** `/audit/new`, pick the department, scan or type tags on `/audit/:id/scan`, then
    complete. The summary's found/missing/wrong-location counts come straight from the API.
 8. **Reporting.** Download the audit CSV from the completion screen, then `/reports` for the

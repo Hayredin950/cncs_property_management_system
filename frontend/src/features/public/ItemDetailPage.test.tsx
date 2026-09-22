@@ -43,6 +43,11 @@ describe("/item/:tagId — field-visibility matrix", () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/item/CNCS-AB12CD34"] });
 
+    // A stored token paints the public shell for the one frame before
+    // `/auth/me` answers, then the workbench replaces it (`SmartLayout`). Wait
+    // for the workbench first, so `main` below is the settled node rather than
+    // one React has already unmounted.
+    await screen.findByText("Navigation");
     const main = await screen.findByRole("main");
     expect(await within(main).findByText("ETB 45,000.00")).toBeInTheDocument();
     // The fixture item's owner is the staff user, not the signed-in admin —

@@ -8,16 +8,19 @@ import {
   setSidebarCollapsed,
   setToken,
 } from "../lib/storage";
+import { PRIVILEGED_ITEM, PUBLIC_ITEM } from "./fixtures";
 
 /**
  * The sidebar is the workbench's anchor — it carries the destinations, the
  * review-queue badge, the API health indicator and Sign out. Two things used to
  * take it away from a signed-in user, and these tests pin both fixes:
  *
- *   1. **Following a nav link.** `/items` and `/scan` were public routes, so
- *      clicking either one left the app shell entirely: no nav, no badge, no way
- *      back but the browser's Back button. The shell now follows the *session*
- *      (`SmartLayout`), not the path.
+ *   1. **Following a nav link, or being redirected.** `/items`, `/scan` and
+ *      `/item/:tagId` were public routes, so clicking either sidebar entry —
+ *      and, worse, *saving an item*, which sends a signed-in user straight to
+ *      the QR destination — left the app shell entirely: no nav, no badge, no
+ *      way back but the browser's Back button. The shell now follows the
+ *      *session* (`SmartLayout`), not the path.
  *   2. **Scrolling.** The rail was in normal flow, so a long register table
  *      carried it off the top of the viewport. It is sticky now, and it folds to
  *      an icon rail instead of disappearing.
@@ -85,6 +88,32 @@ describe("workbench shell", () => {
     // No workbench chrome for someone without an account...
     expect(sidebarPanel()).not.toBeInTheDocument();
     // ...and the public header's own call to action is what they get instead.
+    expect(screen.getByText("Staff Sign In")).toBeInTheDocument();
+  });
+
+  it("keeps the sidebar when a signed-in user lands on the QR destination", async () => {
+    setToken("test-token");
+    renderWithProviders({ initialEntries: [`/item/${PRIVILEGED_ITEM.tagId}`] });
+
+    // Same ordering rule as the /scan case: wait for the rail first, so auth has
+    // resolved and the shell has settled, then assert the page.
+    expect(await screen.findByText("Navigation")).toBeInTheDocument();
+
+    // The record still renders — this is a chrome change, not a route change.
+    expect(
+      await screen.findByRole("heading", { name: PRIVILEGED_ITEM.name }),
+    ).toBeInTheDocument();
+  });
+
+  it("still gives an anonymous visitor the public shell on the QR destination", async () => {
+    clearToken();
+    renderWithProviders({ initialEntries: [`/item/${PUBLIC_ITEM.tagId}`] });
+
+    expect(
+      await screen.findByRole("heading", { name: PUBLIC_ITEM.name }),
+    ).toBeInTheDocument();
+    // A QR scan by a member of the public must not reveal staff chrome.
+    expect(sidebarPanel()).not.toBeInTheDocument();
     expect(screen.getByText("Staff Sign In")).toBeInTheDocument();
   });
 

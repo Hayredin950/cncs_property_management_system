@@ -30,15 +30,15 @@ import { SmartLayout } from "./SmartLayout";
  * The route map from `frontend-plan.md` §6. Two shells, exactly as
  * `frontend-design-system.md` §9 describes them:
  *
- * - **Shell A** (`PublicLayout`) — `/`, `/items`, `/scan`, `/item/:tagId`,
- *   `/login`: open to everyone, including anonymous visitors.
+ * - **Shell A** (`PublicLayout`) — `/`, `/map`, `/login` and `*`: open to
+ *   everyone, including anonymous visitors.
  * - **Shell B/C** (`AppLayout` behind `RequireAuth`) — everything staff/admin:
  *   dashboard, item management, requests, notifications, admin screens.
- * - **SmartLayout** — `/items` and `/scan` only. Both are staff sidebar entries
- *   *and* public surfaces, so the shell is chosen per request
+ * - **SmartLayout** — `/items`, `/scan` and `/item/:tagId`. Each is a staff
+ *   destination *and* a public surface, so the shell is chosen per request
  *   (signed in → workbench, anonymous → Shell A). See `SmartLayout.tsx` for the
- *   bug that made this necessary: without it, two sidebar links dropped the
- *   whole nav.
+ *   bug that made this necessary: without it, following a sidebar link — or
+ *   landing on the QR destination after a save — dropped the whole nav.
  *
  * `*` lives under the public shell so an unknown path still gets a header and
  * footer rather than a bare error box — and it's the same 404 a role-scoped
@@ -67,19 +67,25 @@ export const appRoutes: RouteObject[] = [
         children: [
           { path: "/", element: <LandingPage /> },
           { path: "/map", element: <MapPage /> },
-          { path: "/item/:tagId", element: <ItemDetailPage /> },
           { path: "/login", element: <LoginPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },
-      // Shared addresses: staff sidebar destinations that are also public
-      // surfaces. Must not be duplicated in the Shell A block above — React
-      // Router matches one route per path, so a second copy would be dead.
+      // Shared addresses: destinations a signed-in user reaches from the
+      // workbench that are also public surfaces. Must not be duplicated in the
+      // Shell A block above — React Router matches one route per path, so a
+      // second copy would be dead.
       {
         element: <SmartLayout />,
         children: [
           { path: "/items", element: <ItemsBrowsePage /> },
           { path: "/scan", element: <ScanPage /> },
+          // The QR destination. It is public, but it is also where the item
+          // form lands after a save, where `ItemFormPage`'s and
+          // `ItemStaffPage`'s "public page" links point, and where a staff
+          // scan ends up — so a signed-in user must arrive with the nav they
+          // left from rather than losing it. See `SmartLayout.tsx`.
+          { path: "/item/:tagId", element: <ItemDetailPage /> },
         ],
       },
       {

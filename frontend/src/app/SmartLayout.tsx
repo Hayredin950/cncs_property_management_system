@@ -5,13 +5,14 @@ import { PublicLayout } from "./PublicLayout";
 /**
  * The shell for a route that **both audiences use at the same address**.
  *
- * `/items` and `/scan` are staff sidebar destinations *and* the public surfaces a
- * visitor without an account uses (browse the register; scan a tag). Neither
- * shell is unconditionally right for them, and hard-wiring them to
- * `PublicLayout` was actively broken for the staff case: clicking "Scan" or
- * "Items" in the sidebar navigated out of the workbench entirely, so the nav,
- * the review-queue badge, the health indicator and Sign out all vanished and the
- * only way back was the browser's Back button.
+ * `/items`, `/scan` and `/item/:tagId` are staff destinations *and* the public
+ * surfaces a visitor without an account uses (browse the register; scan a tag;
+ * read a record from a QR sticker). Neither shell is unconditionally right for
+ * them, and hard-wiring them to `PublicLayout` was actively broken for the staff
+ * case: clicking "Scan" or "Items" in the sidebar navigated out of the workbench
+ * entirely, and the item form *sends* a signed-in user to `/item/:tagId` after a
+ * save — so the nav, the review-queue badge, the health indicator and Sign out
+ * all vanished and the only way back was the browser's Back button.
  *
  * Deciding per *request* rather than per *route* keeps both contracts intact:
  *

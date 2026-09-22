@@ -43,11 +43,38 @@ const itemSchema = z.object({
   brand: z.string().trim().max(200).optional().or(z.literal("")),
   model: z.string().trim().max(200).optional().or(z.literal("")),
   serialNumber: z.string().trim().max(200).optional().or(z.literal("")),
-  photoUrl: z.string().trim().url("Photo URL must be a valid URL").optional().or(z.literal("")),
+  photoUrl: z
+    .string()
+    .trim()
+    .refine((value) => value === "" || isPhotoSource(value), {
+      message: "Enter a full URL (https://…) or a path beginning with /",
+    })
+    .optional(),
   notes: z.string().trim().max(2000).optional().or(z.literal("")),
 });
 
 type ItemFormValues = z.input<typeof itemSchema>;
+
+/**
+ * A photo source is either an absolute URL or a path on *this* site.
+ *
+ * The relative form is not a convenience — it is the correct one for the seeded
+ * demo photos, which live in the frontend's `public/photos/` and are therefore
+ * served from the app's own origin. Storing `http://localhost:5173/…` would bake
+ * the dev host into the database and 404 the moment the app moved, the same way
+ * a changed `PUBLIC_BASE_URL` kills every printed QR sticker (see
+ * `public/photos/CREDITS.md`). `//host/path` is rejected because a browser reads
+ * it as protocol-relative, i.e. as a remote host, not a local path.
+ */
+function isPhotoSource(value: string): boolean {
+  if (value.startsWith("/")) return !value.startsWith("//");
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 /** `/items/new` and `/items/:id/edit` — one form, two modes (F2.1, F2.3, F2.4). */
 export function ItemFormPage({ mode }: { mode: "create" | "edit" }) {

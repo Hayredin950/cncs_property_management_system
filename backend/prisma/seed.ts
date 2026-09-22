@@ -87,6 +87,7 @@ async function main() {
       condition: Condition.GOOD,
       brand: "Dell",
       model: "Latitude 5420",
+      photoUrl: "/photos/laptop.jpg",
     },
     {
       tagId: "CNCS-DEMO-0002",
@@ -99,6 +100,7 @@ async function main() {
       ownerId: admin.id,
       purchaseCost: 8000,
       condition: Condition.NEW,
+      photoUrl: "/photos/desk.jpg",
     },
     {
       tagId: "CNCS-DEMO-0003",
@@ -113,6 +115,7 @@ async function main() {
       condition: Condition.FAIR,
       brand: "Olympus",
       model: "CX23",
+      photoUrl: "/photos/microscope.jpg",
     },
   ];
 
@@ -120,7 +123,13 @@ async function main() {
   for (const { tagId, ...data } of sampleItems) {
     const item = await prisma.item.upsert({
       where: { tagId },
-      update: {},
+      // `photoUrl` is the one field this seed *does* refresh on an existing
+      // row. Every other column is left alone so a walked-through demo is not
+      // silently reset, but the photo is presentation-only demo furniture: an
+      // instance seeded before these images existed would keep rendering
+      // `PhotoFrame`'s "No photo" placeholder forever, and the only other fix
+      // would be dropping the database.
+      update: { photoUrl: data.photoUrl },
       create: { ...data, tagId },
     });
     seededItems.set(item.tagId, item);
@@ -139,7 +148,7 @@ async function main() {
   // `update` re-links it, so a demo that unlinked it is repeatable.
   const charger = await prisma.item.upsert({
     where: { tagId: CHARGER_TAG_ID },
-    update: { parentItemId: laptop.id },
+    update: { parentItemId: laptop.id, photoUrl: "/photos/charger.jpg" },
     create: {
       tagId: CHARGER_TAG_ID,
       name: "Dell 65W Charger",
@@ -154,6 +163,7 @@ async function main() {
       brand: "Dell",
       model: "LA65NM130",
       parentItemId: laptop.id,
+      photoUrl: "/photos/charger.jpg",
     },
   });
   await generateTagQR(charger.tagId);

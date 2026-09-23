@@ -64,6 +64,34 @@ export function updateItem(id: string, payload: Partial<CreateItemPayload>): Pro
   return apiClient.put<Item>(`/items/${encodeURIComponent(id)}`, payload);
 }
 
+/**
+ * `DELETE /items/:id` — **Admin only**, and a real delete.
+ *
+ * The rest of the app never destroys a record: disposal is a status change and
+ * the edit log is append-only (F7.2). This is the exception an administrator
+ * needs for data correction — a typo'd registration or a duplicate, which
+ * editing cannot fix because the tag id and history would remain. `useDeleteItem`
+ * is what the UI calls, and the server independently enforces the role.
+ */
+export function deleteItem(id: string): Promise<DeletedItemSummary> {
+  return apiClient.delete<DeletedItemSummary>(`/items/${encodeURIComponent(id)}`);
+}
+
+/**
+ * What the delete reports back. The counts are the server telling the caller how
+ * much went with the item — the UI says it out loud rather than letting an
+ * administrator discover later that a request trail disappeared too.
+ */
+export interface DeletedItemSummary {
+  id: string;
+  tagId: string;
+  name: string;
+  unlinkedAccessoryCount: number;
+  deletedRequestCount: number;
+  deletedEditLogCount: number;
+  deletedAuditResultCount: number;
+}
+
 /** `GET /items/:id/history` — Staff/Admin; disposed items included on purpose (F7.2). */
 export function fetchItemHistory(
   id: string,

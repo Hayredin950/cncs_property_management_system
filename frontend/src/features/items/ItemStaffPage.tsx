@@ -1,12 +1,13 @@
 import { Link2, PackageOpen, Printer, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { HistoryList } from "../../components/HistoryList";
 import { Input } from "../../components/Input";
+import { ItemActions } from "../../components/ItemActions";
 import { ItemDetailView } from "../../components/ItemDetailView";
 import { Modal } from "../../components/Modal";
 import { Skeleton, SkeletonText } from "../../components/Skeleton";
@@ -29,13 +30,15 @@ import { ConditionBadge, ItemStatusBadge } from "../../components/StatusBadges";
  * ConfirmDialog), the accessories bundle list (F2.2), and the grouped edit
  * history (F2.3/F6.3).
  *
- * The route param is the UUID, but the data is fetched by tag through
- * `?tag=` — there is no `GET /items/:id` in the built backend (recorded as a
- * spec-vs-backend gap in docs/frontend-phase-1.md).
+ * The data is fetched by tag through `?tag=` (or the location state a link
+ * passes), because there is no `GET /items/:id` in the built backend — recorded
+ * as a spec-vs-backend gap in docs/frontend-phase-1.md. The `:id` in the path is
+ * therefore **not read**: it is there so the URL of a specific item is
+ * bookmarkable, and the tag in the query is what actually resolves it.
  */
 export function ItemStaffPage() {
-  const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
   const state = location.state as { tagId?: string } | null;
   const tagId = state?.tagId ?? new URLSearchParams(location.search).get("tag") ?? "";
 
@@ -102,12 +105,15 @@ export function ItemStaffPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Link to={`/items/${id}/edit?tag=${encodeURIComponent(item.tagId)}`}>
-          <Button variant="outline" size="sm">
-            Edit item
-          </Button>
-        </Link>
+      <div className="flex flex-wrap items-center gap-2">
+        {/*
+          The same role-gated pair the item page and the browse cards use, so
+          "who may edit, who may delete" has one implementation. Deletion is
+          allowed on a disposed item too — that is exactly the mistake a hard
+          delete is for — and it leaves for the register, since this page's id
+          no longer resolves.
+        */}
+        <ItemActions item={item} onDeleted={() => navigate("/items")} />
         <Link to={`/requests/new?item=${encodeURIComponent(item.tagId)}`}>
           <Button variant="outline" size="sm">
             File transfer / disposal

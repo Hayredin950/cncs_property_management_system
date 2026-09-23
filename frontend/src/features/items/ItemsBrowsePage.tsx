@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
+import { ItemActions } from "../../components/ItemActions";
 import { ItemCard } from "../../components/ItemCard";
 import { Input } from "../../components/Input";
 import { Pagination } from "../../components/Pagination";
@@ -153,7 +154,11 @@ export function ItemsBrowsePage() {
             ].join(" ")}
           >
             {itemsQuery.data.data.map((item) => (
-              <ItemCard key={item.id} item={item} />
+              <ItemCard
+                key={item.id}
+                item={item}
+                actions={<ItemActions item={item} variant="icons" />}
+              />
             ))}
           </div>
           <Pagination

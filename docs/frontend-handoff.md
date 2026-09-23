@@ -104,6 +104,39 @@ the whole app down with React Router's default error screen.
 the camera from the `start()` continuation if it resolves after unmount. `src/test/qrScanner.test.tsx`
 guards all of it — do not simplify those paths away.
 
+## Added after Phase 3
+
+Two changes landed after the plan's three phases, both driven by demo feedback.
+
+### Photos are uploaded, not pasted (F3.4)
+
+`CreateItemPayload.photoUrl` is now written by the form from an upload rather than typed by hand.
+`PhotoField` offers three sources — **camera** (`capture="environment"`), **device file**, and
+**URL** — and is the same component in create and edit mode:
+
+- Camera and gallery are two separate `<input type="file">` elements. One input cannot do both:
+  `capture` tells a phone to open the camera *instead of* the gallery.
+- The file uploads immediately so the preview shows the *stored* image, but **Save is what commits
+  it** — a cancelled edit changes nothing. That is why the upload is not item-scoped.
+- `photoUrl` accepts an absolute URL or a site-relative path (`/photos/desk.jpg`, what the seed
+  writes). The server enforces both via `utils/photoSource.ts`.
+
+### Item actions, and the one destructive endpoint
+
+`ItemActions` renders, gated by role, on **both** the `/item/:tagId` page and each card in the
+`/items` grid — the QR destination is where a scan and every post-save redirect lands, and the
+controls were three taps deep before.
+
+- **Staff** get Edit. **Admin** get Edit and Delete. Signed-out visitors get nothing, so the public
+  QR page keeps its public chrome.
+- `DELETE /items/:id` is the only endpoint in the API that destroys a record, against F7.2
+  everywhere else. It exists for data correction (a typo'd or duplicated registration that editing
+  cannot fix), and its confirmation names the casualties — edit history, requests, audit results —
+  and points at the disposal request as the non-destructive alternative. See
+  [`backend-handoff.md`](backend-handoff.md) for the endpoint's exact behaviour.
+- **Disposal is still the normal path for retiring an asset.** Delete is deliberately not wired
+  into any disposal flow.
+
 ## What was deliberately cut, and why
 
 - **`/map` as a real map.** No coordinates or tiles exist in the schema. It ships as building
@@ -130,7 +163,7 @@ one on the page rather than failing silently.
 | --- | --- | --- |
 | G1 | No `GET /audits/:id` and no `GET /audits` list | The audit's running scan list and completion summary live in browser storage; a cold visit to `/audit/:id/report` shows a deliberate "not available" state |
 | G2 | No user list / role-change endpoints | `/admin/users` and `/admin/categories` **create only**; no listing, no editing. Item owner select is limited to your own account |
-| G3 | No upload endpoint | Photo is a **URL** field with a preview, never a file picker — a file picker would have nowhere to post |
+| ~~G3~~ | **Closed.** `POST /uploads/photo` exists now | The photo field takes a camera shot, a device file, or a pasted URL — in create mode too, which is why the upload is item-less and returns a URL the form submits |
 | G4 | 1-day JWT, no refresh | Sessions end after a day of inactivity even though F1.4 says until explicit logout |
 | G9 | No `GET /departments` | Department lists are derived from one page of `GET /items`; the audit picker is locked to those values because completion matches `scopeValue` exactly and case-sensitively |
 

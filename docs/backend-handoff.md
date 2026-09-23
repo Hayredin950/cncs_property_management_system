@@ -12,6 +12,8 @@ This is the backend the frontend is building against. Every route below is also 
 | `POST /items` | Staff, Admin | Registers an item and creates its tag ID and QR image. |
 | `GET /items` | Public; richer when signed in | Paginated active-item list: `page`, `limit`, `search`, `categoryId`, `department`. |
 | `GET /items/:tagId`, `PUT /items/:id` | Public; Staff/Admin | Public QR lookup and active-item update with per-field history. Public disposed lookup is 410. |
+| `DELETE /items/:id` | **Admin** | Permanently removes the item *and* its requests, edit history and audit results; accessories are unlinked, not deleted. See the deviation below. |
+| `POST /uploads/photo` | Staff, Admin | Stores an image (`multipart/form-data`, field `photo`, ≤5 MB, JPEG/PNG/WebP/GIF) and returns `{ url }`. |
 | `GET /items/:id/tag`, `POST /items/:id/tag/regenerate` | Staff, Admin | Fetch or re-render a QR PNG; regeneration retains the tag ID. |
 | `GET /items/:id/history` | Staff, Admin | Edit history, including disposed items; `field`, `limit`, `offset`. |
 | `POST /items/:id/accessories`, `DELETE /items/:id/accessories/:accessoryId` | Staff, Admin | Link/unlink existing accessory items; bundle rules are server-enforced. |
@@ -25,6 +27,30 @@ This is the backend the frontend is building against. Every route below is also 
 | `GET /reports/disposals?format=csv` | Staff, Admin | Approved-disposal CSV; filters: `department`, `dateFrom`, `dateTo`. |
 
 Report dates use UTC and `dateTo` includes the whole UTC day. CSV decimals are strings.
+
+## `DELETE /items/:id` is a deliberate departure from F7.2
+
+Everywhere else, a record is never destroyed: disposal flips `status` to `DISPOSED` and keeps the
+row, a decided request cannot be reopened, and `ItemEditLog` is append-only. That is the point of
+the edit log, and it is why `GET /items` has no "show disposed" toggle — the trail is the product.
+
+`DELETE /items/:id` breaks that rule on purpose, for data correction: a typo'd registration or a
+duplicate cannot be fixed by editing, because the tag ID and the original history would remain. So
+the capability is fenced in on purpose:
+
+- **Admin only.** Staff get 403; the fleet's path for taking an item out of service stays the
+  `DISPOSAL` request, which preserves the trail.
+- **Not the UI's default.** Nothing routes here from a disposal flow. The confirmation names what
+  goes (history, requests, audit results) and points at the request workflow as the alternative.
+- **Dependents are removed in the same transaction**, in dependency order, because every relation
+  onto `Item` uses the schema's default `Restrict`. Accessories are *unlinked* — they are separate
+  assets, and destroying them would turn one mistake into several. Notifications that referenced the
+  deleted requests go too (`Notification.relatedRequestId` is a bare string, not a relation).
+- **The photo is not deleted from Cloudinary.** The row's URL is the only reference to it, so the
+  asset is orphaned rather than removed.
+
+Responses report the collateral (`unlinkedAccessoryCount`, `deletedRequestCount`,
+`deletedEditLogCount`, `deletedAuditResultCount`) so a caller can tell the user what actually went.
 
 ## Field filtering is a backend rule
 

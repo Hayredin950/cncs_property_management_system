@@ -9,8 +9,7 @@ import { Button } from "../../components/Button";
 import { DepartmentPicker } from "../../components/DepartmentPicker";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
-import { PhotoFrame } from "../../components/PhotoFrame";
-import { PhotoUploadField } from "../../components/PhotoUploadField";
+import { PhotoField } from "../../components/PhotoField";
 import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
 import { Textarea } from "../../components/Textarea";
@@ -22,7 +21,8 @@ import { CONDITIONS, CONDITION_LABELS } from "../../types/enums";
 
 /**
  * Mirrors the backend's `createItemSchema` (routes/items.ts) exactly — same
- * required fields, same minimums, same URL check — so the only way to see the
+ * required fields, same minimums, same photo-source check (`isPhotoSource`, which
+ * accepts an absolute URL or a site-relative path) — so the only way to see the
  * server's validation error is a real edge case (design doc §10.6).
  * `parentItemId` is deliberately absent: the API 400s on it and points at the
  * accessories endpoint.
@@ -214,13 +214,14 @@ function CreateItemForm() {
             <Input label="Brand" error={errors.brand?.message} {...register("brand")} />
             <Input label="Model" error={errors.model?.message} {...register("model")} />
             <Input label="Serial number" error={errors.serialNumber?.message} {...register("serialNumber")} />
-            <Input label="Photo URL" hint="A link to a photo — there is no upload endpoint (gap G3)." error={errors.photoUrl?.message} {...register("photoUrl")} />
           </div>
-          {photoUrl ? (
-            <div className="w-40">
-              <PhotoFrame src={photoUrl} alt="Photo preview" />
-            </div>
-          ) : null}
+          <PhotoField
+            value={photoUrl ?? ""}
+            onChange={(next) =>
+              setValue("photoUrl", next, { shouldDirty: true, shouldValidate: true })
+            }
+            error={errors.photoUrl?.message}
+          />
           <Textarea label="Notes" error={errors.notes?.message} {...register("notes")} />
         </FormSection>
 
@@ -432,21 +433,21 @@ function EditItemInner({
               <Input label="Brand" error={errors.brand?.message} {...register("brand")} />
               <Input label="Model" error={errors.model?.message} {...register("model")} />
               <Input label="Serial number" error={errors.serialNumber?.message} {...register("serialNumber")} />
-              <Input
-                label="Photo URL (optional)"
-                error={errors.photoUrl?.message}
-                {...register("photoUrl")}
-                disabled={disposed}
-                hint="A link to a photo hosted elsewhere. Uploading a file above replaces it."
-              />
             </div>
             {/*
-              Upload first, then the URL field: the picker is the supported path
-              now, and the field stays for a photo that is already hosted
-              somewhere (the seeded demo items use exactly that). The upload is
-              immediate, so this is the item's *saved* photo, not a pending edit.
+              Like the rest of the form, the photo is committed by Save: picking
+              or photographing an image uploads it and stores the URL in the form,
+              and nothing changes on the row until the user submits. That is why
+              the picker needs no item id and reads the same in both modes.
             */}
-            <PhotoUploadField itemId={itemId} photoUrl={photoUrl || null} disabled={disposed} />
+            <PhotoField
+              value={photoUrl ?? ""}
+              onChange={(next) =>
+                setValue("photoUrl", next, { shouldDirty: true, shouldValidate: true })
+              }
+              error={errors.photoUrl?.message}
+              disabled={disposed}
+            />
             <Textarea label="Notes" error={errors.notes?.message} {...register("notes")} />
           </FormSection>
 

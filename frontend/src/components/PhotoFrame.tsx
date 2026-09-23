@@ -13,9 +13,10 @@ export interface PhotoFrameProps {
 
 /**
  * Fixed 4:3 frame around `photoUrl` (frontend-design-system.md §8). `photoUrl` is
- * an unvalidated URL string with no upload endpoint (gap G3 in frontend-plan.md
- * §12), so a dead link is an expected case, not an exceptional one — this never
- * renders the browser's broken-image icon.
+ * still just a string — it may have been uploaded through `POST /uploads/photo`,
+ * pasted as an external link, or written by the seed script — so a dead link is
+ * an expected case, not an exceptional one, and this never renders the browser's
+ * broken-image icon.
  *
  * Falls back to a generic placeholder rather than a per-category icon:
  * categories are open-ended, admin-created strings (`POST /categories`), not a

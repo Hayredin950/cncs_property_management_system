@@ -51,6 +51,13 @@ const csv = () =>
 /** The session id the complete/409 tests use — completing it again is refused by the API. */
 export const COMPLETED_AUDIT_ID = "audit-done";
 
+/**
+ * What `POST /uploads/photo` resolves with — a Cloudinary `secure_url`, which is
+ * exactly the shape `Item.photoUrl` accepts (an absolute `https` value).
+ */
+export const UPLOADED_PHOTO_URL =
+  "https://res.cloudinary.com/demo/image/upload/v1/cncs-pms/items/pending-test.jpg";
+
 export const handlers = [
   http.post(`${API}/auth/login`, () => HttpResponse.json(LOGIN_RESPONSE)),
 
@@ -59,6 +66,14 @@ export const handlers = [
   http.get(`${API}/health`, healthOk),
 
   http.get(`${API}/categories`, () => HttpResponse.json([{ id: "cat-1", name: "Laptops" }])),
+
+  /**
+   * The item form's photo upload. Writes are authenticated like every other
+   * write, so an anonymous caller gets the same 401 the API would send.
+   */
+  http.post(`${API}/uploads/photo`, () =>
+    getToken() ? HttpResponse.json({ url: UPLOADED_PHOTO_URL }, { status: 201 }) : unauthorized(),
+  ),
 
   http.get(`${API}/items`, ({ request }) => {
     const url = new URL(request.url);

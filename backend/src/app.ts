@@ -11,6 +11,7 @@ import { itemsRouter } from "./routes/items.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { reportsRouter } from "./routes/reports.js";
 import { requestsRouter } from "./routes/requests.js";
+import { uploadsRouter } from "./routes/uploads.js";
 import { tagsRouter } from "./routes/tags.js";
 
 const app: Application = express();
@@ -86,6 +87,7 @@ app.use(["/api/v1/items", "/items"], itemsRouter);
 app.use(["/api/v1/notifications", "/notifications"], notificationsRouter);
 app.use(["/api/v1/reports", "/reports"], reportsRouter);
 app.use(["/api/v1/requests", "/requests"], requestsRouter);
+app.use(["/api/v1/uploads", "/uploads"], uploadsRouter);
 
 /**
  * Both must come last, and in this order. `notFoundHandler` is a plain `use()`

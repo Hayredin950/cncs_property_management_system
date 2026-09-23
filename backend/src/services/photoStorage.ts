@@ -1,3 +1,5 @@
+import crypto from "crypto";
+
 /**
  * Item photo uploads — the missing half of `Item.photoUrl` (SRS F3.4).
  *
@@ -64,7 +66,32 @@ const PHOTO_FOLDER = "cncs-pms/items";
  * regeneration (F3.5 reissues the sticker, not the id), which makes them exactly
  * the right key for this.
  */
-export async function uploadItemPhoto(buffer: Buffer, tagId: string): Promise<string> {
+export function uploadItemPhoto(buffer: Buffer, tagId: string): Promise<string> {
+  return upload(buffer, tagId, true);
+}
+
+/**
+ * Upload an image that is not attached to an item yet, and resolve with its URL.
+ *
+ * This is what the item *form* needs: on `/items/new` there is no row yet, so
+ * there is no tag id to key the upload by and no item to attach it to. The URL
+ * comes back to the form, which submits it as `photoUrl`, and the ordinary
+ * create/update path stores it — so the column still has exactly one writer.
+ *
+ * `public_id` is random and `overwrite` is off: two people photographing two
+ * different new items must not collide, and nothing should be able to replace an
+ * existing image without knowing its id.
+ *
+ * The cost is real and worth naming: if the form is abandoned after the upload,
+ * the image stays in the account unreferenced. That is the trade every
+ * "upload, then save" form makes, and the alternative — holding the bytes until
+ * submit — cannot produce a URL for the preview the user needs to see.
+ */
+export function uploadPendingPhoto(buffer: Buffer): Promise<string> {
+  return upload(buffer, `pending-${crypto.randomUUID()}`, false);
+}
+
+async function upload(buffer: Buffer, publicId: string, overwrite: boolean): Promise<string> {
   const config = readPhotoUploadConfig();
   if (!config) {
     throw new PhotoUploadError("Photo uploads are not configured");
@@ -85,10 +112,12 @@ export async function uploadItemPhoto(buffer: Buffer, tagId: string): Promise<st
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: PHOTO_FOLDER,
-        public_id: tagId,
+        public_id: publicId,
         resource_type: "image",
-        overwrite: true,
-        invalidate: true,
+        overwrite,
+        // Only meaningful when replacing an existing public_id; asking the CDN
+        // to invalidate a brand-new id is a no-op that still costs a call.
+        invalidate: overwrite,
       },
       (error, result) => {
         if (error || !result?.secure_url) {

@@ -1,6 +1,5 @@
 import crypto from "crypto";
-import { Router, type NextFunction, type Request, type Response } from "express";
-import multer from "multer";
+import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import type { Prisma } from "../generated/prisma/client.js";
 import { httpError } from "../lib/httpError.js";
@@ -11,6 +10,11 @@ import {
   requireRole,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
+import {
+  ALLOWED_PHOTO_TYPES,
+  PHOTO_FIELD_NAME,
+  acceptPhotoUpload,
+} from "../middleware/photoUpload.js";
 import { buildEditLogRows, writeEditLogRows } from "../services/itemEditLog.js";
 import {
   PhotoUploadError,
@@ -19,56 +23,17 @@ import {
 } from "../services/photoStorage.js";
 import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
 import { isPrivilegedViewer, sanitizeItem } from "../utils/filterItemFields.js";
+import { isPhotoSource } from "../utils/photoSource.js";
 
 export const itemsRouter: Router = Router();
 
 const ConditionEnum = z.enum(["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"]);
 
-/** 5 MB: comfortably above a phone photo, well under a serverless body limit. */
-const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
-
 /**
- * MIME types accepted for an item photo. Checked against the *declared* type
- * rather than the bytes, which is why the list is short and the files are not
- * served from our own origin: the value ends up as an `<img src>` pointing at
- * Cloudinary's CDN, so a mislabelled file cannot execute in the app's origin.
+ * The multipart rules (`PHOTO_MAX_BYTES`, the MIME list, `acceptPhotoUpload`)
+ * live in `middleware/photoUpload.ts` because `POST /uploads/photo` accepts the
+ * same files from a different route — see the note there.
  */
-const ALLOWED_PHOTO_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-]);
-
-const photoUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: PHOTO_MAX_BYTES, files: 1 },
-});
-
-/**
- * Run multer, then translate its own failures into this API's status codes.
- * Without this an oversized upload reaches the central error handler as a bare
- * `MulterError` and comes back as a 500 — "the server is broken" for what is
- * plainly a client mistake.
- */
-function acceptPhotoUpload(req: Request, res: Response, next: NextFunction): void {
-  photoUpload.single("photo")(req, res, (err: unknown) => {
-    if (!err) {
-      next();
-      return;
-    }
-    if (err instanceof multer.MulterError) {
-      const tooLarge = err.code === "LIMIT_FILE_SIZE";
-      res.status(tooLarge ? 413 : 400).json({
-        error: tooLarge
-          ? "Photo must be 5 MB or smaller"
-          : `Photo upload rejected: ${err.code}`,
-      });
-      return;
-    }
-    next(err);
-  });
-}
 
 const createItemSchema = z.object({
   name: z.string().trim().min(1, "Item name is required"),
@@ -84,7 +49,16 @@ const createItemSchema = z.object({
   brand: z.string().trim().optional().nullable(),
   model: z.string().trim().optional().nullable(),
   serialNumber: z.string().trim().optional().nullable(),
-  photoUrl: z.string().url().optional().nullable(),
+  /**
+   * `isPhotoSource`, not `z.string().url()`: an absolute URL *or* a
+   * site-relative path. The stricter check looked right and broke a real case —
+   * the seeded demo rows carry `/photos/desk.jpg`, so editing any of them (the
+   * edit form resubmits the value it loaded) failed validation with "Invalid
+   * URL" and the save could never succeed. See `utils/photoSource.ts`.
+   */
+  photoUrl: z.string().trim().refine(isPhotoSource, {
+    message: "Photo must be a full https:// URL or a path beginning with /",
+  }).optional().nullable(),
   notes: z.string().trim().optional().nullable(),
 });
 
@@ -353,7 +327,9 @@ itemsRouter.post(
       }
 
       if (!req.file) {
-        res.status(400).json({ error: "Attach the image in a form field named `photo`" });
+        res.status(400).json({
+          error: `Attach the image in a form field named \`${PHOTO_FIELD_NAME}\``,
+        });
         return;
       }
 

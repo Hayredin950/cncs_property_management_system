@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
@@ -15,7 +15,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { Textarea } from "../../components/Textarea";
 import { useCategories } from "../../hooks/useCategories";
 import { useCreateItem, useUpdateItem } from "../../hooks/useItemMutations";
-import { useItemByTagId } from "../../hooks/useItems";
+import { useItemById } from "../../hooks/useItems";
 import { ApiError, NetworkError } from "../../types/api";
 import { CONDITIONS, CONDITION_LABELS } from "../../types/enums";
 
@@ -130,7 +130,7 @@ function OwnerSelect({
           ? [{ value: user.id, label: `${user.fullName} (you)` }]
           : []
       }
-      hint="Owners are limited to your own account for now — the backend has no user-list endpoint (gap G2)."
+      hint="Owners are limited to your own account here — reassignment to someone else goes through an approved transfer request."
       required
     />
   );
@@ -150,7 +150,19 @@ function CreateItemForm() {
     formState: { errors },
   } = useForm<ItemFormValues>({
     resolver: zodResolver(itemSchema),
-    defaultValues: { condition: "GOOD", purchaseCost: "", currentValue: "" },
+    /*
+      `ownerId` must be seeded, not left for the select to fill in on change.
+      The owner control is a *controlled* select (`value`/`onChange`, not
+      `register`), so an unset default means the field shows an option while
+      react-hook-form still holds `undefined` — the form then blocked submit with
+      zod's bare "Invalid input: expected string, received undefined" under it.
+    */
+    defaultValues: {
+      condition: "GOOD",
+      purchaseCost: "",
+      currentValue: "",
+      ownerId: user?.id ?? "",
+    },
   });
 
   const photoUrl = watch("photoUrl");
@@ -241,28 +253,11 @@ function CreateItemForm() {
 function EditItemForm() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
-  // Same constraint as the staff detail page: no GET /items/:id exists, so the
-  // edit form is seeded through the tag passed in the URL (?tag=) by the
-  // item's detail pages.
-  const tagId = searchParams.get("tag") ?? "";
-  const itemQuery = useItemByTagId(tagId || undefined);
-
-  if (!tagId) {
-    return (
-      <ErrorState
-        tone="neutral"
-        heading="Open this form from an item"
-        body="The edit form loads through an item's tag. Open it from the item's page."
-        action={
-          <Link to="/items">
-            <Button size="sm" variant="outline">Browse items</Button>
-          </Link>
-        }
-      />
-    );
-  }
+  // Seeded from the item's own id now that `GET /items/:id` exists — the form no
+  // longer needs the `?tag=` hand-off, so a bookmarked `/items/<uuid>/edit`
+  // loads directly.
+  const itemQuery = useItemById(id);
 
   if (itemQuery.isPending) {
     return (
@@ -300,7 +295,7 @@ function EditItemInner({
   onDone,
 }: {
   itemId: string;
-  item: Awaited<ReturnType<typeof useItemByTagId>>["data"];
+  item: Awaited<ReturnType<typeof useItemById>>["data"];
   disposed: boolean;
   onDone: () => void;
 }) {

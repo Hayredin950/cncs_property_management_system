@@ -1,5 +1,5 @@
 import { Archive, SearchX } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
@@ -19,7 +19,6 @@ import { ApiError, NetworkError } from "../../types/api";
 export function ItemDetailPage() {
   const { tagId } = useParams<{ tagId: string }>();
   const { user } = useAuth();
-  const navigate = useNavigate();
   const query = useItemByTagId(tagId);
 
   if (query.isPending) {
@@ -101,13 +100,12 @@ export function ItemDetailPage() {
             </Button>
           </Link>
           {/*
-            Edit and Delete sit here rather than only behind the staff page:
-            this is where a QR scan and every post-save redirect lands, and the
-            action was three taps away before. `ItemActions` renders nothing for
-            a signed-out visitor, so the public page is unchanged for them; after
-            a delete there is no item left to show, so it returns to the register.
+            Edit sits here rather than only behind the staff page: this is where
+            a QR scan and every post-save redirect lands, and the action was
+            three taps away before. `ItemActions` renders nothing for a
+            signed-out visitor, so the public page is unchanged for them.
           */}
-          <ItemActions item={item} onDeleted={() => navigate("/items")} />
+          <ItemActions item={item} />
         </div>
       )}
     </div>

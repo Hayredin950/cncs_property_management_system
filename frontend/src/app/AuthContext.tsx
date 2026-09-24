@@ -12,7 +12,10 @@ export type AuthStatus = "loading" | "authenticated" | "anonymous";
 interface AuthContextValue {
   user: AuthUser | null;
   status: AuthStatus;
-  login: (email: string, password: string) => Promise<void>;
+  /** Resolves with the authenticated user so the caller can branch on it (e.g. a forced password change). */
+  login: (email: string, password: string) => Promise<AuthUser>;
+  /** Install a session the server just issued — used after a password change re-issues the token. */
+  setSession: (token: string, user: AuthUser) => void;
   signOut: () => void;
 }
 
@@ -82,6 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const res = await loginRequest({ email, password });
         setToken(res.token);
         setUser(res.user);
+        setStatus("authenticated");
+        return res.user;
+      },
+      setSession: (token: string, nextUser: AuthUser) => {
+        setToken(token);
+        setUser(nextUser);
         setStatus("authenticated");
       },
       signOut: () => {

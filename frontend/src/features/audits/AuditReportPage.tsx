@@ -1,10 +1,13 @@
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, HelpCircle, MapPinOff } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
+import { fetchAuditSession } from "../../api/audits";
 import { saveReport, downloadAuditReport } from "../../api/reports";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { EmptyState } from "../../components/EmptyState";
+import { Skeleton } from "../../components/Skeleton";
 import { StatCard } from "../../components/StatCard";
 import { loadCompletionSummary, loadWalkthrough } from "../../lib/auditWalkthrough";
 import { formatDateTimeUTC } from "../../lib/formatters";
@@ -12,15 +15,18 @@ import { toast } from "../../lib/toast";
 import type { AuditCompletionResponse } from "../../types/audit";
 
 /**
- * `/audit/:id/report` (F9.3) — the completion summary, exactly as the completion
- * endpoint returned it.
+ * `/audit/:id/report` (F9.3) — the completion summary.
  *
- * The counts are **not** recomputed here. There is no `GET /audits/:id` (gap G1),
- * so the summary arrives through router state from the scan page and is mirrored
- * into `sessionStorage`; a direct visit to this URL without either shows the
- * "not available" state rather than guessing. Per-item detail is deliberately not
- * fetched — a `MISSING` row carries no item data, so the CSV export is the
- * breakdown, and the page says so instead of rendering a half-list.
+ * The summary arrives two ways now, in order of immediacy:
+ *
+ *   1. Router state (or its `sessionStorage` mirror), set the moment the audit
+ *      was completed — instant, no request.
+ *   2. `GET /audits/:id`, the read-back that closes gap G1. Before it, a reload
+ *      or a direct visit to this URL lost the summary for good because the
+ *      server had no way to hand it back.
+ *
+ * Either source produces the same shape, so nothing below branches on which one
+ * won. The counts are always the server's, never recomputed here.
  */
 export function AuditReportPage() {
   const { id = "" } = useParams<{ id: string }>();
@@ -28,17 +34,52 @@ export function AuditReportPage() {
   const [downloading, setDownloading] = useState(false);
 
   const fromState = (location.state as { summary?: AuditCompletionResponse } | null)?.summary;
-  const summary = fromState ?? loadCompletionSummary(id);
+  const cached = fromState ?? loadCompletionSummary(id);
   const walkthrough = loadWalkthrough(id);
 
+  // Only fetched when the summary is not already in hand — the common path
+  // (just completed, landed here) does not wait on a request.
+  const sessionQuery = useQuery({
+    queryKey: ["audit", id],
+    queryFn: ({ signal }) => fetchAuditSession(id, signal),
+    enabled: Boolean(id) && !cached,
+    retry: false,
+  });
+
+  const summary: AuditCompletionResponse | null = cached
+    ? cached
+    : sessionQuery.data
+      ? {
+          auditSessionId: sessionQuery.data.id,
+          completedAt: sessionQuery.data.completedAt ?? sessionQuery.data.startedAt,
+          counts: sessionQuery.data.counts,
+          found: sessionQuery.data.found,
+          missing: sessionQuery.data.missing,
+          locationMismatch: sessionQuery.data.locationMismatch,
+        }
+      : null;
+
   if (!summary) {
+    if (id && !sessionQuery.isError && (sessionQuery.isPending || sessionQuery.isFetching)) {
+      return (
+        <div className="mx-auto flex max-w-2xl flex-col gap-6" role="status" aria-label="Loading audit report">
+          <Skeleton className="h-8 w-1/3" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-6">
         <h1 className="text-2xl font-bold text-slate-900">Audit report</h1>
         <EmptyState
           icon={<AlertTriangle className="h-8 w-8" />}
-          heading="This session's summary isn't available"
-          body="The API has no endpoint for reading a finished audit back (gap G1), so the summary exists only right after the audit is completed. Complete the audit again to see it, or start a fresh one."
+          heading="This audit session couldn't be loaded"
+          body="The session id in the address isn't one this server knows about — it may have been mistyped, or the audit was never started. Check the link, or start a fresh audit."
           action={
             <div className="flex flex-wrap justify-center gap-2">
               {walkthrough.scanned.length > 0 && (
@@ -94,7 +135,7 @@ export function AuditReportPage() {
           icon={<HelpCircle className="h-5 w-5" />}
         />
         <StatCard
-          label="Wrong location"
+          label="Outside scope"
           value={summary.counts.locationMismatch}
           tone="danger"
           icon={<MapPinOff className="h-5 w-5" />}
@@ -106,10 +147,10 @@ export function AuditReportPage() {
         <p className="text-sm text-slate-600">
           <strong className="font-semibold text-slate-900">Found</strong> items have had <em>last audited</em>{" "}
           stamped with this completion time. <strong className="font-semibold text-slate-900">Missing</strong> items
-          are active items in the audited department that weren&apos;t scanned;{" "}
-          <strong className="font-semibold text-slate-900">wrong location</strong> items were scanned but don&apos;t
-          belong to it. The per-item breakdown — tag, room and result for each row — is in the CSV export, not on
-          this page.
+          are active items in the audited scope that weren&apos;t scanned;{" "}
+          <strong className="font-semibold text-slate-900">outside scope</strong> items were scanned but don&apos;t
+          belong to the scope being audited. The per-item breakdown — tag, room and result for each row — is in the
+          CSV export, not on this page.
         </p>
       </Card>
 

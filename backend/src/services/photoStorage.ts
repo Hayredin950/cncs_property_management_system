@@ -134,3 +134,71 @@ async function upload(buffer: Buffer, publicId: string, overwrite: boolean): Pro
     stream.end(buffer);
   });
 }
+
+/**
+ * Recover a Cloudinary `public_id` from a `secure_url`.
+ *
+ * Cloudinary URLs have the shape
+ * `https://res.cloudinary.com/<cloud>/image/upload/v<version>/<public_id>.<ext>`
+ * (the version segment is optional). The stored item value is the URL, not the
+ * id, so deleting has to parse it back.
+ *
+ * Returns `null` for anything not hosted on Cloudinary — a seeded demo photo
+ * such as `/photos/desk.jpg` is not ours to delete.
+ */
+export function publicIdFromUrl(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!parsed.hostname.endsWith("cloudinary.com")) return null;
+
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  const uploadIndex = segments.indexOf("upload");
+  if (uploadIndex === -1) return null;
+
+  let rest = segments.slice(uploadIndex + 1);
+  if (rest[0] && /^v\d+$/.test(rest[0])) rest = rest.slice(1);
+  if (rest.length === 0) return null;
+
+  // Drop the file extension: Cloudinary's public_id excludes it.
+  return rest.join("/").replace(/\.[a-z0-9]+$/i, "");
+}
+
+/**
+ * Destroy an uploaded image by its URL. Returns whether anything was removed.
+ *
+ * Guarded to `PHOTO_FOLDER` so this route can never be turned into an
+ * arbitrary-delete primitive against the rest of the Cloudinary account: a URL
+ * outside `cncs-pms/items` resolves to `false` without a call.
+ *
+ * Used to clean up a photo a user picked and then removed before saving, which
+ * would otherwise sit unreferenced in the account forever. It is best-effort —
+ * attachment from the form does not depend on it.
+ */
+export async function deletePhotoByUrl(url: string): Promise<boolean> {
+  const config = readPhotoUploadConfig();
+  if (!config) {
+    throw new PhotoUploadError("Photo uploads are not configured");
+  }
+
+  const publicId = publicIdFromUrl(url);
+  if (!publicId || !publicId.startsWith(`${PHOTO_FOLDER}/`)) return false;
+
+  const { v2: cloudinary } = await import("cloudinary");
+  cloudinary.config({
+    cloud_name: config.cloudName,
+    api_key: config.apiKey,
+    api_secret: config.apiSecret,
+    secure: true,
+  });
+
+  const result = await cloudinary.uploader.destroy(publicId, {
+    resource_type: "image",
+    invalidate: true,
+  });
+
+  return result.result === "ok" || result.result === "not found";
+}

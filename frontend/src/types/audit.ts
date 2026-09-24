@@ -89,3 +89,43 @@ export interface AuditCompletionResponse {
   missing: string[];
   locationMismatch: string[];
 }
+
+/** One stored result row, as `GET /audits/:id` includes it. */
+export interface AuditResultRow {
+  itemId: string;
+  result: AuditItemResult;
+  scannedAt: string | null;
+  item: {
+    tagId: string;
+    name: string;
+    department: string;
+    building: string;
+    floor: string;
+    room: string;
+  };
+}
+
+/**
+ * `GET /audits/:id` 200 response — the read-back that closes gap G1. It carries
+ * the same `counts`/id-lists the completion response returns, plus the stored
+ * `rows`, so the report survives a reload instead of living only in router
+ * state.
+ */
+export interface AuditSessionReadback {
+  id: string;
+  scopeType: string;
+  scopeValue: string | null;
+  runById: string;
+  startedAt: string;
+  completedAt: string | null;
+  completed: boolean;
+  counts: {
+    found: number;
+    missing: number;
+    locationMismatch: number;
+  };
+  found: string[];
+  missing: string[];
+  locationMismatch: string[];
+  rows: AuditResultRow[];
+}

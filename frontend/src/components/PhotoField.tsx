@@ -1,6 +1,6 @@
 import { Camera, ImageUp, Trash2 } from "lucide-react";
 import { useRef, useState, type ChangeEvent } from "react";
-import { uploadPhoto } from "../api/uploads";
+import { deletePhoto, uploadPhoto } from "../api/uploads";
 import { Button } from "./Button";
 import { Input } from "./Input";
 import { PhotoFrame } from "./PhotoFrame";
@@ -55,8 +55,25 @@ export function PhotoField({ value, onChange, error, disabled }: PhotoFieldProps
   const [uploadError, setUploadError] = useState<string | null>(null);
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const galleryRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * The URL this component uploaded during this session, if any.
+   *
+   * The file is uploaded the moment it is chosen (so the preview is the real
+   * stored image), which means clearing or replacing it before Save would leave
+   * the image unreferenced in the Cloudinary account forever. Tracking the URL
+   * here — and only this one, never an item's already-stored photo — lets the
+   * remove/replace paths delete exactly the upload they are discarding.
+   */
+  const uploadedUrlRef = useRef<string | null>(null);
 
   const busy = Boolean(disabled) || uploading;
+
+  /** Best-effort delete; a failure must never block the form. */
+  function discardUploaded() {
+    const url = uploadedUrlRef.current;
+    uploadedUrlRef.current = null;
+    if (url) void deletePhoto(url).catch(() => undefined);
+  }
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -77,8 +94,11 @@ export function PhotoField({ value, onChange, error, disabled }: PhotoFieldProps
 
     setUploading(true);
     setUploadError(null);
+    // A new pick replaces whatever this session uploaded before it.
+    discardUploaded();
     try {
       const { url } = await uploadPhoto(file);
+      uploadedUrlRef.current = url;
       onChange(url);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "The photo could not be uploaded");
@@ -103,7 +123,13 @@ export function PhotoField({ value, onChange, error, disabled }: PhotoFieldProps
           <Input
             label="Photo URL"
             value={value}
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => {
+              // Typing over a photo this session uploaded drops that upload too.
+              if (uploadedUrlRef.current && event.target.value !== uploadedUrlRef.current) {
+                discardUploaded();
+              }
+              onChange(event.target.value);
+            }}
             error={error}
             disabled={busy}
             placeholder="https://…"
@@ -178,6 +204,7 @@ export function PhotoField({ value, onChange, error, disabled }: PhotoFieldProps
               disabled={busy}
               leftIcon={<Trash2 className="h-4 w-4" aria-hidden="true" />}
               onClick={() => {
+                discardUploaded();
                 onChange("");
                 setUploadError(null);
               }}

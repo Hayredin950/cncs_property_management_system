@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import {
+  ACCOUNTS,
   AUDIT_COMPLETION_BODY,
   AUDIT_SCAN_ROW,
   AUDIT_SESSION,
@@ -65,7 +66,45 @@ export const handlers = [
 
   http.get(`${API}/health`, healthOk),
 
-  http.get(`${API}/categories`, () => HttpResponse.json([{ id: "cat-1", name: "Laptops" }])),
+  http.get(`${API}/categories`, () => HttpResponse.json([{ id: "cat-1", name: "Laptops", itemCount: 2 }])),
+
+  http.put(`${API}/categories/:id`, ({ params }) =>
+    getToken()
+      ? HttpResponse.json({ id: params.id, name: "Renamed", itemCount: 0 })
+      : unauthorized(),
+  ),
+
+  http.delete(`${API}/categories/:id`, ({ params }) =>
+    getToken() ? HttpResponse.json({ id: params.id, deleted: true }) : unauthorized(),
+  ),
+
+  /** The admin accounts screen (`GET /users` is Admin-only; a missing token 401s like every other write). */
+  http.get(`${API}/users`, () => (getToken() ? HttpResponse.json(ACCOUNTS) : unauthorized())),
+
+  http.patch(`${API}/users/:id`, async ({ params, request }) => {
+    if (!getToken()) return unauthorized();
+    const body = (await request.json()) as { fullName?: string; email?: string };
+    return HttpResponse.json({ ...ACCOUNTS[0], id: params.id, ...body });
+  }),
+
+  http.post(`${API}/users/:id/promote`, ({ params }) =>
+    getToken()
+      ? HttpResponse.json({ ...ACCOUNTS[1], id: params.id, role: "ADMIN" })
+      : unauthorized(),
+  ),
+
+  http.post(`${API}/users/:id/password`, ({ params }) =>
+    getToken() ? HttpResponse.json({ id: params.id, passwordChanged: true }) : unauthorized(),
+  ),
+
+  http.delete(`${API}/users/:id`, ({ params }) =>
+    getToken() ? HttpResponse.json({ id: params.id, deleted: true }) : unauthorized(),
+  ),
+
+  /** Item registration. The real server answers with the created row (201). */
+  http.post(`${API}/items`, () =>
+    getToken() ? HttpResponse.json(PRIVILEGED_ITEM, { status: 201 }) : unauthorized(),
+  ),
 
   /**
    * The item form's photo upload. Writes are authenticated like every other
@@ -96,16 +135,24 @@ export const handlers = [
    * to prove each variant renders correctly and the client never re-hides
    * fields itself (frontend-plan.md §5).
    */
-  http.get(`${API}/items/:tagId`, ({ params }) => {
-    const tagId = params.tagId as string;
-    if (tagId === "CNCS-DEAD0000") {
+  /*
+   * One path serves both lookups, mirroring the backend: a uuid/id resolves the
+   * row directly, anything else is a tag id. The staff and edit routes now use
+   * the id form (`GET /items/:id`), so the handler has to accept it too.
+   */
+  http.get(`${API}/items/:idOrTag`, ({ params }) => {
+    const key = params.idOrTag as string;
+    // Only the tag identifies the disposed fixture: it is built on the same
+    // `id` as the active item (its "physical" row), so matching on id would
+    // hand back the disposed copy for every id-based lookup.
+    if (key === "CNCS-DEAD0000") {
       if (getToken()) {
         return HttpResponse.json(DISPOSED_ITEM);
       }
       // F7.3's exact sentence, nothing else.
       return HttpResponse.json({ error: "This item is no longer in service" }, { status: 410 });
     }
-    if (tagId !== "CNCS-AB12CD34") {
+    if (key !== "CNCS-AB12CD34" && key !== PRIVILEGED_ITEM.id) {
       return HttpResponse.json({ error: "Item not found" }, { status: 404 });
     }
     return HttpResponse.json(getToken() ? PRIVILEGED_ITEM : PUBLIC_ITEM);

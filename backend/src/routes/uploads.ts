@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Response } from "express";
+import { z } from "zod";
 import { httpError } from "../lib/httpError.js";
 import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
 import {
@@ -8,6 +9,7 @@ import {
 } from "../middleware/photoUpload.js";
 import {
   PhotoUploadError,
+  deletePhotoByUrl,
   readPhotoUploadConfig,
   uploadPendingPhoto,
 } from "../services/photoStorage.js";
@@ -69,6 +71,59 @@ uploadsRouter.post(
       // check the Cloudinary account rather than the request.
       if (err instanceof PhotoUploadError) {
         next(httpError(502, "The photo could not be uploaded"));
+        return;
+      }
+      next(err);
+    }
+  },
+);
+
+const deletePhotoSchema = z.object({
+  url: z.string().trim().min(1, "url is required"),
+});
+
+/**
+ * `DELETE /api/v1/uploads/photo` — Staff/Admin. Destroys a stored photo.
+ *
+ * The counterpart to the upload above, and the reason it exists: the form uploads
+ * the instant a picture is chosen so the preview is real, so removing the photo
+ * before saving would otherwise leave it unreferenced in the Cloudinary account
+ * forever. The client calls this when a just-uploaded image is cleared or
+ * replaced.
+ *
+ * Scoped by `services/photoStorage.deletePhotoByUrl` to the `cncs-pms/items`
+ * folder, so a caller cannot use it to delete an arbitrary asset. A URL that is
+ * not ours answers `200 { deleted: false }` rather than pretending — and rather
+ * than deleting.
+ *
+ * It never touches an item row: this deletes the *stored image*, and detaching a
+ * photo from an item stays the ordinary edit (which drops the reference).
+ */
+uploadsRouter.delete(
+  "/photo",
+  authenticate,
+  requireRole(["ADMIN", "STAFF"]),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = deletePhotoSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: parsed.error.issues[0]?.message ?? "Validation failed",
+          details: parsed.error.issues,
+        });
+        return;
+      }
+
+      if (!readPhotoUploadConfig()) {
+        res.status(503).json({ error: "Photo uploads are not configured on this server" });
+        return;
+      }
+
+      const deleted = await deletePhotoByUrl(parsed.data.url);
+      res.status(200).json({ deleted });
+    } catch (err) {
+      if (err instanceof PhotoUploadError) {
+        next(httpError(502, "The photo could not be deleted"));
         return;
       }
       next(err);

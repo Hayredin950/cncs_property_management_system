@@ -1,4 +1,4 @@
-import { PackageSearch, ScanLine } from "lucide-react";
+import { Building2, PackageSearch, ScanLine } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
@@ -55,12 +55,31 @@ export function LandingPage() {
           </div>
 
           <SearchBar value="" onChange={handleSearch} debounceMs={500} />
-          <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
-            <Link to="/items" className="text-brand-700 underline-offset-4 hover:underline">
-              Browse all items →
+
+          {/*
+            Two full-weight buttons, not bare text links. These are the page's
+            other two primary ways in, so they get the same button treatment the
+            rest of the app uses rather than depending on the visitor noticing a
+            line of underlined text below the search box.
+          */}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link to="/items" className="sm:flex-1">
+              <Button
+                variant="outline"
+                fullWidth
+                leftIcon={<PackageSearch className="h-4 w-4" />}
+              >
+                Browse all items
+              </Button>
             </Link>
-            <Link to="/map" className="text-brand-700 underline-offset-4 hover:underline">
-              Browse by building →
+            <Link to="/map" className="sm:flex-1">
+              <Button
+                variant="outline"
+                fullWidth
+                leftIcon={<Building2 className="h-4 w-4" />}
+              >
+                Browse by building
+              </Button>
             </Link>
           </div>
         </div>

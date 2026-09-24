@@ -142,7 +142,7 @@ describe("audit walkthrough (F9)", () => {
     // The fixture's counts are 3/2/1 precisely so each card is distinguishable.
     expect(statValue("Found")).toBe("3");
     expect(statValue("Missing")).toBe("2");
-    expect(statValue("Wrong location")).toBe("1");
+    expect(statValue("Outside scope")).toBe("1");
   });
 
   it("refuses an already-completed session with the server's 409 message", async () => {
@@ -356,7 +356,7 @@ describe("full walkthrough", () => {
     const category = await screen.findByLabelText("Category");
     await waitFor(() => expect(within(category).getAllByRole("option").length).toBeGreaterThan(1));
     await user.selectOptions(category, "cat-1");
-    await user.type(screen.getByLabelText("Department"), "Computer Science");
+    await user.selectOptions(screen.getByLabelText("Department"), "Computer Science");
     await user.type(screen.getByLabelText("Building"), "Building 1");
     await user.type(screen.getByLabelText("Floor"), "Floor 2");
     await user.type(screen.getByLabelText("Room"), "Room 204");
@@ -394,10 +394,8 @@ describe("full walkthrough", () => {
     );
 
     setToken("test-token");
-    // The staff page loads by tag, because there is no `GET /items/:id`.
-    renderWithProviders({
-      initialEntries: [`/items/item-1?tag=${encodeURIComponent(PRIVILEGED_ITEM.tagId)}`],
-    });
+    // The staff page now loads from its own `:id` param (`GET /items/:id`).
+    renderWithProviders({ initialEntries: [`/items/${PRIVILEGED_ITEM.id}`] });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: "Link accessory" }));

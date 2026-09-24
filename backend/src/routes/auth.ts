@@ -8,8 +8,22 @@ import {
   requireRole,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
+import { createRateLimiter, noRateLimit } from "../middleware/rateLimit.js";
 
 const router: ExpressRouter = Router();
+
+/**
+ * Login is the app's only unauthenticated write, so it is the only route worth
+ * a limiter: without one, a script can guess a password as fast as the server
+ * will hash. 10 attempts per IP per 15 minutes is generous for a human (a typo
+ * or two) and useless as a brute-force budget. Disabled under test so a suite
+ * that signs in repeatedly is not throttled; the limiter itself is unit-tested
+ * directly.
+ */
+const loginLimiter =
+  process.env.NODE_ENV === "test"
+    ? noRateLimit
+    : createRateLimiter({ windowMs: 15 * 60_000, max: 10, message: "Too many sign-in attempts. Try again in a few minutes." });
 
 const registerSchema = z
   .object({
@@ -31,6 +45,11 @@ const registerSchema = z
     message: "Email or ID is required",
     path: ["email"],
   });
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "At least 8 characters"),
+});
 
 const loginSchema = z
   .object({
@@ -159,6 +178,7 @@ router.post(
  */
 router.post(
   ["/login", "/auth/login"],
+  loginLimiter,
   async (req: AuthenticatedRequest, res: Response) => {
     const parseResult = loginSchema.safeParse(req.body);
     if (!parseResult.success) {
@@ -196,10 +216,14 @@ router.post(
         throw new Error("JWT_SECRET is not set in environment variables");
       }
 
+      // `ver` is what makes the session revocable: `authenticate` compares it
+      // to the account's current `tokenVersion` and rejects a mismatch, so a
+      // password change invalidates every token this account had.
       const token = jwt.sign(
         {
           id: user.id,
           role: user.role,
+          ver: user.tokenVersion,
         },
         secret,
         {
@@ -214,6 +238,7 @@ router.post(
         email: user.email,
         role: user.role,
         createdAt: user.createdAt,
+        mustChangePassword: user.mustChangePassword,
       };
 
       return res.status(200).json({
@@ -256,6 +281,7 @@ router.get(
           email: true,
           role: true,
           createdAt: true,
+          mustChangePassword: true,
         },
       });
 
@@ -270,6 +296,7 @@ router.get(
         email: user.email,
         role: user.role,
         createdAt: user.createdAt,
+        mustChangePassword: user.mustChangePassword,
       };
 
       return res.status(200).json({
@@ -284,6 +311,98 @@ router.get(
       return res.status(500).json({
         error: "Internal server error",
       });
+    }
+  }
+);
+
+/**
+ * POST /auth/change-password — a signed-in account changes its own password.
+ *
+ * Covers both cases with one endpoint: the ordinary "I want a new password",
+ * and the forced change after an administrator reset (`mustChangePassword`).
+ * The current password is always required — even in the forced case the holder
+ * just used it to sign in, so asking for it again is no burden and closes the
+ * window where someone walks up to an unlocked, already-signed-in screen.
+ *
+ * On success the account's `tokenVersion` is bumped, which revokes every session
+ * it had open, and a fresh token (carrying the new version) is returned so the
+ * caller stays signed in on this device alone. The claim that a password change
+ * logs everyone else out is only true because of that bump.
+ */
+router.post(
+  ["/change-password", "/auth/change-password"],
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const parseResult = changePasswordSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      const firstIssue = parseResult.error.issues[0];
+      return res.status(400).json({
+        error: firstIssue?.message ?? "Invalid request payload",
+        details: parseResult.error.issues,
+      });
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const { currentPassword, newPassword } = parseResult.data;
+
+    try {
+      const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const currentIsValid = await argon2.verify(user.passwordHash, currentPassword);
+      if (!currentIsValid) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
+
+      const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id });
+      const tokenVersion = user.tokenVersion + 1;
+
+      const updated = await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash, mustChangePassword: false, tokenVersion },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true,
+          createdAt: true,
+          mustChangePassword: true,
+          tokenVersion: true,
+        },
+      });
+
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        throw new Error("JWT_SECRET is not set in environment variables");
+      }
+      const token = jwt.sign(
+        { id: updated.id, role: updated.role, ver: updated.tokenVersion },
+        secret,
+        { expiresIn: "1d" },
+      );
+
+      const safeUser = {
+        id: updated.id,
+        name: updated.fullName,
+        fullName: updated.fullName,
+        email: updated.email,
+        role: updated.role,
+        createdAt: updated.createdAt,
+        mustChangePassword: updated.mustChangePassword,
+      };
+
+      return res.status(200).json({ token, user: safeUser, ...safeUser });
+    } catch (error: unknown) {
+      console.error(
+        "Change password error:",
+        error instanceof Error ? error.message : error
+      );
+      return res.status(500).json({ error: "Internal server error" });
     }
   }
 );

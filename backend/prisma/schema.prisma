@@ -50,6 +50,16 @@ model User {
   role         Role
   createdAt    DateTime @default(now())
 
+  /// Bumped whenever this account's sessions must die (password change, admin
+  /// reset). Carried in the JWT as `ver`; `authenticate` rejects a token whose
+  /// `ver` no longer matches. Defaults to 0, and tokens minted before this
+  /// column existed carry no `ver` at all — those are trusted until they expire
+  /// (≤1 day), which makes the rollout non-breaking.
+  tokenVersion       Int     @default(0)
+  /// Set when an administrator resets the password; cleared once the account
+  /// holder chooses their own. Drives the forced change screen after sign-in.
+  mustChangePassword Boolean @default(false)
+
   ownedItems       Item[]         @relation("ItemOwner")
   requestsCreated  Request[]      @relation("RequestedBy")
   requestsReviewed Request[]      @relation("ReviewedBy")

@@ -38,6 +38,15 @@ export interface AauHeaderProps {
   onSearch?: (query: string) => void;
   /** Trailing controls: sign-in button, user chip, sign-out. */
   actions?: ReactNode;
+  /**
+   * Controls repeated at the foot of the mobile drawer.
+   *
+   * The top bar is a `justify-between` row with a fixed-width lockup, so every
+   * control added to `actions` squeezes the wordmark on a phone. Sign-out and
+   * the role chip therefore live *only* here on mobile — the drawer has room to
+   * lay them out properly, and the bar stays uncrowded.
+   */
+  mobileActions?: ReactNode;
   /** Optional count badge shown on the home button — the pending-review queue. */
   homeBadge?: number;
 }
@@ -62,6 +71,7 @@ export function AauHeader({
   home = "/",
   onSearch,
   actions,
+  mobileActions,
   homeBadge,
 }: AauHeaderProps) {
   const location = useLocation();
@@ -321,6 +331,10 @@ export function AauHeader({
                 ),
               )}
             </nav>
+
+            {mobileActions && (
+              <div className="mt-4 border-t border-aau-gray-200 pt-4">{mobileActions}</div>
+            )}
           </div>
         </div>
       )}

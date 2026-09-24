@@ -1,6 +1,6 @@
 import { Link2, PackageOpen, Printer, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -12,7 +12,7 @@ import { ItemDetailView } from "../../components/ItemDetailView";
 import { Modal } from "../../components/Modal";
 import { Skeleton, SkeletonText } from "../../components/Skeleton";
 import { TagPanel } from "../../components/TagPanel";
-import { useItemByTagId, useItems } from "../../hooks/useItems";
+import { useItemById, useItemByTagId, useItems } from "../../hooks/useItems";
 import {
   useLinkAccessories,
   useRegenerateTag,
@@ -30,27 +30,24 @@ import { ConditionBadge, ItemStatusBadge } from "../../components/StatusBadges";
  * ConfirmDialog), the accessories bundle list (F2.2), and the grouped edit
  * history (F2.3/F6.3).
  *
- * The data is fetched by tag through `?tag=` (or the location state a link
- * passes), because there is no `GET /items/:id` in the built backend — recorded
- * as a spec-vs-backend gap in docs/frontend-phase-1.md. The `:id` in the path is
- * therefore **not read**: it is there so the URL of a specific item is
- * bookmarkable, and the tag in the query is what actually resolves it.
+ * The data is now fetched by the item's own id through `GET /items/:id` (the
+ * backend resolves either a uuid or a tag id on that path), so the `:id` in the
+ * URL is what loads the page. Before that endpoint existed this route carried a
+ * `?tag=` around just to resolve itself, which is why a bare `/items/<uuid>`
+ * used to dead-end on "open this from the register".
  */
 export function ItemStaffPage() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const state = location.state as { tagId?: string } | null;
-  const tagId = state?.tagId ?? new URLSearchParams(location.search).get("tag") ?? "";
+  const { id } = useParams<{ id: string }>();
 
-  const itemQuery = useItemByTagId(tagId || undefined);
+  const itemQuery = useItemById(id);
 
-  if (!tagId) {
+  if (!id) {
     return (
       <ErrorState
         tone="neutral"
         icon={<PackageOpen className="h-8 w-8" />}
         heading="Open this item from the register"
-        body="The staff view loads through an item's tag. Open it from the browse grid or a scan so the tag is available."
+        body="The staff view loads an item by its id. Open it from the browse grid or a scan."
         action={
           <Link to="/items">
             <Button size="sm" variant="outline">
@@ -107,13 +104,12 @@ export function ItemStaffPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         {/*
-          The same role-gated pair the item page and the browse cards use, so
-          "who may edit, who may delete" has one implementation. Deletion is
-          allowed on a disposed item too — that is exactly the mistake a hard
-          delete is for — and it leaves for the register, since this page's id
-          no longer resolves.
+          The same role-gated Edit the item page and the browse cards use, so
+          "who may edit" has one implementation. Nothing here deletes — an item
+          leaves the active register through the disposal request below, which
+          keeps its record (F7.2).
         */}
-        <ItemActions item={item} onDeleted={() => navigate("/items")} />
+        <ItemActions item={item} />
         <Link to={`/requests/new?item=${encodeURIComponent(item.tagId)}`}>
           <Button variant="outline" size="sm">
             File transfer / disposal

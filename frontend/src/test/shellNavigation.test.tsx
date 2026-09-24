@@ -88,7 +88,7 @@ describe("workbench shell", () => {
     // No workbench chrome for someone without an account...
     expect(sidebarPanel()).not.toBeInTheDocument();
     // ...and the public header's own call to action is what they get instead.
-    expect(screen.getByText("Staff Sign In")).toBeInTheDocument();
+    expect(screen.getByText("Sign in")).toBeInTheDocument();
   });
 
   it("keeps the sidebar when a signed-in user lands on the QR destination", async () => {
@@ -114,7 +114,7 @@ describe("workbench shell", () => {
     ).toBeInTheDocument();
     // A QR scan by a member of the public must not reveal staff chrome.
     expect(sidebarPanel()).not.toBeInTheDocument();
-    expect(screen.getByText("Staff Sign In")).toBeInTheDocument();
+    expect(screen.getByText("Sign in")).toBeInTheDocument();
   });
 
   it("folds the rail to an icon rail, keeping every destination reachable", async () => {

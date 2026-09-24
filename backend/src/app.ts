@@ -6,12 +6,14 @@ import { accessoriesRouter } from "./routes/accessories.js";
 import { auditsRouter } from "./routes/audits.js";
 import authRouter from "./routes/auth.js";
 import { categoriesRouter } from "./routes/categories.js";
+import { departmentsRouter } from "./routes/departments.js";
 import { itemHistoryRouter } from "./routes/itemHistory.js";
 import { itemsRouter } from "./routes/items.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { reportsRouter } from "./routes/reports.js";
 import { requestsRouter } from "./routes/requests.js";
 import { uploadsRouter } from "./routes/uploads.js";
+import { usersRouter } from "./routes/users.js";
 import { tagsRouter } from "./routes/tags.js";
 
 const app: Application = express();
@@ -22,10 +24,15 @@ const app: Application = express();
  * `CORS_ORIGINS` is a comma-separated list of the browsable frontend origins
  * (e.g. `https://cncs-pms.vercel.app,https://cncs.aau.edu.et`).
  *
- * **Unset means "allow every origin"** — deliberately the previous behaviour, so
- * local dev (5173/5174, whatever port Vite lands on), the docker compose stack
- * and the test suite need no configuration and nothing about them changes. Lock
- * it down by *setting* the variable in production; see docs/deployment.md §8.
+ * **Unset means "allow every origin" in development** — so local dev (5173/5174,
+ * whatever port Vite lands on), the docker compose stack and the test suite need
+ * no configuration and nothing about them changes.
+ *
+ * **Unset in production is denied.** A deployment that forgot the variable used
+ * to allow every origin, which is the one configuration mistake this setting
+ * exists to prevent. Instead of failing open it now fails closed — no CORS
+ * headers, so browsers block cross-origin calls — and says so once at startup
+ * with the fix. Same-origin and server-to-server calls are unaffected.
  *
  * Note what this does and does not buy: the browser is the enforcer, so this stops
  * other sites from calling the API with a signed-in user's token. It does not make
@@ -35,6 +42,16 @@ const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+if (IS_PRODUCTION && CORS_ORIGINS.length === 0) {
+  console.warn(
+    "[cors] CORS_ORIGINS is unset in production. Cross-origin browser requests " +
+      "will be blocked. Set CORS_ORIGINS to a comma-separated list of the " +
+      "frontend origin(s), e.g. https://cncs.example.edu.et",
+  );
+}
 
 app.use(
   CORS_ORIGINS.length > 0
@@ -53,7 +70,10 @@ app.use(
           callback(null, false);
         },
       })
-    : cors(),
+    : IS_PRODUCTION
+      ? // Fail closed: no allow-all in production just because the env is unset.
+        cors({ origin: false })
+      : cors(),
 );
 app.use(express.json());
 app.use(morgan("dev"));
@@ -80,6 +100,7 @@ app.get(["/api/v1/health", "/health"], (req: Request, res: Response) => {
 app.use(["/api/v1/audits", "/audits"], auditsRouter);
 app.use(["/api/v1/auth", "/auth"], authRouter);
 app.use(["/api/v1/categories", "/categories"], categoriesRouter);
+app.use(["/api/v1/departments", "/departments"], departmentsRouter);
 app.use(["/api/v1/items", "/items"], accessoriesRouter);
 app.use(["/api/v1/items", "/items"], itemHistoryRouter);
 app.use(["/api/v1/items", "/items"], tagsRouter);
@@ -88,6 +109,7 @@ app.use(["/api/v1/notifications", "/notifications"], notificationsRouter);
 app.use(["/api/v1/reports", "/reports"], reportsRouter);
 app.use(["/api/v1/requests", "/requests"], requestsRouter);
 app.use(["/api/v1/uploads", "/uploads"], uploadsRouter);
+app.use(["/api/v1/users", "/users"], usersRouter);
 
 /**
  * Both must come last, and in this order. `notFoundHandler` is a plain `use()`

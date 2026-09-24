@@ -1,6 +1,6 @@
 import type { Item } from "../types/item";
 import type { Category } from "../types/category";
-import type { AuthUser, LoginResponse, MeResponse } from "../types/user";
+import type { AuthUser, LoginResponse, MeResponse, UserSummary } from "../types/user";
 import type {
   PendingCountResponse,
   RequestDetail,
@@ -34,7 +34,7 @@ export const STAFF_USER: AuthUser = {
   createdAt: "2026-09-01T08:00:00.000Z",
 };
 
-export const CATEGORY: Category = { id: "cat-1", name: "Laptops" };
+export const CATEGORY: Category = { id: "cat-1", name: "Laptops", itemCount: 2 };
 
 /** Every privileged field present — what `sanitizeItem` returns for staff/admin. */
 export const PRIVILEGED_ITEM: Item = {
@@ -97,6 +97,11 @@ export const ITEMS_LIST = (items: Item[], page = 1, total = items.length) => ({
 
 export const LOGIN_RESPONSE: LoginResponse = { token: "test-token", user: ADMIN_USER };
 export const ME_RESPONSE: MeResponse = { user: ADMIN_USER };
+
+/** `GET /users` — the admin accounts list. Counts differ so the screen's rendering of them is observable. */
+export const ADMIN_ACCOUNT: UserSummary = { ...ADMIN_USER, itemCount: 3 };
+export const STAFF_ACCOUNT: UserSummary = { ...STAFF_USER, itemCount: 0 };
+export const ACCOUNTS: UserSummary[] = [ADMIN_ACCOUNT, STAFF_ACCOUNT];
 
 export const PENDING_COUNT: PendingCountResponse = { pendingCount: 2 };
 

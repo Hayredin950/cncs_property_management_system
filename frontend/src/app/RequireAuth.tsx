@@ -33,5 +33,12 @@ export function RequireAuth({ children, roles }: RequireAuthProps) {
     return <NotFoundPage />;
   }
 
+  // A temporary password (an admin reset) forces the change before anything
+  // else. Without this the "forced" part is only a hint on the login screen — a
+  // deep link or a reload would slip straight past it.
+  if (user.mustChangePassword && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
+  }
+
   return <>{children}</>;
 }

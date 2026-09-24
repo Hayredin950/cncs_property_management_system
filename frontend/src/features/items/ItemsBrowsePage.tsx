@@ -6,13 +6,13 @@ import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { ItemActions } from "../../components/ItemActions";
 import { ItemCard } from "../../components/ItemCard";
-import { Input } from "../../components/Input";
 import { Pagination } from "../../components/Pagination";
 import { SearchBar } from "../../components/SearchBar";
 import { Select } from "../../components/Select";
 import { SkeletonCard } from "../../components/Skeleton";
 import { useCategories } from "../../hooks/useCategories";
 import { useItems } from "../../hooks/useItems";
+import { DEPARTMENT_OPTIONS } from "../../lib/departments";
 import { NetworkError } from "../../types/api";
 
 /**
@@ -86,16 +86,18 @@ export function ItemsBrowsePage() {
           onChange={(event) => updateParam("categoryId", event.target.value)}
           className="sm:w-48"
         />
-        <Input
-          key={`department-${department}`}
+        {/*
+          A `Select`, not the free-text input this used to be: the department
+          vocabulary is fixed (lib/departments.ts), so filtering by a name that
+          matches nothing is not possible by accident.
+        */}
+        <Select
           label="Department"
-          placeholder="Any department"
-          defaultValue={department}
-          onBlur={(event) => updateParam("department", event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") updateParam("department", event.currentTarget.value);
-          }}
-          className="sm:w-48"
+          options={DEPARTMENT_OPTIONS}
+          placeholder="All departments"
+          value={department}
+          onChange={(event) => updateParam("department", event.target.value)}
+          className="sm:w-56"
         />
         {hasFilters && (
           <Button variant="ghost" size="md" leftIcon={<X className="h-4 w-4" />} onClick={clearFilters}>

@@ -28,6 +28,19 @@ export function Modal({ open, onClose, title, children, size = "sm", className }
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
+  /*
+    `onClose` is almost always an inline arrow, so it is a new function on every
+    render. Keeping it in a ref lets the effect below depend on `open` alone.
+
+    That is not a micro-optimisation — it was a bug. With `onClose` in the dep
+    array the effect re-ran on every render, and since its cleanup restores focus
+    to the trigger, each keystroke inside a dialog moved focus out of the field:
+    typing "Notebooks" into a rename dialog registered only the "N", because the
+    rest of the characters were dispatched to the button focus had jumped to.
+  */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
 
@@ -40,7 +53,7 @@ export function Modal({ open, onClose, title, children, size = "sm", className }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab" || !dialogRef.current) return;
@@ -68,7 +81,7 @@ export function Modal({ open, onClose, title, children, size = "sm", className }
       document.removeEventListener("keydown", onKeyDown);
       previouslyFocused.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

@@ -1,13 +1,19 @@
+import { useQuery } from "@tanstack/react-query";
 import { Building2, MapPin } from "lucide-react";
 import { Link } from "react-router-dom";
+import { fetchItems } from "../../api/items";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { Skeleton } from "../../components/Skeleton";
-import { useItems } from "../../hooks/useItems";
 import { NetworkError } from "../../types/api";
 import type { Item } from "../../types/item";
+
+/** The list endpoint caps `limit` at 100, so covering the register means paging. */
+const PAGE_SIZE = 100;
+/** Safety cap: a crawl stops here rather than exhausting memory on a huge register. */
+const MAX_PAGES = 50;
 
 /**
  * `/map` (F5.2) — buildings as the unit of "where are things?", from the location
@@ -23,10 +29,27 @@ import type { Item } from "../../types/item";
  * Anonymous-visible, like the rest of the public lookup surfaces.
  */
 export function MapPage() {
-  // The endpoint caps `limit` at 100 (see the backend's items list schema), so this
-  // is one page of the register rather than a paginated crawl — documented as a
-  // known limit rather than silently showing a subset as if it were everything.
-  const itemsQuery = useItems({ page: 1, limit: 100 });
+  //
+  // Every page, not just the first 100. The map groups the whole register by
+  // building, so showing one page made it quietly under-report the campus once
+  // the register grew past 100 items. It pages through sequentially and stops at
+  // `MAX_PAGES`, which is still far more headroom than this register will use.
+  const itemsQuery = useQuery({
+    queryKey: ["items", "all-for-map"],
+    queryFn: async ({ signal }) => {
+      const first = await fetchItems({ page: 1, limit: PAGE_SIZE }, signal);
+      const totalPages = Math.min(first.pagination.totalPages, MAX_PAGES);
+      if (totalPages <= 1) return first;
+
+      const rest = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, index) =>
+          fetchItems({ page: index + 2, limit: PAGE_SIZE }, signal),
+        ),
+      );
+
+      return { ...first, data: [...first.data, ...rest.flatMap((page) => page.data)] };
+    },
+  });
 
   return (
     <div className="flex flex-col gap-6">

@@ -1,7 +1,6 @@
 import { LogOut, MoreHorizontal, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { AauFooter } from "../components/aau/AauFooter";
 import { AauHeader } from "../components/aau/AauHeader";
 import { Button } from "../components/Button";
 import { HealthIndicator } from "../components/HealthIndicator";
@@ -124,13 +123,16 @@ export function AppLayout() {
         entries={staffNav(user.role)}
         home="/dashboard"
         homeBadge={pendingCount}
+        /*
+          Name only, and only from `sm` up. The role chip used to sit here too,
+          which is the single control that made the bar feel crowded on a phone;
+          it now lives at the top of the sidebar / mobile "More" sheet, where
+          there is room for it beside the name.
+        */
         actions={
-          <div className="flex items-center gap-2">
-            <span className="hidden text-sm font-medium text-aau-gray-700 sm:inline">
-              {user.fullName}
-            </span>
-            <RoleBadge role={user.role} />
-          </div>
+          <span className="hidden text-sm font-medium text-aau-gray-700 sm:inline">
+            {user.fullName}
+          </span>
         }
       />
 
@@ -244,6 +246,21 @@ export function AppLayout() {
                 collapsed ? "p-2" : "p-3",
               )}
             >
+              {/* The role chip, moved out of the header (which had no room for
+                  it on a phone) into the navigation panel beside the name. */}
+              <div
+                className={cn(
+                  "mb-2 flex items-center gap-2",
+                  collapsed ? "justify-center" : "justify-start",
+                )}
+              >
+                <RoleBadge role={user.role} />
+                {!collapsed && (
+                  <span className="truncate text-sm font-medium text-aau-gray-700">
+                    {user.fullName}
+                  </span>
+                )}
+              </div>
               <HealthIndicator
                 className={cn("mb-2", collapsed ? "justify-center" : "justify-start")}
               />
@@ -260,15 +277,14 @@ export function AppLayout() {
           </div>
         </aside>
 
-        <main id="main-content" className="flex-1 px-4 py-6 pb-24 lg:px-6 lg:pb-8">
+        {/* `tabIndex={-1}` is the focus target `ScrollToTop` moves to on navigation. */}
+        <main id="main-content" tabIndex={-1} className="flex-1 px-4 py-6 pb-24 focus:outline-none lg:px-6 lg:pb-8">
           {/* Boundary lives inside the shell so a broken screen keeps the nav (§8). */}
           <AppErrorBoundary heading="Something went wrong on this screen">
             <Outlet />
           </AppErrorBoundary>
         </main>
       </div>
-
-      <AauFooter />
 
       {/* Mobile bottom tab bar — four destinations + More */}
       <nav

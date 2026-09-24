@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider } from "./AuthContext";
+import { ScrollToTop } from "./ScrollToTop";
 
 /**
  * The router's root element.
@@ -20,6 +21,8 @@ import { AuthProvider } from "./AuthContext";
 export function RootProviders() {
   return (
     <AuthProvider>
+      {/* One listener for every shell — see ScrollToTop.tsx. */}
+      <ScrollToTop />
       <Outlet />
       {/* Stack cap of 3, per frontend-design-system.md §8 — the rest queue up. */}
       <Toaster position="top-center" visibleToasts={3} richColors closeButton />

@@ -20,6 +20,16 @@ export function fetchItemByTagId(tagId: string, signal?: AbortSignal): Promise<I
   return apiClient.get<Item>(`/items/${encodeURIComponent(tagId)}`, undefined, signal);
 }
 
+/**
+ * `GET /items/:id` — the same endpoint as the tag lookup, keyed by the item's
+ * uuid instead. The backend accepts either and picks by shape, which is what
+ * lets the staff/edit routes resolve an item from the `:id` in their own URL
+ * instead of being handed a `?tag=` to carry around.
+ */
+export function fetchItemById(id: string, signal?: AbortSignal): Promise<Item> {
+  return apiClient.get<Item>(`/items/${encodeURIComponent(id)}`, undefined, signal);
+}
+
 /** Body of `POST /items` — mirrors the backend's `createItemSchema` (items.ts). */
 export interface CreateItemPayload {
   name: string;
@@ -62,34 +72,6 @@ export function createItem(payload: CreateItemPayload): Promise<Item> {
  */
 export function updateItem(id: string, payload: Partial<CreateItemPayload>): Promise<Item> {
   return apiClient.put<Item>(`/items/${encodeURIComponent(id)}`, payload);
-}
-
-/**
- * `DELETE /items/:id` — **Admin only**, and a real delete.
- *
- * The rest of the app never destroys a record: disposal is a status change and
- * the edit log is append-only (F7.2). This is the exception an administrator
- * needs for data correction — a typo'd registration or a duplicate, which
- * editing cannot fix because the tag id and history would remain. `useDeleteItem`
- * is what the UI calls, and the server independently enforces the role.
- */
-export function deleteItem(id: string): Promise<DeletedItemSummary> {
-  return apiClient.delete<DeletedItemSummary>(`/items/${encodeURIComponent(id)}`);
-}
-
-/**
- * What the delete reports back. The counts are the server telling the caller how
- * much went with the item — the UI says it out loud rather than letting an
- * administrator discover later that a request trail disappeared too.
- */
-export interface DeletedItemSummary {
-  id: string;
-  tagId: string;
-  name: string;
-  unlinkedAccessoryCount: number;
-  deletedRequestCount: number;
-  deletedEditLogCount: number;
-  deletedAuditResultCount: number;
 }
 
 /** `GET /items/:id/history` — Staff/Admin; disposed items included on purpose (F7.2). */

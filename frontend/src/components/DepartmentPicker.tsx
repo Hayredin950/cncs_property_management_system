@@ -1,7 +1,7 @@
-import { useId, useMemo } from "react";
+import { useMemo } from "react";
 import { useItems } from "../hooks/useItems";
 import { cn } from "../lib/cn";
-import { Input } from "./Input";
+import { CNCS_DEPARTMENTS } from "../lib/departments";
 import { Select } from "./Select";
 
 export interface DepartmentPickerProps {
@@ -20,19 +20,22 @@ export interface DepartmentPickerProps {
 }
 
 /**
- * §8's DepartmentPicker, in one of two modes — the reason for the split is gap
- * G9 (frontend-plan.md §12): `department` is a free-text `String` on `Item`
- * with **no** `GET /departments` endpoint.
+ * §8's DepartmentPicker.
  *
- * - **free-entry** (item registration/edit): an `Input` that suggests known
- *   values via `datalist` but accepts a brand-new department — registration
- *   must be able to invent one.
- * - **locked** (audit scope): a plain `Select` restricted to known values —
- *   completion matches `scopeValue` against `Item.department` **exactly and
- *   case-sensitively**, so free text here silently zeroes an audit's scope.
+ * A `Select`, not free text. The college's department vocabulary is known
+ * (`lib/departments.ts`), so registration picks from it rather than inventing a
+ * spelling — the old `datalist`-backed input *suggested* values but accepted
+ * anything, which is how "Computer Science" and "computer science" become two
+ * departments and why the audit scope (which matches exactly and
+ * case-sensitively) could silently count zero.
  *
- * The known-values list is derived from `GET /items` (high limit, one fetch),
- * the only source that exists. It is best-effort by nature.
+ * The options are the canonical CNCS list, unioned with the departments already
+ * used on items *and* the current value. Two reasons for the union:
+ *
+ *   - existing rows may carry a department outside the list (the column is
+ *     free text), and editing such an item must not blank the field;
+ *   - the current value is included even if it is not in the first page of
+ *     `GET /items`, so no edit can silently change a value the user never saw.
  */
 export function DepartmentPicker({
   label = "Department",
@@ -44,85 +47,7 @@ export function DepartmentPicker({
   className,
 }: DepartmentPickerProps) {
   const knownDepartments = useKnownDepartments();
-
-  return (
-    <div className={className}>
-      <FreeEntryPicker
-        label={label}
-        value={value}
-        onChange={onChange}
-        error={error}
-        disabled={disabled}
-        required={required}
-        knownDepartments={knownDepartments}
-      />
-    </div>
-  );
-}
-
-/** One page of the inventory is enough to learn the department vocabulary (limit caps at 100). */
-function useKnownDepartments(): string[] {
-  const itemsQuery = useItems({ page: 1, limit: 100 });
-  return useMemo(() => {
-    const names = new Set<string>((itemsQuery.data?.data ?? []).map((item) => item.department));
-    return Array.from(names)
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b));
-  }, [itemsQuery.data]);
-}
-
-function FreeEntryPicker({
-  label,
-  value,
-  onChange,
-  error,
-  disabled,
-  required,
-  knownDepartments,
-}: Omit<DepartmentPickerProps, "className" | "label"> & {
-  label: string;
-  knownDepartments: string[];
-}) {
-  const listId = useId();
-  return (
-    <>
-      <Input
-        label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        error={error}
-        disabled={disabled}
-        required={required}
-        list={listId}
-        placeholder="e.g. Computer Science"
-        autoComplete="off"
-      />
-      <datalist id={listId}>
-        {knownDepartments.map((name) => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
-    </>
-  );
-}
-
-/** The locked variant, exported separately so the audit form cannot pick the wrong mode by accident. */
-export function LockedDepartmentPicker({
-  label = "Department",
-  value,
-  onChange,
-  error,
-  disabled,
-  className,
-}: Omit<DepartmentPickerProps, "required" | "label"> & { label?: string | undefined }) {
-  const itemsQuery = useItems({ page: 1, limit: 100 });
-  const knownDepartments = useMemo(
-    () =>
-      Array.from(new Set((itemsQuery.data?.data ?? []).map((item) => item.department)))
-        .filter(Boolean)
-        .sort(),
-    [itemsQuery.data],
-  );
+  const options = useDepartmentOptions(knownDepartments, value);
 
   return (
     <Select
@@ -132,13 +57,64 @@ export function LockedDepartmentPicker({
       onChange={(event) => onChange(event.target.value)}
       error={error}
       disabled={disabled}
-      options={knownDepartments.map((name) => ({ value: name, label: name }))}
-      placeholder={itemsQuery.isPending ? "Loading departments…" : "Select a department"}
-      hint={
-        itemsQuery.isError
-          ? "Couldn't load the known departments — the list may be incomplete."
-          : "Only departments already used on items are listed (audit scope must match exactly)."
-      }
+      required={required}
+      options={options}
+      placeholder="Select a department"
+    />
+  );
+}
+
+/**
+ * The known values are still derived from `GET /items` (best-effort, high limit)
+ * so a legacy value stays selectable; the canonical list is the floor beneath
+ * them.
+ */
+function useKnownDepartments(): string[] {
+  const itemsQuery = useItems({ page: 1, limit: 100 });
+  return useMemo(() => {
+    const names = new Set<string>((itemsQuery.data?.data ?? []).map((item) => item.department));
+    return Array.from(names).filter(Boolean);
+  }, [itemsQuery.data]);
+}
+
+function useDepartmentOptions(known: string[], current: string) {
+  return useMemo(() => {
+    const names = new Set<string>(CNCS_DEPARTMENTS);
+    for (const name of known) names.add(name);
+    if (current) names.add(current);
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ value: name, label: name }));
+  }, [known, current]);
+}
+
+/**
+ * The locked variant, exported separately so the audit form cannot pick the
+ * wrong mode by accident. Same option source as `DepartmentPicker`, but without
+ * the free-entry escape hatch the old component had and without being tied to
+ * an editable row's current value.
+ */
+export function LockedDepartmentPicker({
+  label = "Department",
+  value,
+  onChange,
+  error,
+  disabled,
+  className,
+}: Omit<DepartmentPickerProps, "required" | "label"> & { label?: string | undefined }) {
+  const knownDepartments = useKnownDepartments();
+  const options = useDepartmentOptions(knownDepartments, value);
+
+  return (
+    <Select
+      label={label}
+      className={cn(className)}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      error={error}
+      disabled={disabled}
+      options={options}
+      placeholder="Select a department"
     />
   );
 }

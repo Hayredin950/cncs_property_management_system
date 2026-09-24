@@ -47,15 +47,17 @@ export function LoginPage() {
   const next = searchParams.get("next") || "/dashboard";
 
   if (user) {
-    return <Navigate to={next} replace />;
+    return <Navigate to={user.mustChangePassword ? "/change-password" : next} replace />;
   }
 
   async function onSubmit(values: LoginFormValues) {
     setFormError(null);
     try {
-      await login(values.email, values.password);
+      const authed = await login(values.email, values.password);
       toast.success("Signed in.");
-      navigate(next, { replace: true });
+      // A temporary password (set by an administrator) must be replaced before
+      // the account can go anywhere else.
+      navigate(authed.mustChangePassword ? "/change-password" : next, { replace: true });
     } catch (err) {
       // The server's own string, shown verbatim (frontend-plan.md §4) — a 401
       // here is deliberately "Invalid credentials", not a hint about which

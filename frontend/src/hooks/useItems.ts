@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchItemByTagId, fetchItems } from "../api/items";
+import { fetchItemById, fetchItemByTagId, fetchItems } from "../api/items";
 import type { ItemsListQuery } from "../types/item";
 
 export function useItems(query: ItemsListQuery) {
@@ -20,6 +20,20 @@ export function useItemByTagId(tagId: string | undefined) {
     queryKey: ["item", "byTagId", tagId],
     queryFn: ({ signal }) => fetchItemByTagId(tagId as string, signal),
     enabled: Boolean(tagId),
+    retry: false,
+  });
+}
+
+/**
+ * `GET /items/:id` — the uuid-keyed read the staff and edit routes can use from
+ * their own path param. Same cache family as `useItemByTagId` so invalidations
+ * under `["item"]` cover both.
+ */
+export function useItemById(id: string | undefined) {
+  return useQuery({
+    queryKey: ["item", "byId", id],
+    queryFn: ({ signal }) => fetchItemById(id as string, signal),
+    enabled: Boolean(id),
     retry: false,
   });
 }

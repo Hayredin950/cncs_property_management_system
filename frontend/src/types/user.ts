@@ -6,6 +6,21 @@ export interface AuthUser {
   email: string;
   role: Role;
   createdAt: string;
+  /**
+   * Set when an administrator reset this account's password. The app forces a
+   * change on the next sign-in (`RequireAuth` redirects to `/change-password`).
+   * Absent on responses from before the reset flow existed, hence optional.
+   */
+  mustChangePassword?: boolean;
+}
+
+/**
+ * An account as the admin screen sees it (`GET /users`): the same fields as
+ * `AuthUser` plus how many items it owns, so the list can show whether an
+ * account is part of the record before an administrator tries to remove it.
+ */
+export interface UserSummary extends AuthUser {
+  itemCount: number;
 }
 
 /**

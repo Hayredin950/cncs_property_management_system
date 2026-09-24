@@ -166,8 +166,12 @@ export const apiClient = {
     request<T>(path, { method: "POST", ...(body !== undefined ? { body } : {}), ...(signal ? { signal } : {}) }),
   put: <T>(path: string, body?: JsonBody, signal?: AbortSignal) =>
     request<T>(path, { method: "PUT", ...(body !== undefined ? { body } : {}), ...(signal ? { signal } : {}) }),
-  delete: <T>(path: string, signal?: AbortSignal) =>
-    request<T>(path, { method: "DELETE", ...(signal ? { signal } : {}) }),
+  /** Partial update, e.g. `PATCH /users/:id`. Same `request()` as the rest. */
+  patch: <T>(path: string, body?: JsonBody, signal?: AbortSignal) =>
+    request<T>(path, { method: "PATCH", ...(body !== undefined ? { body } : {}), ...(signal ? { signal } : {}) }),
+  /** DELETE, optionally with a JSON body (e.g. `DELETE /uploads/photo { url }`). */
+  delete: <T>(path: string, body?: JsonBody, signal?: AbortSignal) =>
+    request<T>(path, { method: "DELETE", ...(body !== undefined ? { body } : {}), ...(signal ? { signal } : {}) }),
   /**
    * A `multipart/form-data` POST. Used for item photos: the file has to travel
    * as bytes, so it cannot go through `JSON.stringify`. Goes through the same

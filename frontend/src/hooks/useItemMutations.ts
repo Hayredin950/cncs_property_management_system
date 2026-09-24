@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createItem,
-  deleteItem,
   linkAccessories,
   regenerateTag,
   unlinkAccessory,
@@ -39,39 +38,6 @@ export function useUpdateItem(itemId: string) {
       void queryClient.invalidateQueries({ queryKey: ["item-history"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't update the item"),
-  });
-}
-
-/**
- * Admin-only removal of an item and everything hanging off it.
- *
- * Deliberately *not* the disposal path — retiring an asset is a `DISPOSAL`
- * request that keeps the record, and this is the data-correction escape hatch
- * (see `api/items.ts`). The server re-checks the role, so a staff-side render of
- * the button would be a UI bug, not a security hole.
- *
- * The toast names the tag because the row is gone afterwards: the tag is the
- * only thing left to quote in a ticket. There is no navigate here — callers
- * differ (the browse grid stays put, the item page has nowhere to return to).
- */
-export function useDeleteItem() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (itemId: string) => deleteItem(itemId),
-    onSuccess: (deleted) => {
-      const alsoGone = deleted.deletedRequestCount + deleted.deletedEditLogCount;
-      toast.success(
-        alsoGone > 0
-          ? `Deleted ${deleted.tagId} — ${alsoGone} related record${alsoGone === 1 ? "" : "s"} removed with it.`
-          : `Deleted ${deleted.tagId}.`,
-      );
-      void queryClient.invalidateQueries({ queryKey: ["items"] });
-      // Every cached item is potentially the deleted one, and the cache is keyed
-      // by tag id, so the whole family goes rather than guessing.
-      void queryClient.invalidateQueries({ queryKey: ["item"] });
-      void queryClient.invalidateQueries({ queryKey: ["item-history"] });
-    },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't delete the item"),
   });
 }
 

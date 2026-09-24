@@ -4,6 +4,13 @@ import "@testing-library/jest-dom/vitest";
 import { server } from "./msw/server";
 
 /**
+ * jsdom defines `window.scrollTo` only far enough to log "Not implemented",
+ * which `ScrollToTop` calls on every navigation. A no-op is faithful — jsdom
+ * has no layout to scroll — and keeps that warning out of every test's output.
+ */
+window.scrollTo = () => {};
+
+/**
  * jsdom implements no `ResizeObserver`, and `AppLayout` uses one to keep the
  * sidebar's sticky offset in sync with the header's measured height (the header
  * is `sticky top-0` and content-sized, so a hardcoded `top-16` is a guess that

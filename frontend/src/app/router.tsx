@@ -1,9 +1,10 @@
-import { createBrowserRouter, type RouteObject } from "react-router-dom";
+import { createBrowserRouter, Outlet, type RouteObject } from "react-router-dom";
 import { AdminCategoriesPage } from "../features/admin/AdminCategoriesPage";
 import { AdminUsersPage } from "../features/admin/AdminUsersPage";
 import { AuditNewPage } from "../features/audits/AuditNewPage";
 import { AuditReportPage } from "../features/audits/AuditReportPage";
 import { AuditScanPage } from "../features/audits/AuditScanPage";
+import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { ItemFormPage } from "../features/items/ItemFormPage";
@@ -33,7 +34,8 @@ import { SmartLayout } from "./SmartLayout";
  * - **Shell A** (`PublicLayout`) — `/`, `/map`, `/login` and `*`: open to
  *   everyone, including anonymous visitors.
  * - **Shell B/C** (`AppLayout` behind `RequireAuth`) — everything staff/admin:
- *   dashboard, item management, requests, notifications, admin screens.
+ *   dashboard, item management, requests, notifications, and a nested
+ *   ADMIN-only guard for the `/admin/*` screens.
  * - **SmartLayout** — `/items`, `/scan` and `/item/:tagId`. Each is a staff
  *   destination *and* a public surface, so the shell is chosen per request
  *   (signed in → workbench, anonymous → Shell A). See `SmartLayout.tsx` for the
@@ -96,6 +98,9 @@ export const appRoutes: RouteObject[] = [
         ),
         children: [
           { path: "/dashboard", element: <DashboardPage /> },
+          // Reachable by any signed-in role; `RequireAuth` funnels a forced
+          // password change here from every other screen.
+          { path: "/change-password", element: <ChangePasswordPage /> },
           { path: "/items/new", element: <ItemFormPage mode="create" /> },
           { path: "/items/:id/edit", element: <ItemFormPage mode="edit" /> },
           { path: "/items/:id", element: <ItemStaffPage /> },
@@ -108,11 +113,24 @@ export const appRoutes: RouteObject[] = [
           { path: "/audit/:id/scan", element: <AuditScanPage /> },
           { path: "/audit/:id/report", element: <AuditReportPage /> },
           { path: "/reports", element: <ReportsPage /> },
-          // Admin-only screens still render behind the shared staff shell;
-          // RequireAuth's roles check turns a staff deep-link into the same
-          // 404 as any unknown path (frontend-plan.md §6, §9.1).
-          { path: "/admin/users", element: <AdminUsersPage /> },
-          { path: "/admin/categories", element: <AdminCategoriesPage /> },
+          // Admin-only screens. The staff shell's guard admits STAFF, so these
+          // need a second, ADMIN-only guard around them — without it a staff
+          // deep-link rendered the accounts screen, and the nav hiding the link
+          // was the only thing keeping it out of sight. A failed role check here
+          // renders the same 404 as any unknown path (frontend-plan.md §6, §9.1).
+          {
+            // `Outlet` is required: this route is a guard, not a page, so
+            // without it the nested children below would never mount.
+            element: (
+              <RequireAuth roles={["ADMIN"]}>
+                <Outlet />
+              </RequireAuth>
+            ),
+            children: [
+              { path: "/admin/users", element: <AdminUsersPage /> },
+              { path: "/admin/categories", element: <AdminCategoriesPage /> },
+            ],
+          },
         ],
       },
     ],

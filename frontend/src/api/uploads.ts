@@ -22,3 +22,15 @@ export function uploadPhoto(file: File): Promise<UploadedPhoto> {
   form.append("photo", file);
   return apiClient.postForm<UploadedPhoto>("/uploads/photo", form);
 }
+
+/**
+ * `DELETE /uploads/photo` — destroys an already-uploaded image by URL.
+ *
+ * Called when a photo was uploaded for the form and then removed or replaced
+ * before saving, so the unreferenced image does not stay in the Cloudinary
+ * account forever. Best-effort: a failure here never blocks the form, and a URL
+ * outside the app's own folder answers `{ deleted: false }` on the server.
+ */
+export function deletePhoto(url: string): Promise<{ deleted: boolean }> {
+  return apiClient.delete<{ deleted: boolean }>("/uploads/photo", { url });
+}

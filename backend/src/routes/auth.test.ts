@@ -168,6 +168,8 @@ describe("POST /auth/register", () => {
         passwordHash: "somehash",
         role: "STAFF",
         createdAt: new Date(),
+        tokenVersion: 0,
+        mustChangePassword: false,
       });
 
       const res = await request(app)
@@ -194,6 +196,8 @@ describe("POST /auth/register", () => {
         passwordHash: "somehash",
         role: "STAFF",
         createdAt: new Date(),
+        tokenVersion: 0,
+        mustChangePassword: false,
       });
 
       const res = await request(app)
@@ -360,7 +364,7 @@ describe("POST /auth/login", () => {
       createdAt: new Date("2026-09-02T10:00:00.000Z"),
     };
 
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser as never);
 
     const res = await request(app).post("/auth/login").send({
       email: "dawit@cncs.aau.edu.et",
@@ -405,7 +409,7 @@ describe("POST /auth/login", () => {
       createdAt: new Date(),
     };
 
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser as never);
 
     const res = await request(app).post("/auth/login").send({
       id: "STAFF-999",
@@ -445,7 +449,7 @@ describe("POST /auth/login", () => {
       createdAt: new Date(),
     };
 
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser as never);
 
     const res = await request(app).post("/auth/login").send({
       email: "tadesse@cncs.aau.edu.et",

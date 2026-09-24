@@ -213,6 +213,18 @@ itemsRouter.get(
   },
 );
 
+/** Matches a v4-ish uuid. Used to tell `GET /items/:id` from `GET /items/:tagId`. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * `GET /items/:tagId` — the QR destination — **and** `GET /items/:id`.
+ *
+ * Both are single-segment paths, so they would be the same Express route if
+ * declared separately and order alone would decide the winner. Rather than add
+ * a collision, the one handler accepts either key and picks by shape: a uuid is
+ * an `id`, everything else is a `tagId`. That closes the "no `GET /items/:id`"
+ * gap (the staff page had to carry `?tag=` around) without a second route.
+ */
 itemsRouter.get(
   "/:tagId",
   optionalAuthenticate,
@@ -225,7 +237,7 @@ itemsRouter.get(
       }
 
       const item = await prisma.item.findUnique({
-        where: { tagId },
+        where: UUID_PATTERN.test(tagId) ? { id: tagId } : { tagId },
         include: {
           category: true,
           accessories: true,
@@ -532,97 +544,6 @@ itemsRouter.put(
       );
 
       res.status(200).json(updatedItem);
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-/**
- * DELETE /api/v1/items/:id — **Admin only**, and a genuine delete.
- *
- * This is the one place in the API that destroys an item and its trail, which
- * SRS F7.2 otherwise forbids: disposal is a status change, there is no unsend
- * for a decided request, and the whole point of the edit log is that a record's
- * history outlives the person who changed it. Deleting a row contradicts that,
- * so the capability is deliberately:
- *
- *   - **Admin only.** A staff member cannot reach it — the fleet's normal path
- *     for taking an item out of service stays the DISPOSAL request, which keeps
- *     the audit trail intact.
- *   - **Not the disposal path.** Nothing in the UI routes here by default; the
- *     caller has to mean "remove this record", not "retire this asset".
- *
- * The reason it exists at all is data correction: a typo'd registration or a
- * duplicate created twice cannot be fixed by editing (the tag id and edit log
- * would remain), so an administrator needs a way to remove it. Nothing is
- * soft-hidden — the row is gone.
- *
- * Dependents are removed in the same transaction, in dependency order, because
- * every relation onto `Item` is required with the schema's default `Restrict`:
- * deleting the row first would fail with a foreign-key error rather than
- * cascading. Accessories are *unlinked* rather than deleted — they are separate
- * assets that merely pointed at this item, and destroying them would turn one
- * mistaken deletion into several. Requests go too, together with the
- * notifications that referenced them (`Notification.relatedRequestId` is a bare
- * string, not a relation, so nothing enforces that cleanup but this).
- */
-itemsRouter.delete(
-  "/:id",
-  authenticate,
-  requireRole(["ADMIN"]),
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (!id) {
-        res.status(400).json({ error: "Item ID is required" });
-        return;
-      }
-
-      const deleted = await prisma.$transaction(
-        async (tx) => {
-          const item = await tx.item.findUnique({
-            where: { id },
-            select: { id: true, tagId: true, name: true, status: true },
-          });
-          if (!item) {
-            throw httpError(404, "Item not found");
-          }
-
-          // Bundles are one level deep, so this is the whole accessory cleanup:
-          // the children are unlinked, not deleted.
-          const unlinked = await tx.item.updateMany({
-            where: { parentItemId: id },
-            data: { parentItemId: null },
-          });
-
-          const requests = await tx.request.findMany({
-            where: { itemId: id },
-            select: { id: true },
-          });
-          const requestIds = requests.map((request) => request.id);
-          if (requestIds.length > 0) {
-            await tx.notification.deleteMany({ where: { relatedRequestId: { in: requestIds } } });
-            await tx.request.deleteMany({ where: { id: { in: requestIds } } });
-          }
-
-          const editLogs = await tx.itemEditLog.deleteMany({ where: { itemId: id } });
-          const auditResults = await tx.auditItemResultRow.deleteMany({ where: { itemId: id } });
-
-          await tx.item.delete({ where: { id } });
-
-          return {
-            ...item,
-            unlinkedAccessoryCount: unlinked.count,
-            deletedRequestCount: requestIds.length,
-            deletedEditLogCount: editLogs.count,
-            deletedAuditResultCount: auditResults.count,
-          };
-        },
-        { maxWait: 5000, timeout: 15000 },
-      );
-
-      res.status(200).json(deleted);
     } catch (err) {
       next(err);
     }

@@ -71,6 +71,7 @@ Set on **`cncs-pms-api`** (Production and Preview):
 | `UPLOADS_DIR` | `/tmp/uploads` on Vercel |
 | `NOTIFY_EMAIL` | `false`; the transport in `services/email.ts` is still a stub |
 | `CLOUDINARY_CLOUD_NAME` / `_API_KEY` / `_API_SECRET` | Omit all three to disable uploads (the route answers 503 and the item form falls back to a pasted URL) |
+| `CORS_ORIGINS` | **Required in production.** Comma-separated frontend origin(s), e.g. `https://cncs-pms-web.vercel.app`. Unset in production now *denies* cross-origin requests (fail closed) and logs a warning at startup — set it or the browser calls between `-web` and `-api` will be blocked |
 
 Set on **`cncs-pms-web`** (Production and Preview):
 
@@ -113,6 +114,13 @@ pnpm exec prisma migrate deploy   # uses DIRECT_URL, the unpooled endpoint
 pnpm prisma:seed                  # idempotent; prints the demo credentials
 ```
 
+> **Apply the latest migration before serving the new build.**
+> `20260924000000_add_token_version_and_password_reset` adds `User.tokenVersion`
+> (session revocation) and `User.mustChangePassword` (forced change after an
+> admin reset). Both are additive with defaults, so existing rows are fine, but
+> the code reads them — a deploy that skips `migrate deploy` will fail with
+> `column "tokenVersion" does not exist`.
+
 ## Settings worth knowing
 
 - **Vercel Authentication is disabled** on both projects. It is on by default at
@@ -120,8 +128,10 @@ pnpm prisma:seed                  # idempotent; prints the demo credentials
   looks exactly like a broken API. For a public demo the API has to be
   reachable; the routes that should be private are behind JWT auth, and the
   public ones go through `sanitizeItem`'s field filtering.
-- **CORS is wide open** (`cors()` with no options in `src/app.ts`). Fine for a
-  demo, but it is the first thing to tighten if this outlives the internship.
+- **CORS fails closed in production.** With `CORS_ORIGINS` set, only those
+  origins get CORS headers. With it unset, development still allows everything,
+  but a production process blocks cross-origin calls and warns at startup — so
+  the variable must be set on `cncs-pms-api` for the web app to reach it.
 - **Nothing here is on a paid plan.** The backend runs on Vercel's Hobby tier,
   so cold starts of a second or two are normal, and Neon's free compute
   suspends when idle — the first request after a quiet spell pays for it.

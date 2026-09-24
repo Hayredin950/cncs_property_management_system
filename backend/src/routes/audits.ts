@@ -181,20 +181,20 @@ auditsRouter.post(
         res.status(409).json({ error: "Audit session is already completed" });
         return;
       }
-      if (session.scopeType !== "DEPARTMENT") {
+      const scopeFilter = scopeItemFilter(session.scopeType, session.scopeValue);
+      if (!scopeFilter.supported) {
         res.status(400).json({
           error: `Unsupported scopeType for audit completion: ${session.scopeType}`,
         });
         return;
       }
 
-      // A non-null Item.department cannot equal a null scopeValue, so this is
-      // an explicitly empty scope rather than an invalid Prisma filter.
+      // A null scopeValue is an explicitly empty scope, not an invalid filter.
       const inScopeItems =
-        session.scopeValue === null
+        scopeFilter.where === null
           ? []
           : await prisma.item.findMany({
-              where: { department: session.scopeValue, status: "ACTIVE" },
+              where: scopeFilter.where,
               select: { id: true },
             });
       const scanRows = await prisma.auditItemResultRow.findMany({
@@ -252,6 +252,115 @@ auditsRouter.post(
           locationMismatch: results.locationMismatch.length,
         },
         ...results,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * The item columns a scope narrows to. `DEPARTMENT` and `BUILDING` are the two
+ * the app offers and can be completed; anything else is reported as unsupported
+ * by the caller rather than guessed at.
+ *
+ * Both match **case-insensitively**. The scope value the UI sends comes from a
+ * fixed list, but `Item.department`/`Item.building` are free text, so an item
+ * filed as "computer science" would otherwise be invisible to a "Computer
+ * Science" audit and counted MISSING — a false report, which is worse than a
+ * missing feature. Insensitive matching closes exactly that hole.
+ */
+function scopeItemFilter(
+  scopeType: string,
+  scopeValue: string | null,
+): { supported: boolean; where: Record<string, unknown> | null } {
+  if (scopeType === "DEPARTMENT") {
+    return {
+      supported: true,
+      where:
+        scopeValue === null
+          ? null
+          : { department: { equals: scopeValue, mode: "insensitive" }, status: "ACTIVE" },
+    };
+  }
+  if (scopeType === "BUILDING") {
+    return {
+      supported: true,
+      where:
+        scopeValue === null
+          ? null
+          : { building: { equals: scopeValue, mode: "insensitive" }, status: "ACTIVE" },
+    };
+  }
+  return { supported: false, where: null };
+}
+
+/**
+ * `GET /api/v1/audits/:id` — read a session back, completed or not.
+ *
+ * Closes gap G1: before this, a completed audit existed only in the response
+ * that completed it, so reloading `/audit/:id/report` lost the summary for
+ * good. The counts are derived from the stored result rows (not recomputed),
+ * and the per-item rows are included with just enough item detail for the
+ * report to be useful without a second request.
+ */
+auditsRouter.get(
+  "/:id",
+  authenticate,
+  requireRole(["ADMIN", "STAFF"]),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Audit session ID is required" });
+        return;
+      }
+
+      const session = await prisma.auditSession.findUnique({ where: { id } });
+      if (!session) {
+        res.status(404).json({ error: "Audit session not found" });
+        return;
+      }
+
+      const rows = await prisma.auditItemResultRow.findMany({
+        where: { auditSessionId: id },
+        select: {
+          itemId: true,
+          result: true,
+          scannedAt: true,
+          item: {
+            select: {
+              tagId: true,
+              name: true,
+              department: true,
+              building: true,
+              floor: true,
+              room: true,
+            },
+          },
+        },
+      });
+
+      const byResult = (result: string) =>
+        rows.filter((row) => row.result === result).map((row) => row.itemId);
+
+      res.status(200).json({
+        id: session.id,
+        scopeType: session.scopeType,
+        scopeValue: session.scopeValue,
+        runById: session.runById,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        completed: session.completedAt !== null,
+        counts: {
+          found: rows.filter((row) => row.result === "FOUND").length,
+          missing: rows.filter((row) => row.result === "MISSING").length,
+          locationMismatch: rows.filter((row) => row.result === "LOCATION_MISMATCH").length,
+        },
+        found: byResult("FOUND"),
+        missing: byResult("MISSING"),
+        locationMismatch: byResult("LOCATION_MISMATCH"),
+        rows,
       });
     } catch (err) {
       next(err);

@@ -62,13 +62,15 @@ describe("/item/:tagId — field-visibility matrix", () => {
 /**
  * The staff detail + tag used to be a link to `/items/:id`: a whole new route, a
  * second fetch for the same item, and `ScrollToTop` putting the reader back at the
- * top of a page they were already reading. It is a disclosure now, and the thing
- * worth asserting is that opening it changes nothing but what is on screen. The
- * route is checked through the router rather than `window.location`, since a memory
- * router's navigations never touch the real URL.
+ * top of a page they were already reading. It is a disclosure now, and it carries
+ * the whole workbench at once — tag, print/regenerate, bundle, history. The thing
+ * worth asserting is that opening it shows all of that and changes nothing else:
+ * no second hop, and no navigation. The route is checked through the router rather
+ * than `window.location`, since a memory router's navigations never touch the real
+ * URL.
  */
 describe("/item/:tagId — staff detail & tag disclosure", () => {
-  it("opens the tag and history in place, without navigating", async () => {
+  it("opens the tag, the bundle and the history at once, without navigating", async () => {
     setToken("test-token");
     const { router } = renderWithProviders({ initialEntries: ["/item/CNCS-AB12CD34"] });
     const user = userEvent.setup();
@@ -83,16 +85,28 @@ describe("/item/:tagId — staff detail & tag disclosure", () => {
 
     await user.click(toggle);
 
-    // Opened: the printable tag, the edit history, and the same "you clicked it"
-    // signal a screen reader needs.
+    // Opened: every part of the workbench, all at once. The tag with its own
+    // print and regenerate actions, the accessory bundle, the edit history — and
+    // the "you clicked it" signal a screen reader needs.
     expect(await within(main).findByText("Printable tag")).toBeInTheDocument();
+    expect(within(main).getByRole("button", { name: /print sticker/i })).toBeInTheDocument();
+    expect(within(main).getByRole("button", { name: /regenerate tag/i })).toBeInTheDocument();
+    expect(within(main).getByText(/accessories \(0\)/i)).toBeInTheDocument();
     expect(await within(main).findByText("Edit history")).toBeInTheDocument();
+    expect(await within(main).findByText("Room 101")).toBeInTheDocument();
     expect(
       within(main).getByRole("button", { name: /hide staff detail & tag/i }),
     ).toHaveAttribute("aria-expanded", "true");
 
-    // And it opened rather than navigated — the URL is still the QR destination.
+    // No second hop, and no navigation: the removed "Bundles, printing &
+    // regeneration" link is gone, and the URL is still the QR destination.
+    expect(within(main).queryByRole("link", { name: /bundles, printing/i })).not.toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/item/CNCS-AB12CD34");
+
+    // The one link that stays is a form, not a second view of this item.
+    expect(
+      within(main).getByRole("link", { name: /file transfer \/ disposal/i }),
+    ).toHaveAttribute("href", "/requests/new?item=CNCS-AB12CD34");
   });
 });
 

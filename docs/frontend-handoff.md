@@ -138,6 +138,26 @@ controls were three taps deep before.
 - **Disposal is still the normal path for retiring an asset.** Delete is deliberately not wired
   into any disposal flow.
 
+### The staff sections open in place on the QR destination
+
+A signed-in viewer of `/item/:tagId` gets a **"View staff detail & tag"** disclosure under the
+record. It began as a link to `/items/:id`, which is a second route, a second fetch of the same
+item, and `ScrollToTop` putting the reader back at the top of a page they were already halfway
+down — reported from the deployment as "it reloads the whole page".
+
+The panel is a disclosure now, and it shows **everything at once**: the printable tag with its
+print and regenerate actions, the accessory bundle, and the edit history. There is deliberately no
+second button pointing at `/items/:id` — a hop within a hop. Both pages render the same components
+(`features/items/ItemStaffSections.tsx`, `ItemHistorySection.tsx`), so the two cannot drift, and
+opening the panel touches no route, no scroll position and no query cache. `/items/:id` remains the
+workbench entry for the register and its cross-link back to the public view.
+
+The one link kept beside the disclosure is **File transfer / disposal**. It is not the kind the
+panel dropped — it opens a *form*, not a second view of the same item — and without it a scan on
+this page would have no path to the workflow the sticker exists for. Moving an item is only ever
+that request: the edit form refuses `building`, `floor`, `room` and `ownerId` server-side, for
+every role including Admin.
+
 ## What was deliberately cut, and why
 
 - **`/map` as a real map.** No coordinates or tiles exist in the schema. It ships as building

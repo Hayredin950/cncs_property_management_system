@@ -7,8 +7,8 @@ import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { ItemActions } from "../../components/ItemActions";
 import { ItemDetailView } from "../../components/ItemDetailView";
 import { Skeleton, SkeletonText } from "../../components/Skeleton";
-import { TagPanel } from "../../components/TagPanel";
 import { ItemHistorySection } from "../items/ItemHistorySection";
+import { AccessoriesSection, TagRegenerateSection } from "../items/ItemStaffSections";
 import { useItemByTagId } from "../../hooks/useItems";
 import { ApiError, NetworkError } from "../../types/api";
 
@@ -113,9 +113,15 @@ export function ItemDetailPage() {
               — for content that belongs beside the record they were already
               reading. Opening in place keeps the header, the scroll position and
               the query cache untouched, which is what "it reloads the whole page"
-              was describing. The full staff view is still one click away below, for
-              the things this page has no business doing (bundling, tag
-              regeneration, printing).
+              was describing.
+
+              Everything the staff workbench holds for this item therefore opens
+              here, all at once: the printable tag with its print/regenerate
+              actions, the accessory bundle, and the edit history — no button in
+              between whose only job is to route the reader to another page. The
+              sections are the workbench's own components (`ItemStaffSections.tsx`,
+              `ItemHistorySection.tsx`), so there is one implementation of each and
+              the two pages cannot drift.
             */}
             <Button
               variant="outline"
@@ -134,24 +140,38 @@ export function ItemDetailPage() {
               signed-out visitor, so the public page is unchanged for them.
             */}
             <ItemActions item={item} />
+            {/*
+              The one hop that stays, and it is not the kind the panel dropped: a
+              transfer/disposal is a *form*, not a second view of this item, and the
+              only way to move an item is to file one (the edit form refuses
+              `building`/`floor`/`room`/`ownerId` for every role, server-side).
+              Without it, a scan on this page would have no path to the workflow the
+              sticker exists for.
+            */}
+            <Link to={`/requests/new?item=${encodeURIComponent(item.tagId)}`}>
+              <Button variant="outline" size="sm">
+                File transfer / disposal
+              </Button>
+            </Link>
           </div>
 
           {staffOpen && (
             <div id={staffPanelId} className="mt-4 flex flex-col gap-6">
+              <p className="text-sm text-slate-600">
+                The printable tag for <span className="tag-id">{item.tagId}</span>, its accessory
+                bundle, and every recorded change to this item — all of it here, on this page.
+              </p>
+
               <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-                <TagPanel itemId={item.id} tagId={item.tagId} itemName={item.name} />
-                <div className="flex flex-col gap-2 text-sm text-slate-600">
-                  <p>
-                    This is the printable tag for {item.tagId} — download it and print it at sticker
-                    size. Every field above is the same record the staff view shows.
-                  </p>
-                  <Link to={`/items/${item.id}`} className="self-start">
-                    <Button variant="ghost" size="sm">
-                      Bundles, printing &amp; regeneration
-                    </Button>
-                  </Link>
-                </div>
+                <TagRegenerateSection
+                  itemId={item.id}
+                  tagId={item.tagId}
+                  itemName={item.name}
+                  disposed={item.status === "DISPOSED"}
+                />
+                <AccessoriesSection itemId={item.id} tagId={item.tagId} />
               </div>
+
               <ItemHistorySection itemId={item.id} />
             </div>
           )}

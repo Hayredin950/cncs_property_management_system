@@ -358,7 +358,11 @@ function EditItemInner({
     try {
       // The API computes the edit-log diff server-side; the client sends the
       // full field set and lets `buildEditLogRows` decide what changed.
-      await updateMutation.mutateAsync(toPayload(values, user!.id));
+      // The item's own custodian, not the signed-in user's id: reassignment is a
+      // transfer, so an edit must send the owner back unchanged. Sending the
+      // editor's id here quietly reassigned every item anyone else touched, and
+      // now that ownerId is transfer-only it would also refuse the save.
+      await updateMutation.mutateAsync(toPayload(values, item?.ownerId ?? ""));
       onDone();
     } catch (err) {
       // 409 (disposed mid-edit) is the one server answer worth restating here.
@@ -405,13 +409,33 @@ function EditItemInner({
               error={errors.department?.message}
               disabled={disposed}
             />
-            <Input label="Building" error={errors.building?.message} {...register("building")} required />
-            <Input label="Floor" error={errors.floor?.message} {...register("floor")} required />
-            <Input label="Room" error={errors.room?.message} {...register("room")} required />
+            {/*
+              Building, floor and room are `readOnly`, not `disabled`: the server
+              compares the submitted body against the stored row, so unchanged
+              values have to arrive with the request, and a disabled input can drop
+              out of the submitted set. Moving an item is an approved TRANSFER
+              request (SRS F6) — the rule `ownerId` below already followed, now
+              applied to the other three transfer-only columns.
+            */}
+            <Input label="Building" error={errors.building?.message} {...register("building")} readOnly required />
+            <Input label="Floor" error={errors.floor?.message} {...register("floor")} readOnly required />
+            <Input label="Room" error={errors.room?.message} {...register("room")} readOnly required />
+            {!disposed && (
+              <p className="rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-600 sm:col-span-2">
+                Where this item is, and whose it is, can only change through an approved transfer.{" "}
+                <Link
+                  to={`/requests/new?item=${encodeURIComponent(item.tagId)}`}
+                  className="font-medium text-brand-700 underline-offset-4 hover:underline"
+                >
+                  File a transfer request
+                </Link>{" "}
+                and an admin approves the move.
+              </p>
+            )}
           </FormSection>
 
           <FormSection heading="Ownership & value" columns>
-            <Input label="Owner ID" error={errors.ownerId?.message} {...register("ownerId")} disabled hint="Reassignment happens through an approved transfer request." />
+            <Input label="Owner ID" error={errors.ownerId?.message} {...register("ownerId")} readOnly hint="Reassignment happens through an approved transfer request." />
             <Input label="Purchase cost (ETB)" type="number" step="0.01" error={errors.purchaseCost?.message} {...register("purchaseCost")} required />
             <Input label="Current value (ETB, optional)" type="number" step="0.01" error={errors.currentValue?.message} {...register("currentValue")} />
           </FormSection>

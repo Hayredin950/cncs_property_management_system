@@ -47,6 +47,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             "h-11 w-full rounded-md border bg-white px-3 text-base text-slate-900 placeholder:text-slate-400",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-brand-600",
             "disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500",
+            // Same treatment for `readOnly`. The two are not interchangeable here:
+            // a disabled input can drop out of the submitted values, and the
+            // fields that use this (a transfer-owned location) must still be sent
+            // back unchanged so the server can compare them with the stored row.
+            "read-only:cursor-not-allowed read-only:bg-slate-100 read-only:text-slate-500",
             leadingIcon ? "pl-10" : undefined,
             error ? "border-danger-600" : "border-slate-300",
             className,

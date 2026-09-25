@@ -754,6 +754,13 @@ Camera-first, manual entry always visible — never behind a "having trouble?" t
   "Camera permission was denied — you can still type the tag ID below."), so this reads as a
   permission/environment issue, never as a broken app (`frontend-plan.md` §7 flags this
   exact failure mode as a demo-day risk).
+- **Zoom belongs to the camera, not the page.** A range control sits under the viewport and
+  re-constrains the video track — the only zoom that helps you aim a phone at a sticker — and it
+  renders only when the running camera reports a real zoom range. Most iPhones expose none, and a
+  missing control is honest where a dead one is not. The viewport itself opts out of page-level
+  pinch-zoom (`touch-action: pan-x pan-y`, set as an arbitrary property so it does not depend on
+  utility order), because pinching over the video used to scale the whole document and slide the
+  manual-entry field off the screen mid-scan. Page scrolling under the viewport still works.
 - A successful decode gets a brief `accent`-coloured flash + haptic-feeling toast before
   navigating to `/item/:tagId` — enough feedback that the user trusts the scan registered
   before the page changes underneath them.

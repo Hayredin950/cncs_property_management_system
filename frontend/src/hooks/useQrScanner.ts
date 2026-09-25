@@ -1,7 +1,16 @@
 import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type ScannerState = "starting" | "scanning" | "unavailable";
+
+/** The running camera's own zoom range, as its video track reports it. */
+export interface ScannerZoom {
+  min: number;
+  max: number;
+  step: number;
+  /** Where the camera is now, clamped into `[min, max]`. */
+  value: number;
+}
 
 /**
  * Closes a scanner without ever throwing.
@@ -53,6 +62,41 @@ function closeScanner(scanner: Html5Qrcode) {
 }
 
 /**
+ * The camera's zoom range, or `null` when it has none.
+ *
+ * Read only once the camera is actually running: `getCapabilities()` needs a live
+ * video track, and `zoom` is simply absent from it on most iPhones, which expose no
+ * zoom at all. `null` is therefore a normal answer rather than a failure — the
+ * scanner then renders without a zoom control instead of a dead one.
+ *
+ * Every step can also throw: `html5-qrcode` reaches the rendered camera through a
+ * private accessor that throws a **string** when the state has already moved on
+ * (`getRenderedCameraOrFail`), the same hazard `closeScanner` documents. A scanner
+ * that lost that race reports no zoom, which is true enough.
+ */
+function readZoomRange(scanner: Html5Qrcode): ScannerZoom | null {
+  try {
+    if (scanner.getState() !== Html5QrcodeScannerState.SCANNING) return null;
+
+    const feature = scanner.getRunningTrackCameraCapabilities().zoomFeature();
+    if (!feature.isSupported()) return null;
+
+    const min = feature.min();
+    const max = feature.max();
+    // A range with nowhere to go is not a control — some Android drivers report a
+    // fixed zoom of 1..1, and `step` of 0 would freeze the slider as well.
+    if (!(max > min)) return null;
+
+    const step = feature.step() || (max - min) / 10;
+    const value = feature.value() ?? min;
+
+    return { min, max, step, value: Math.min(Math.max(value, min), max) };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Wraps `html5-qrcode`'s imperative lifecycle (frontend-plan.md §2 — the SDS
  * names this library specifically, do not substitute).
  *
@@ -64,9 +108,20 @@ function closeScanner(scanner: Html5Qrcode) {
  * `onDecode` is read through a ref rather than listed as an effect dependency,
  * so passing a fresh inline callback on every render does not tear down and
  * restart the camera.
+ *
+ * ### Zoom
+ *
+ * `zoom`/`setZoom` drive the *camera* — the video track is re-constrained in place
+ * — never the page. Pinching over the viewfinder used to scale the whole document,
+ * which moved the controls and the manual tag field along with the video, and zoom
+ * is reported as `null` on devices that have no camera zoom to offer (see
+ * `readZoomRange`).
  */
 export function useQrScanner(elementId: string, onDecode: (text: string) => void) {
   const onDecodeRef = useRef(onDecode);
+  /** The running scanner, so zoom can reach it without re-running the effect. */
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const [zoom, setZoom] = useState<ScannerZoom | null>(null);
 
   // Assign in a passive effect, not during render — the same callback identity
   // is kept without writing a ref while React is rendering (react-hooks/refs).
@@ -91,6 +146,7 @@ export function useQrScanner(elementId: string, onDecode: (text: string) => void
     }
 
     const scanner = new Html5Qrcode(elementId);
+    scannerRef.current = scanner;
 
     scanner
       .start(
@@ -113,6 +169,8 @@ export function useQrScanner(elementId: string, onDecode: (text: string) => void
           return;
         }
         setState("scanning");
+        // The camera is live, so its zoom range is knowable now and only now.
+        setZoom(readZoomRange(scanner));
       })
       .catch(() => {
         if (!cancelled) {
@@ -125,9 +183,38 @@ export function useQrScanner(elementId: string, onDecode: (text: string) => void
 
     return () => {
       cancelled = true;
+      if (scannerRef.current === scanner) scannerRef.current = null;
+      setZoom(null);
       closeScanner(scanner);
     };
   }, [elementId]);
 
-  return { state, message };
+  /**
+   * Moves the camera's own zoom while it is running.
+   *
+   * Guarded on the scanner still being in SCANNING state, because the library's
+   * private accessor throws a string synchronously once it isn't — the same
+   * failure mode `closeScanner` exists for. Every failure past that point is
+   * cosmetic and swallowed deliberately: a driver is allowed to reject a value it
+   * advertised a moment earlier, and a scanner that keeps scanning is the correct
+   * outcome either way. The reported `value` moves only once the camera accepted
+   * it, so the control never claims a zoom that did not happen.
+   */
+  const setZoomLevel = useCallback((value: number) => {
+    const scanner = scannerRef.current;
+    if (!scanner) return;
+
+    try {
+      if (scanner.getState() !== Html5QrcodeScannerState.SCANNING) return;
+      const feature = scanner.getRunningTrackCameraCapabilities().zoomFeature();
+      void feature.apply(value).then(
+        () => setZoom((previous) => (previous ? { ...previous, value } : previous)),
+        () => undefined,
+      );
+    } catch {
+      // No longer running, or the camera refused the change mid-flight.
+    }
+  }, []);
+
+  return { state, message, zoom, setZoom: setZoomLevel };
 }

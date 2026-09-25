@@ -87,6 +87,43 @@ function rejectedBundleField(body: unknown): boolean {
 const BUNDLE_FIELD_ERROR =
   "parentItemId cannot be set here — use POST /items/:id/accessories to link an accessory";
 
+/**
+ * The columns that say *where an item is* and *whose it is*, and whose only write
+ * path for an existing item is an approved TRANSFER request (SRS F6, F7).
+ *
+ * All four are part of a transfer's payload — `Request.newLocationBuilding`,
+ * `newLocationFloor`, `newLocationRoom`, `newOwnerId`, applied by
+ * `buildTransferChanges` — which made this endpoint a second, unapproved writer of
+ * exactly the fields the approval flow exists to govern. A Staff member could move
+ * an item to another room and save it immediately; the edit log recorded the
+ * change, but nobody approved it, so the register's answer to "where is it?" was
+ * only as trustworthy as the last person to type in the form. Logging a bypass
+ * does not turn it into an approval.
+ *
+ * `POST /items` still accepts all four — registering an item is not a transfer,
+ * and there is no prior location for an approval to guard. The rule begins with
+ * the row's existence.
+ *
+ * Enforced by comparing against the stored row, not by rejecting on presence: the
+ * edit form resubmits the values it loaded, so only an actual change is a move.
+ * Rejected loudly for the same reason `parentItemId` is — a caller who sends one
+ * should learn where the field really lives, not watch it disappear.
+ */
+const TRANSFER_ONLY_FIELDS = ["building", "floor", "room", "ownerId"] as const;
+
+const TRANSFER_ONLY_ERROR =
+  "An item's location and custodian can only change through an approved transfer — file a TRANSFER request instead";
+
+/** The transfer-only columns this body actually changes; empty means none. */
+function attemptedTransferFields(
+  updates: Partial<Record<string, unknown>>,
+  existing: { building: string; floor: string; room: string; ownerId: string },
+): string[] {
+  return TRANSFER_ONLY_FIELDS.filter(
+    (field) => field in updates && updates[field] !== existing[field],
+  );
+}
+
 function generateTagId(): string {
   const randomHex = crypto.randomBytes(4).toString("hex").toUpperCase();
   return `CNCS-${randomHex}`;
@@ -453,6 +490,18 @@ itemsRouter.put(
       const updates = cleanDefined(parsed.data);
 
       /**
+       * A move or a reassignment is a TRANSFER, and the approval path is its only
+       * writer — see `TRANSFER_ONLY_FIELDS`. Checked before any write, so a body
+       * that mixes a legitimate edit with a location change is refused whole
+       * rather than half-applied.
+       */
+      const transferFields = attemptedTransferFields(updates, existingItem);
+      if (transferFields.length > 0) {
+        res.status(400).json({ error: TRANSFER_ONLY_ERROR, fields: transferFields });
+        return;
+      }
+
+      /**
        * `updateMany({ data: {} })` is not a well-formed UPDATE, and an empty diff
        * has nothing to log, so an empty body short-circuits to the current row.
        */
@@ -465,26 +514,17 @@ itemsRouter.put(
        * Foreign keys are logged as "<display name> (<id>)" (decision D1), which
        * needs the names on both sides of the change — the old value's and the
        * new one's. Fetched only when the column is actually changing, so the
-       * common edit (condition, notes, location) adds no queries.
+       * common edit adds no queries.
        *
-       * Re-verifying the new ids here also turns a dangling reference into a 400
+       * Re-verifying the new id here also turns a dangling reference into a 400
        * instead of a Prisma P2003 surfacing as a 500.
+       *
+       * `ownerId` needs no equivalent: a change to it is refused above as a
+       * transfer, and the approval path builds its own labels
+       * (services/requestWorkflow.ts). `categoryId` is the only foreign key this
+       * endpoint may still change.
        */
       const labels: Record<string, string> = {};
-
-      if (typeof updates.ownerId === "string" && updates.ownerId !== existingItem.ownerId) {
-        const owners = await prisma.user.findMany({
-          where: { id: { in: [existingItem.ownerId, updates.ownerId] } },
-          select: { id: true, fullName: true },
-        });
-        if (!owners.some((owner) => owner.id === updates.ownerId)) {
-          res.status(400).json({ error: "ownerId does not match an existing user" });
-          return;
-        }
-        for (const owner of owners) {
-          labels[owner.id] = owner.fullName;
-        }
-      }
 
       if (
         typeof updates.categoryId === "string" &&

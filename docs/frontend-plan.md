@@ -180,9 +180,10 @@ plan proposes marked ➕ (each because a built backend capability has no page in
 | `/requests` | staff/admin | List, filterable by status | `GET /requests`, `GET /requests/pending-count` |
 | `/requests/new` | staff/admin | File transfer or disposal | `POST /requests`, `GET /items` |
 | `/requests/:id` | staff/admin | Detail; approve/reject for admin | `GET /requests/:id`, `POST /requests/:id/approve`, `POST /requests/:id/reject` |
+| `/audits` | staff/admin | Audit history: past sessions, counts, CSV | `GET /audits` |
 | `/audit/new` | staff/admin | Start a session, pick scope | `POST /audits` |
-| `/audit/:id/scan` | staff/admin | Live scanning during a walkthrough | `POST /audits/:id/scan` |
-| `/audit/:id/report` | staff/admin | Mismatch report | `POST /audits/:id/complete`, `GET /reports/audit/:auditId` ⚠️ |
+| `/audit/:id/scan` | staff/admin | Live scanning during a walkthrough | `POST /audits/:id/scan`, `GET /audits/:id` |
+| `/audit/:id/report` | staff/admin | Mismatch report | `POST /audits/:id/complete`, `GET /audits/:id`, `GET /reports/audit/:auditId` |
 | `/reports` | staff/admin | Report generation/export | `GET /reports/inventory`, `/reports/disposals` |
 | `/map` | everyone | **P1 — cut first** (F5.2) | `GET /items` (derived from location data) |
 | `/admin/users` | admin | Create staff/admin accounts (F1.3) | `POST /auth/register` ⚠️ |
@@ -289,9 +290,12 @@ this table is the contract, that document is the blueprint.
 - Scan: `POST /audits/:id/scan` with `{ itemId }`. Clients cannot choose the result; scans
   are recorded `FOUND` and classified at completion.
 - Complete: returns `{ counts: { found, missing, locationMismatch }, ... }` — render that
-  directly. There is **no `GET /audits` list and no `GET /audits/:id/report`** (§12), so a
-  report can only be viewed fresh from the completion response, or re-downloaded as CSV.
-- Keep a running client-side list of items scanned in this session (no server-side scan listing).
+  directly. `GET /audits/:id` reads the same summary back and `GET /audits` lists sessions with
+  their timestamps and counts (G1, closed), so the report survives a reload and a past audit is
+  reachable at `/audits` instead of being CSV-only.
+- The running scan list is seeded from `GET /audits/:id` and cached in `sessionStorage`
+  (`lib/auditWalkthrough.ts`, `mergeStoredScans`). Only `scannedAt !== null` rows count as
+  scans — `MISSING` rows are written by completion and were never scanned.
 
 ### Reports (F10)
 - **CSV only** (`format=csv`; anything else is 400) and staff/admin only, so they download
@@ -414,8 +418,8 @@ frontend is built against it — none is fixable in the frontend alone.
 
 | # | Spec says | Reality | Impact on frontend |
 | --- | --- | --- | --- |
-| G1 | SDS §3.5: `GET /audits/:id/report` returns a session's full results | **Not built.** Only `POST /audits`, `/:id/scan`, `/:id/complete` exist, and there is no `GET /audits` list either | `/audit/:id/report` has no data source once you leave the completion screen; a past audit is only reachable as CSV, and no session can be re-opened |
-| G2 | SDS §4: `/admin/users` — "create/**manage** staff accounts, assign roles" | Only `POST /auth/register`. No list, update, role-change, or deactivate endpoint | The page can create accounts but has nothing to list or manage |
+| ~~G1~~ | SDS §3.5: `GET /audits/:id/report` returns a session's full results | **Closed.** `GET /audits/:id` returns the stored rows and the same `counts`/id-lists the completion response did, and `GET /audits` lists sessions with their counts and timestamps | `/audit/:id/report` reads a session back, and `/audits` is the audit history; neither depends on the completion response still being in memory |
+| ~~G2~~ | SDS §4: `/admin/users` — "create/**manage** staff accounts, assign roles" | **Closed.** `POST /auth/register` (Admin-only) creates; `GET /users` lists every account with `itemCount`; `PATCH /users/:id` corrects name/email; `POST /users/:id/promote` grants ADMIN (**no demote**, by design); `POST /users/:id/password` resets and forces a change; `DELETE /users/:id` removes an account with no trail | `/admin/users` is a real management table, and the item form's custodian picker reads `GET /users`, so an Admin registers an item for whoever holds it. `GET /users` stays Admin-only, so a Staff registrar sees only their own account there |
 | G3 | SDS §1: `multer` file uploads to `/uploads`; SRS F2 lists Photo | **Closed.** `POST /uploads/photo` now stores an image and returns its URL (see `docs/backend-handoff.md`); `photoUrl` accepts an absolute URL *or* a site-relative path (`utils/photoSource.ts`) | The form takes a photo from the camera, the device, or a URL (`PhotoField`), in both create and edit mode |
 | G4 | SRS F1.4: session lasts until explicit logout | **1-day JWT, no refresh endpoint** | Users are logged out daily; nothing the frontend can do about it |
 | G5 | SDS §4 nav has no notifications page; F8 is P1 | Backend fully supports notifications | This plan adds `/notifications` ➕ and a nav badge; confirm placement with whoever owns the shell |

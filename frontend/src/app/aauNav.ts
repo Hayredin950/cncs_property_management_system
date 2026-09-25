@@ -134,7 +134,13 @@ export function staffNav(role: Role): AauNavEntry[] {
         },
         {
           heading: "Reporting",
-          links: [{ label: "Reports & exports", to: "/reports" }],
+          links: [
+            // The history sits beside the reports because they answer the same
+            // question — "what did we find last time?" — and neither is reachable
+            // from the other without knowing a session id.
+            { label: "Past audits", to: "/audits" },
+            { label: "Reports & exports", to: "/reports" },
+          ],
         },
       ],
     },

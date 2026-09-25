@@ -8,7 +8,14 @@ import type {
   RequestsListResponse,
 } from "../types/request";
 import type { AppNotification, NotificationsListResponse } from "../types/notification";
-import type { AuditCompletionResponse, AuditScanRow, AuditSession } from "../types/audit";
+import type {
+  AuditCompletionResponse,
+  AuditListResponse,
+  AuditScanRow,
+  AuditSession,
+  AuditSessionReadback,
+  AuditSessionSummary,
+} from "../types/audit";
 import type { ItemsHistoryResponse } from "../types/history";
 
 /**
@@ -187,6 +194,113 @@ export const AUDIT_COMPLETION: AuditCompletionResponse = {
   missing: ["item-4", "item-5"],
   locationMismatch: ["item-6"],
 };
+
+/**
+ * `GET /audits` — the history. Two sessions, one finished and one still open, so a
+ * test can tell the two status treatments apart; their counts differ for the same
+ * reason the completion fixture's do.
+ */
+export const AUDIT_SESSION_SUMMARY: AuditSessionSummary = {
+  ...AUDIT_SESSION,
+  completedAt: "2026-09-22T08:30:00.000Z",
+  completed: true,
+  counts: { found: 3, missing: 2, locationMismatch: 1 },
+};
+
+export const OPEN_AUDIT_SESSION_SUMMARY: AuditSessionSummary = {
+  id: "audit-2",
+  scopeType: "DEPARTMENT",
+  scopeValue: "Biology",
+  runById: STAFF_USER.id,
+  startedAt: "2026-09-23T09:00:00.000Z",
+  completedAt: null,
+  completed: false,
+  counts: { found: 1, missing: 0, locationMismatch: 0 },
+  runBy: { id: STAFF_USER.id, fullName: STAFF_USER.fullName, email: STAFF_USER.email },
+};
+
+export const AUDITS_LIST: AuditListResponse = {
+  audits: [OPEN_AUDIT_SESSION_SUMMARY, AUDIT_SESSION_SUMMARY],
+  total: 2,
+  limit: 20,
+  offset: 0,
+};
+
+/**
+ * `GET /audits/:id` — the read-back, **empty by default**.
+ *
+ * Empty is the right default because the walkthrough tests scan `PRIVILEGED_ITEM`
+ * by hand: a default read-back that already listed it would answer "already
+ * scanned" and no scan request would ever leave the page, which is a test failing
+ * for the fixture's sake rather than the code's. Tests that are *about* stored rows
+ * pass them in.
+ */
+export const AUDIT_READBACK = (
+  id: string,
+  overrides: Partial<AuditSessionReadback> = {},
+): AuditSessionReadback => ({
+  id,
+  scopeType: AUDIT_SESSION.scopeType,
+  scopeValue: AUDIT_SESSION.scopeValue,
+  runById: AUDIT_SESSION.runById,
+  startedAt: AUDIT_SESSION.startedAt,
+  completedAt: null,
+  completed: false,
+  counts: { found: 0, missing: 0, locationMismatch: 0 },
+  found: [],
+  missing: [],
+  locationMismatch: [],
+  rows: [],
+  ...overrides,
+});
+
+/**
+ * The read-back of a session that already has rows: one scan this walk made, plus
+ * the two classifications completion writes about items it did not. The walkthrough
+ * has to show the first and hide the other two — a `MISSING` row has no `scannedAt`
+ * and was never scanned.
+ */
+export const AUDIT_STORED_ROWS = [
+  {
+    itemId: PRIVILEGED_ITEM.id,
+    result: "FOUND" as const,
+    scannedAt: "2026-09-22T08:05:00.000Z",
+    item: {
+      tagId: PRIVILEGED_ITEM.tagId,
+      name: PRIVILEGED_ITEM.name,
+      department: PRIVILEGED_ITEM.department,
+      building: PRIVILEGED_ITEM.building,
+      floor: PRIVILEGED_ITEM.floor,
+      room: PRIVILEGED_ITEM.room,
+    },
+  },
+  {
+    itemId: "item-4",
+    result: "MISSING" as const,
+    scannedAt: null,
+    item: {
+      tagId: "CNCS-MISS0000",
+      name: "Missing Monitor",
+      department: "Computer Science",
+      building: "Building 1",
+      floor: "Floor 2",
+      room: "Room 210",
+    },
+  },
+  {
+    itemId: "item-6",
+    result: "LOCATION_MISMATCH" as const,
+    scannedAt: "2026-09-22T08:20:00.000Z",
+    item: {
+      tagId: "CNCS-ELSE0000",
+      name: "Misplaced Projector",
+      department: "Biology",
+      building: "Building 2",
+      floor: "Floor 1",
+      room: "Room 105",
+    },
+  },
+];
 
 /** The completion summary's JSON body, for tests that override the complete handler. */
 export const AUDIT_COMPLETION_BODY = (auditSessionId: string): AuditCompletionResponse => ({

@@ -22,6 +22,16 @@ const schema = z
   .refine((values) => values.newPassword === values.confirmPassword, {
     message: "The two passwords don't match",
     path: ["confirmPassword"],
+  })
+  /*
+    Mirrors the server's own refusal, so the answer arrives while the user is still
+    looking at the field. On the forced screen especially: reusing the temporary
+    password looked like a successful change, cleared the flag and left the account
+    on the password an administrator chose.
+  */
+  .refine((values) => values.newPassword !== values.currentPassword, {
+    message: "Choose a password that differs from your current one",
+    path: ["newPassword"],
   });
 
 type FormValues = z.infer<typeof schema>;

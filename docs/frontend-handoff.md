@@ -30,9 +30,9 @@ shipped as the `frontend` service of the repo's single `docker compose up`.
 | `/items/:id` | Staff workbench: QR tag, accessories bundle, edit history (F2.2, F3.4, F6.3) |
 | `/requests`, `/requests/new`, `/requests/:id` | Queue, file a transfer/disposal, approve or reject (F6, F7) |
 | `/notifications` | In-app inbox with mark-as-read (F8) |
-| `/audit/new`, `/audit/:id/scan`, `/audit/:id/report` | Audit walkthrough and completion summary (F9) |
+| `/audits`, `/audit/new`, `/audit/:id/scan`, `/audit/:id/report` | Audit history, walkthrough and completion summary (F9) |
 | `/reports` | Inventory / disposals / audit CSV exports (F10.1, F10.3) |
-| `/admin/users`, `/admin/categories` | Admin-only, create-only (see gaps) |
+| `/admin/users`, `/admin/categories` | Admin-only account and category management (list, create, edit, role change, delete) |
 | `*` | The 404 — also what a role-scoped route renders for the wrong role (never a separate "forbidden" page) |
 
 **Foundation:** one API client (`lib/apiClient.ts`) that attaches the Bearer token, normalizes
@@ -51,8 +51,9 @@ difference from upstream are recorded in [`frontend-aau-rebrand.md`](frontend-aa
 read that before changing anything visual, and read its §7 before using a Tailwind `space-x-*`
 next to a child `mx-*`.
 
-**Testing:** `vitest` + React Testing Library + MSW (`src/test/`). Nine suites, run in CI on every
-PR alongside lint and the type-checking build.
+**Testing:** `vitest` + React Testing Library + MSW (`src/test/`, plus colocated suites under
+`src/lib` and `src/features`). Twenty-three suites, run in CI on every PR alongside lint and the
+type-checking build.
 
 ## Field visibility is a backend rule — do not re-implement it
 
@@ -161,8 +162,8 @@ one on the page rather than failing silently.
 
 | # | Gap | Consequence in the UI |
 | --- | --- | --- |
-| G1 | No `GET /audits/:id` and no `GET /audits` list | The audit's running scan list and completion summary live in browser storage; a cold visit to `/audit/:id/report` shows a deliberate "not available" state |
-| G2 | No user list / role-change endpoints | `/admin/users` and `/admin/categories` **create only**; no listing, no editing. Item owner select is limited to your own account |
+| ~~G1~~ | **Closed.** `GET /audits/:id` reads a session back and `GET /audits` lists them | `/audits` is the audit history, the walkthrough seeds its running list from the stored rows, and a cold visit to `/audit/:id/report` reads the session back instead of showing a "not available" state. Browser storage is now only a cache in front of both |
+| G2 | No *public* user API | `GET /users` is **Admin-only**, and that single endpoint is what `/admin/users` and the item form's custodian picker read. A Staff registrar therefore cannot enumerate accounts, so the picker offers them only their own — by choice, not by failure. There is still no self-service profile or account-deactivation endpoint |
 | ~~G3~~ | **Closed.** `POST /uploads/photo` exists now | The photo field takes a camera shot, a device file, or a pasted URL — in create mode too, which is why the upload is item-less and returns a URL the form submits |
 | G4 | 1-day JWT, no refresh | Sessions end after a day of inactivity even though F1.4 says until explicit logout |
 | G9 | No `GET /departments` | Department lists are derived from one page of `GET /items`; the audit picker is locked to those values because completion matches `scopeValue` exactly and case-sensitively |
@@ -186,7 +187,8 @@ origin.
 ### Signing in for testing
 
 There is no self-signup. Two accounts come from `backend/prisma/seed.ts` (`SEED_USERS`), and
-an admin can create more at `/admin/users` (create-only — see G2):
+an admin can manage the rest at `/admin/users` (list, create, correct, promote, reset password,
+delete — see G2):
 
 | Role | Email | Password | Differences that matter when testing |
 | --- | --- | --- | --- |

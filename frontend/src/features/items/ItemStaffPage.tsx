@@ -5,7 +5,6 @@ import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
-import { HistoryList } from "../../components/HistoryList";
 import { Input } from "../../components/Input";
 import { ItemActions } from "../../components/ItemActions";
 import { ItemDetailView } from "../../components/ItemDetailView";
@@ -18,10 +17,9 @@ import {
   useRegenerateTag,
   useUnlinkAccessory,
 } from "../../hooks/useItemMutations";
-import { fetchItemHistory } from "../../api/items";
-import { useQuery } from "@tanstack/react-query";
-import { ApiError, NetworkError } from "../../types/api";
+import { NetworkError } from "../../types/api";
 import { ConditionBadge, ItemStatusBadge } from "../../components/StatusBadges";
+import { ItemHistorySection } from "./ItemHistorySection";
 
 /**
  * `/items/:id` — the staff workbench for one item (frontend-design-system.md
@@ -129,7 +127,7 @@ export function ItemStaffPage() {
         <AccessoriesSection itemId={item.id} tagId={item.tagId} />
       </div>
 
-      <HistorySection itemId={item.id} />
+      <ItemHistorySection itemId={item.id} />
     </div>
   );
 }
@@ -333,29 +331,4 @@ function AccessoryPickerModal({
   );
 }
 
-/** Grouped edit history (F2.3, F6.3) over GET /items/:id/history. */
-function HistorySection({ itemId }: { itemId: string }) {
-  const historyQuery = useQuery({
-    queryKey: ["item-history", itemId],
-    queryFn: ({ signal }) => fetchItemHistory(itemId, { limit: 50 }, signal),
-  });
 
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Edit history</h2>
-      {historyQuery.isError ? (
-        <ErrorState
-          heading="Couldn't load the edit history"
-          body={historyQuery.error instanceof ApiError ? historyQuery.error.message : undefined}
-          action={
-            <Button size="sm" onClick={() => historyQuery.refetch()}>
-              Try again
-            </Button>
-          }
-        />
-      ) : (
-        <HistoryList entries={historyQuery.data?.entries ?? []} loading={historyQuery.isPending} />
-      )}
-    </section>
-  );
-}

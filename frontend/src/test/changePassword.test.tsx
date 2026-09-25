@@ -50,4 +50,37 @@ describe("forced password change", () => {
     // Cleared flag + fresh session means the normal app is reachable again.
     await waitFor(() => expect(router.state.location.pathname).toBe("/dashboard"));
   });
+
+  it("rejects the temporary password typed back in, before it reaches the server", async () => {
+    let changeCalls = 0;
+    server.use(
+      http.get(`${API}/auth/me`, () =>
+        HttpResponse.json({ user: { ...ADMIN_USER, mustChangePassword: true } }),
+      ),
+      http.post(`${API}/auth/change-password`, () => {
+        changeCalls += 1;
+        return HttpResponse.json({ token: "new-token", user: ADMIN_USER });
+      }),
+    );
+
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/change-password"] });
+    const user = userEvent.setup();
+
+    await screen.findByText("Choose a new password");
+    await user.type(screen.getByLabelText("Current password"), "TempPassword1");
+    await user.type(screen.getByLabelText("New password"), "TempPassword1");
+    await user.type(screen.getByLabelText("Confirm new password"), "TempPassword1");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+
+    /*
+      The server refuses this too, but the client should not make the user wait for
+      a round trip to be told what it already knows — and on the *forced* screen the
+      stakes are higher: reusing the temporary password used to look like a
+      successful change, clear the flag and leave the account on the password an
+      administrator set.
+    */
+    expect(await screen.findByText(/differs from your current one/i)).toBeInTheDocument();
+    expect(changeCalls).toBe(0);
+  });
 });

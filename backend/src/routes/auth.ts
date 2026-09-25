@@ -359,6 +359,24 @@ router.post(
         return res.status(401).json({ error: "Current password is incorrect" });
       }
 
+      /**
+       * A "change" to the password the account already has is not a change, and
+       * the forced screen is where that stops being theoretical: an administrator
+       * resets an account, the holder is asked to choose a new password, types the
+       * temporary one back — and `mustChangePassword` clears while the credential
+       * is exactly what the administrator set. The account then reads as reset and
+       * is not.
+       *
+       * Checked against the password just verified rather than a password history,
+       * which does not exist and is out of scope; this is the case that actually
+       * happens, and it is the one the requirement cares about.
+       */
+      if (newPassword === currentPassword) {
+        return res.status(400).json({
+          error: "The new password has to differ from your current one",
+        });
+      }
+
       const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id });
       const tokenVersion = user.tokenVersion + 1;
 

@@ -16,7 +16,9 @@ import { Textarea } from "../../components/Textarea";
 import { useCategories } from "../../hooks/useCategories";
 import { useCreateItem, useUpdateItem } from "../../hooks/useItemMutations";
 import { useItemById } from "../../hooks/useItems";
+import { useUsers } from "../../hooks/useUsers";
 import { ApiError, NetworkError } from "../../types/api";
+import type { UserSummary } from "../../types/user";
 import { CONDITIONS, CONDITION_LABELS } from "../../types/enums";
 
 /**
@@ -82,6 +84,22 @@ export function ItemFormPage({ mode }: { mode: "create" | "edit" }) {
   return mode === "create" ? <CreateItemForm /> : <EditItemForm />;
 }
 
+/**
+ * The request body both modes send.
+ *
+ * `ownerId` is a *parameter* rather than read from the form because the two modes
+ * mean different things by it, and reading the field blindly got one of them wrong:
+ *
+ *   - **create** passes `values.ownerId` — the custodian the user actually picked,
+ *     or the signed-in user when they left the dropdown alone (`defaultValues`
+ *     seeds it). It used to pass `user.id` here, which silently overrode the
+ *     dropdown: the select showed a custodian and the item was registered to
+ *     whoever happened to be signed in. A picker that cannot pick is worse than no
+ *     picker.
+ *   - **edit** passes the item's own stored owner. Reassignment is an approved
+ *     TRANSFER (`PUT /items/:id` refuses `ownerId` outright), so the form sends it
+ *     back unchanged rather than inviting an edit that the server would reject.
+ */
 function toPayload(values: ItemFormValues, ownerId: string) {
   return {
     name: values.name.trim(),
@@ -108,7 +126,21 @@ function toPayload(values: ItemFormValues, ownerId: string) {
   };
 }
 
-/** The owner select lists staff/admin users — but there is no user-list endpoint (G2). */
+/**
+ * The custodian control (F2.1) — the one place an item's owner is decided.
+ *
+ * It used to offer exactly one option, the signed-in account, because a Staff
+ * member has no way to enumerate accounts (G2). An **Admin** can (`GET /users` is
+ * admin-only), and an admin is the person who actually registers an asset on
+ * behalf of whoever holds it — so the list is every account for them, and just
+ * themselves for Staff, with the hint saying which of the two it is instead of
+ * leaving a one-option dropdown looking broken.
+ *
+ * This matters more than it looks: `PUT /items/:id` refuses `ownerId` (an owner
+ * change is an approved TRANSFER), so registration is the *only* moment the
+ * custodian can be set correctly without paperwork. Getting it wrong at the start
+ * means a transfer request to fix a typo.
+ */
 function OwnerSelect({
   value,
   onChange,
@@ -119,18 +151,45 @@ function OwnerSelect({
   error?: string | undefined;
 }) {
   const { user } = useAuth();
+  // `GET /users` is Admin-only (gap G2), so a Staff registrar cannot enumerate
+  // accounts — the request would only come back 403, which is why it is not sent.
+  const canListAccounts = user?.role === "ADMIN";
+  const usersQuery = useUsers(canListAccounts);
+
+  /**
+   * Who can hold the item, as far as this viewer can see.
+   *
+   * The signed-in account is always in the list even before `GET /users` answers:
+   * a `<select>` whose `value` is not among its options renders blank, so a
+   * custodian field that was seeded with "you" and had no matching option would
+   * look empty on the one form that cannot be submitted without it.
+   */
+  const options = useMemo(() => {
+    if (!user) return [];
+    const accounts: UserSummary[] =
+      canListAccounts && usersQuery.data ? usersQuery.data : [];
+    const all = accounts.some((account) => account.id === user.id)
+      ? accounts
+      : [{ ...user, itemCount: 0 }, ...accounts];
+
+    return all.map((account) => ({
+      value: account.id,
+      label: account.id === user.id ? `${account.fullName} (you)` : account.fullName,
+    }));
+  }, [canListAccounts, user, usersQuery.data]);
+
   return (
     <Select
       label="Owner (custodian)"
       value={value}
       onChange={(event) => onChange(event.target.value)}
       error={error}
-      options={
-        user
-          ? [{ value: user.id, label: `${user.fullName} (you)` }]
-          : []
+      options={options}
+      hint={
+        canListAccounts
+          ? "Who will hold this item. Changing it after registration goes through an approved transfer request."
+          : "Ownership is limited to your own account here — reassignment to someone else goes through an approved transfer request."
       }
-      hint="Owners are limited to your own account here — reassignment to someone else goes through an approved transfer request."
       required
     />
   );
@@ -167,6 +226,19 @@ function CreateItemForm() {
 
   const photoUrl = watch("photoUrl");
 
+  /**
+   * A dropdown change has to mark the form dirty explicitly.
+   *
+   * `setValue` leaves `isDirty` alone unless asked, and the department picker is
+   * the one control on this form that is not a registered input — so choosing a
+   * department left Save greyed out and the form reading as unchanged until
+   * something else was typed into somewhere else. `shouldValidate` too, so the
+   * field's own error clears the way a typed input's would.
+   */
+  function setDepartment(value: string) {
+    setValue("department", value, { shouldDirty: true, shouldValidate: true });
+  }
+
   const categoryOptions = useMemo(
     () => (categoriesQuery.data ?? []).map((c) => ({ value: c.id, label: c.name })),
     [categoriesQuery.data],
@@ -176,7 +248,7 @@ function CreateItemForm() {
 
   async function onSubmit(values: ItemFormValues) {
     try {
-      const item = await createMutation.mutateAsync(toPayload(values, user!.id));
+      const item = await createMutation.mutateAsync(toPayload(values, values.ownerId));
       navigate(`/item/${item.tagId}`);
     } catch {
       // Toast already shown by the mutation.
@@ -202,14 +274,14 @@ function CreateItemForm() {
         </FormSection>
 
         <FormSection heading="Location" columns>
-          <DepartmentPicker value={watch("department") || ""} onChange={(v) => setValue("department", v)} error={errors.department?.message} />
+          <DepartmentPicker value={watch("department") || ""} onChange={(v) => setDepartment(v)} error={errors.department?.message} />
           <Input label="Building" error={errors.building?.message} {...register("building")} required />
           <Input label="Floor" error={errors.floor?.message} {...register("floor")} required />
           <Input label="Room" error={errors.room?.message} {...register("room")} required />
         </FormSection>
 
         <FormSection heading="Ownership & value" columns>
-          <OwnerSelect value={watch("ownerId") || ""} onChange={(v) => setValue("ownerId", v)} error={errors.ownerId?.message} />
+          <OwnerSelect value={watch("ownerId") || ""} onChange={(v) => setValue("ownerId", v, { shouldDirty: true })} error={errors.ownerId?.message} />
           <Input label="Purchase cost (ETB)" type="number" step="0.01" min="0" error={errors.purchaseCost?.message} {...register("purchaseCost")} required />
           <Input label="Current value (ETB, optional)" type="number" step="0.01" min="0" error={errors.currentValue?.message} {...register("currentValue")} />
         </FormSection>
@@ -344,6 +416,11 @@ function EditItemInner({
 
   const photoUrl = watch("photoUrl");
 
+  /** See `CreateItemForm`'s copy — a picker change must mark the form dirty. */
+  function setDepartment(value: string) {
+    setValue("department", value, { shouldDirty: true, shouldValidate: true });
+  }
+
   const categoryOptions = useMemo(
     () => (categoriesQuery.data ?? []).map((c) => ({ value: c.id, label: c.name })),
     [categoriesQuery.data],
@@ -405,7 +482,7 @@ function EditItemInner({
           <FormSection heading="Location" columns>
             <DepartmentPicker
               value={watch("department") || ""}
-              onChange={(v) => setValue("department", v)}
+              onChange={(v) => setDepartment(v)}
               error={errors.department?.message}
               disabled={disposed}
             />

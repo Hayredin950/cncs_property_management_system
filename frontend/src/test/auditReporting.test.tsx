@@ -7,6 +7,7 @@ import { server } from "./msw/server";
 import {
   ADMIN_USER,
   AUDIT_COMPLETION_BODY,
+  AUDIT_READBACK,
   AUDIT_SCAN_ROW,
   AUDIT_SESSION,
   CSV_BODY,
@@ -159,6 +160,17 @@ describe("audit walkthrough (F9)", () => {
       ],
     };
     saveWalkthrough(COMPLETED_AUDIT_ID, walkthrough);
+
+    /*
+      The read-back is overridden to report the session as *open*, which is the
+      race this test is about: the page loaded while the audit looked live (or the
+      tab was open the whole time and someone else completed it). When the server
+      says `completed: true` the walkthrough now disables the button instead — that
+      case is covered in `auditHistory.test.tsx`.
+    */
+    server.use(
+      http.get(`${API}/audits/:id`, () => HttpResponse.json(AUDIT_READBACK(COMPLETED_AUDIT_ID))),
+    );
 
     setToken("test-token");
     renderWithProviders({ initialEntries: [`/audit/${COMPLETED_AUDIT_ID}/scan`] });
@@ -375,8 +387,9 @@ describe("full walkthrough", () => {
     // accessories endpoint, which is the only writer of that field.
     expect(createBody).not.toHaveProperty("parentItemId");
 
-    // The registered item's own public page is where the flow continues.
-    expect(await screen.findByRole("link", { name: /view staff detail/i })).toBeInTheDocument();
+    // The registered item's own public page is where the flow continues, and the
+    // staff detail is a disclosure there rather than a link away from the record.
+    expect(await screen.findByRole("button", { name: /view staff detail & tag/i })).toBeInTheDocument();
   });
 
   it("bundles an accessory from the staff workbench, and its request link reaches the form", async () => {

@@ -11,6 +11,8 @@ vi.mock("../lib/prisma.js", () => {
     prisma: {
       auditSession: {
         findUnique: vi.fn(),
+        findMany: vi.fn(),
+        count: vi.fn(),
         create: vi.fn(),
         updateMany: vi.fn(),
       },
@@ -19,6 +21,7 @@ vi.mock("../lib/prisma.js", () => {
         findMany: vi.fn(),
         updateMany: vi.fn(),
         createMany: vi.fn(),
+        groupBy: vi.fn(),
       },
       item: {
         findUnique: vi.fn(),
@@ -359,5 +362,103 @@ describe("Audit Endpoints", () => {
         data: { lastAuditedAt: expect.any(Date) },
       });
     });
+  });
+});
+
+/**
+ * `GET /audits` — the list that makes a stored audit findable.
+ *
+ * The rows were always in the database; nothing in the app ever named a session
+ * id, so a finished audit was only visible in the response that finished it and a
+ * half-done one only in the tab that started it.
+ */
+describe("GET /audits", () => {
+  const adminToken = createToken({ id: "user-admin-1", role: "ADMIN" });
+  const staffToken = createToken({ id: "user-staff-1", role: "STAFF" });
+
+  const SESSION = {
+    id: "session-1",
+    scopeType: "DEPARTMENT",
+    scopeValue: "Computer Science",
+    runById: "user-staff-1",
+    startedAt: new Date("2026-09-20T08:00:00.000Z"),
+    completedAt: new Date("2026-09-20T09:30:00.000Z"),
+    runBy: { id: "user-staff-1", fullName: "Sara Staff", email: "staff@cncs.aau.edu.et" },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(prisma.auditSession.findMany).mockResolvedValue([SESSION] as never);
+    vi.mocked(prisma.auditSession.count).mockResolvedValue(1 as never);
+    vi.mocked(prisma.auditItemResultRow.groupBy).mockResolvedValue([
+      { auditSessionId: "session-1", result: "FOUND", _count: { _all: 12 } },
+      { auditSessionId: "session-1", result: "MISSING", _count: { _all: 3 } },
+    ] as never);
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app).get("/api/v1/audits");
+
+    expect(res.status).toBe(401);
+    expect(prisma.auditSession.findMany).not.toHaveBeenCalled();
+  });
+
+  it("scopes a Staff member to the audits they ran", async () => {
+    const res = await request(app).get("/api/v1/audits").set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(prisma.auditSession.findMany).mock.calls[0]?.[0]?.where).toEqual({
+      runById: "user-staff-1",
+    });
+    expect(res.body.total).toBe(1);
+  });
+
+  it("shows an admin every audit, and narrows to their own on mine=true", async () => {
+    await request(app).get("/api/v1/audits").set("Authorization", `Bearer ${adminToken}`);
+    expect(vi.mocked(prisma.auditSession.findMany).mock.calls[0]?.[0]?.where).toEqual({});
+
+    await request(app).get("/api/v1/audits?mine=true").set("Authorization", `Bearer ${adminToken}`);
+    // `mine` is applied on top of the scope, never instead of it — so it can only
+    // ever narrow what an admin already sees.
+    expect(vi.mocked(prisma.auditSession.findMany).mock.calls[1]?.[0]?.where).toEqual({
+      runById: "user-admin-1",
+    });
+  });
+
+  it("derives the counts from the stored rows and marks the session complete", async () => {
+    const res = await request(app).get("/api/v1/audits").set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.body.audits[0]).toMatchObject({
+      id: "session-1",
+      scopeValue: "Computer Science",
+      completed: true,
+      counts: { found: 12, missing: 3, locationMismatch: 0 },
+    });
+    // One grouped query for the page, not one per audit listed.
+    expect(prisma.auditItemResultRow.groupBy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(prisma.auditItemResultRow.groupBy).mock.calls[0]?.[0]?.where).toEqual({
+      auditSessionId: { in: ["session-1"] },
+    });
+  });
+
+  it("reports an in-progress session as not completed", async () => {
+    vi.mocked(prisma.auditSession.findMany).mockResolvedValue([
+      { ...SESSION, completedAt: null },
+    ] as never);
+
+    const res = await request(app).get("/api/v1/audits").set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.body.audits[0]).toMatchObject({ completed: false, completedAt: null });
+  });
+
+  it("does not query counts at all when there are no sessions", async () => {
+    vi.mocked(prisma.auditSession.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.auditSession.count).mockResolvedValue(0 as never);
+
+    const res = await request(app).get("/api/v1/audits").set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.audits).toEqual([]);
+    expect(prisma.auditItemResultRow.groupBy).not.toHaveBeenCalled();
   });
 });

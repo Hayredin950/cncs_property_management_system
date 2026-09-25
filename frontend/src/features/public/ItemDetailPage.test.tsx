@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { renderWithProviders } from "../../test/utils";
 import { setToken, clearToken } from "../../lib/storage";
@@ -55,6 +56,43 @@ describe("/item/:tagId — field-visibility matrix", () => {
     expect(within(main).getByText("Sara Staff")).toBeInTheDocument();
     expect(within(main).getByText("DL5440-0092")).toBeInTheDocument();
     expect(within(main).getByText("Charger kept in the drawer.")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The staff detail + tag used to be a link to `/items/:id`: a whole new route, a
+ * second fetch for the same item, and `ScrollToTop` putting the reader back at the
+ * top of a page they were already reading. It is a disclosure now, and the thing
+ * worth asserting is that opening it changes nothing but what is on screen. The
+ * route is checked through the router rather than `window.location`, since a memory
+ * router's navigations never touch the real URL.
+ */
+describe("/item/:tagId — staff detail & tag disclosure", () => {
+  it("opens the tag and history in place, without navigating", async () => {
+    setToken("test-token");
+    const { router } = renderWithProviders({ initialEntries: ["/item/CNCS-AB12CD34"] });
+    const user = userEvent.setup();
+
+    await screen.findByText("Navigation");
+    const main = await screen.findByRole("main");
+
+    const toggle = await within(main).findByRole("button", { name: /view staff detail & tag/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // Nothing is fetched or shown until it is asked for.
+    expect(within(main).queryByText("Edit history")).not.toBeInTheDocument();
+
+    await user.click(toggle);
+
+    // Opened: the printable tag, the edit history, and the same "you clicked it"
+    // signal a screen reader needs.
+    expect(await within(main).findByText("Printable tag")).toBeInTheDocument();
+    expect(await within(main).findByText("Edit history")).toBeInTheDocument();
+    expect(
+      within(main).getByRole("button", { name: /hide staff detail & tag/i }),
+    ).toHaveAttribute("aria-expanded", "true");
+
+    // And it opened rather than navigated — the URL is still the QR destination.
+    expect(router.state.location.pathname).toBe("/item/CNCS-AB12CD34");
   });
 });
 

@@ -16,7 +16,7 @@ client, auth shell, and layouts — see [`frontend-phase-1.md`](frontend-phase-1
 | File a transfer / disposal | `/requests/new` | `features/requests/RequestFormPage.tsx` |
 | Request detail + approve/reject | `/requests/:id` | `features/requests/RequestDetailPage.tsx` |
 | Notifications inbox + mark-as-read | `/notifications` | `features/notifications/NotificationsPage.tsx` |
-| Create accounts (G2-limited) | `/admin/users` | `features/admin/AdminUsersPage.tsx` |
+| Create accounts (G2-limited at the time — since closed) | `/admin/users` | `features/admin/AdminUsersPage.tsx` |
 | Create categories | `/admin/categories` | `features/admin/AdminCategoriesPage.tsx` |
 | Edit-history list (grouped by `editedAt`) | in `/items/:id` | `components/HistoryList.tsx` |
 | Dialogs | — | `components/Modal.tsx`, `components/ConfirmDialog.tsx` |
@@ -41,15 +41,28 @@ rather than writing a new field list.
 `CreateItemPayload` (`api/items.ts`) omits the field entirely — bundling is only possible
 through `POST /items/:id/accessories`. Making it unwritable in the type is the point.
 
-### Photo is a URL field, not an upload
+### Photo is an upload, a camera shot, or a URL (G3 — closed)
 
-There is still no upload endpoint (G3), so the form's "Photo URL" input is a text field with a
-live `PhotoFrame` preview. A file picker would have nowhere to post.
+This section used to say the photo field was a URL text box because there was no upload
+endpoint. There is one now (`POST /uploads/photo`, backed by Cloudinary; see
+`docs/backend-handoff.md`), so the field is `components/PhotoField.tsx`: three sources —
+**camera** (`capture="environment"`), **gallery**, and a pasted **URL** — in both create and edit
+mode, with a live `PhotoFrame` preview. Uploading is item-less on purpose, since the create form
+has no item id yet: the file is stored the moment it is picked and the returned URL becomes the
+form's `photoUrl`, so Save is still what commits it.
 
 ### Disposed items open read-only
 
 Disposal is terminal (`PUT /items/:id` answers 409), so the edit form disables its fields and
 explains why instead of letting someone fill in a form that cannot save.
+
+### An item's location and custodian are transfer-only
+
+`PUT /items/:id` refuses `building`, `floor`, `room` and `ownerId` for every role — they are
+written only by an approved TRANSFER. The edit form renders them read-only and links to
+`/requests/new?item=<tagId>`; leaving them editable would have invited a save the server rejects.
+`POST /items` still sets all four, and an Admin's "Owner (custodian)" picker is why registration
+is the moment to get the custodian right.
 
 ### One shared vocabulary
 
@@ -90,6 +103,7 @@ the Phase 2 screens. The highest-value existing tests remain the field-visibilit
 ## Known spec-vs-backend gaps this phase runs into
 
 - **G2 — no user list/manage endpoints.** `/admin/users` creates accounts and says so; it
-  cannot list or edit them. `/admin/categories` is likewise create-only.
+  cannot list or edit them. `/admin/categories` is likewise create-only. *(Both screens and both
+  sets of endpoints have since grown full management — see `frontend-handoff.md` G2.)*
 - **G1 / audit & reports** and **G9 / department lookup** are Phase 3 and the audit picker
   respectively — both still open.

@@ -1,6 +1,7 @@
 import { createBrowserRouter, Outlet, type RouteObject } from "react-router-dom";
 import { AdminCategoriesPage } from "../features/admin/AdminCategoriesPage";
 import { AdminUsersPage } from "../features/admin/AdminUsersPage";
+import { AuditListPage } from "../features/audits/AuditListPage";
 import { AuditNewPage } from "../features/audits/AuditNewPage";
 import { AuditReportPage } from "../features/audits/AuditReportPage";
 import { AuditScanPage } from "../features/audits/AuditScanPage";
@@ -109,6 +110,8 @@ export const appRoutes: RouteObject[] = [
           { path: "/requests/:id", element: <RequestDetailPage /> },
           { path: "/notifications", element: <NotificationsPage /> },
           // Phase 3: audit walkthrough (F9) and the CSV exports (F10).
+          // `/audits` (plural) is the history; `/audit/...` (singular) is one session.
+          { path: "/audits", element: <AuditListPage /> },
           { path: "/audit/new", element: <AuditNewPage /> },
           { path: "/audit/:id/scan", element: <AuditScanPage /> },
           { path: "/audit/:id/report", element: <AuditReportPage /> },

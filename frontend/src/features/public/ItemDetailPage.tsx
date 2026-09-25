@@ -1,4 +1,5 @@
-import { Archive, SearchX } from "lucide-react";
+import { Archive, QrCode, SearchX } from "lucide-react";
+import { useId, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
@@ -6,6 +7,8 @@ import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { ItemActions } from "../../components/ItemActions";
 import { ItemDetailView } from "../../components/ItemDetailView";
 import { Skeleton, SkeletonText } from "../../components/Skeleton";
+import { TagPanel } from "../../components/TagPanel";
+import { ItemHistorySection } from "../items/ItemHistorySection";
 import { useItemByTagId } from "../../hooks/useItems";
 import { ApiError, NetworkError } from "../../types/api";
 
@@ -20,6 +23,13 @@ export function ItemDetailPage() {
   const { tagId } = useParams<{ tagId: string }>();
   const { user } = useAuth();
   const query = useItemByTagId(tagId);
+
+  /*
+    Declared before the early returns below, as hooks must be: the disclosure
+    state has to survive a refetch that re-renders through the loading branch.
+  */
+  const [staffOpen, setStaffOpen] = useState(false);
+  const staffPanelId = useId();
 
   if (query.isPending) {
     return (
@@ -93,19 +103,58 @@ export function ItemDetailPage() {
     <div>
       <ItemDetailView item={item} />
       {user && (
-        <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-6">
-          <Link to={`/items/${item.id}`} state={{ tagId: item.tagId }}>
-            <Button variant="outline" size="sm">
-              View staff detail &amp; tag
+        <div className="mt-6 border-t border-slate-200 pt-6">
+          <div className="flex flex-wrap items-center gap-2">
+            {/*
+              A disclosure, not a link to `/items/:id`.
+
+              That link replaced this page wholesale — a new route, a new fetch for
+              the same item, and `ScrollToTop` dropping the reader back at the top
+              — for content that belongs beside the record they were already
+              reading. Opening in place keeps the header, the scroll position and
+              the query cache untouched, which is what "it reloads the whole page"
+              was describing. The full staff view is still one click away below, for
+              the things this page has no business doing (bundling, tag
+              regeneration, printing).
+            */}
+            <Button
+              variant="outline"
+              size="sm"
+              aria-expanded={staffOpen}
+              aria-controls={staffPanelId}
+              leftIcon={<QrCode className="h-4 w-4" />}
+              onClick={() => setStaffOpen((previous) => !previous)}
+            >
+              {staffOpen ? "Hide staff detail & tag" : "View staff detail & tag"}
             </Button>
-          </Link>
-          {/*
-            Edit sits here rather than only behind the staff page: this is where
-            a QR scan and every post-save redirect lands, and the action was
-            three taps away before. `ItemActions` renders nothing for a
-            signed-out visitor, so the public page is unchanged for them.
-          */}
-          <ItemActions item={item} />
+            {/*
+              Edit sits here rather than only behind the staff page: this is where
+              a QR scan and every post-save redirect lands, and the action was
+              three taps away before. `ItemActions` renders nothing for a
+              signed-out visitor, so the public page is unchanged for them.
+            */}
+            <ItemActions item={item} />
+          </div>
+
+          {staffOpen && (
+            <div id={staffPanelId} className="mt-4 flex flex-col gap-6">
+              <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+                <TagPanel itemId={item.id} tagId={item.tagId} itemName={item.name} />
+                <div className="flex flex-col gap-2 text-sm text-slate-600">
+                  <p>
+                    This is the printable tag for {item.tagId} — download it and print it at sticker
+                    size. Every field above is the same record the staff view shows.
+                  </p>
+                  <Link to={`/items/${item.id}`} className="self-start">
+                    <Button variant="ghost" size="sm">
+                      Bundles, printing &amp; regeneration
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+              <ItemHistorySection itemId={item.id} />
+            </div>
+          )}
         </div>
       )}
     </div>

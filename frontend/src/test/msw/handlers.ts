@@ -2,8 +2,10 @@ import { http, HttpResponse } from "msw";
 import {
   ACCOUNTS,
   AUDIT_COMPLETION_BODY,
+  AUDIT_READBACK,
   AUDIT_SCAN_ROW,
   AUDIT_SESSION,
+  AUDITS_LIST,
   CSV_BODY,
   DISPOSED_ITEM,
   HISTORY_FIXTURE,
@@ -204,6 +206,31 @@ export const handlers = [
   http.post(`${API}/audits`, () =>
     getToken() ? HttpResponse.json(AUDIT_SESSION, { status: 201 }) : unauthorized(),
   ),
+
+  /** `GET /audits` — the history. Scoped server-side, so the handler ignores the query string. */
+  http.get(`${API}/audits`, () => (getToken() ? HttpResponse.json(AUDITS_LIST) : unauthorized())),
+
+  /**
+   * `GET /audits/:id` — the read-back. A completed session reports itself as
+   * completed, which is what lets the walkthrough stop offering "Complete audit"
+   * for a session the server would 409.
+   */
+  http.get(`${API}/audits/:id`, ({ params }) => {
+    if (!getToken()) return unauthorized();
+    const id = params.id as string;
+    return HttpResponse.json(
+      AUDIT_READBACK(
+        id,
+        id === COMPLETED_AUDIT_ID
+          ? {
+              completed: true,
+              completedAt: "2026-09-22T08:30:00.000Z",
+              counts: { found: 3, missing: 2, locationMismatch: 1 },
+            }
+          : {},
+      ),
+    );
+  }),
 
   http.post(`${API}/audits/:id/scan`, () =>
     getToken() ? HttpResponse.json(AUDIT_SCAN_ROW, { status: 201 }) : unauthorized(),

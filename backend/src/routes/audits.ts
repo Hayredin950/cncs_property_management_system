@@ -2,6 +2,7 @@ import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import { validateQuery, validatedQuery } from "../middleware/validate.js";
 import { computeAuditResults } from "../services/auditCompletion.js";
 
 export const auditsRouter: Router = Router();
@@ -294,6 +295,109 @@ function scopeItemFilter(
   }
   return { supported: false, where: null };
 }
+
+const listQuerySchema = z.object({
+  mine: z.enum(["true", "false"]).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+type ListQuery = z.infer<typeof listQuerySchema>;
+
+/**
+ * `GET /api/v1/audits` — the sessions this viewer may see, newest first.
+ *
+ * This is the other half of gap G1. `GET /audits/:id` made a *known* session
+ * readable, but nothing ever told anyone the id: the running scan list lived in
+ * one tab's `sessionStorage`, and a finished audit existed only in the response
+ * that finished it. The rows were being written to the database the whole time,
+ * and were nonetheless invisible from the app — which is how "it doesn't get
+ * persisted" reads from the outside, and it is a fair description of the
+ * experience even though the storage was never the problem.
+ *
+ * Scope mirrors `GET /requests`: Staff see the audits they ran, an Admin sees
+ * every audit. `mine=true` narrows an Admin's own view and can never widen
+ * anyone's, because it is applied after the scope rather than instead of it.
+ *
+ * The counts are derived from the stored result rows, so a session still in
+ * progress reports what it actually has — FOUND rows — and says so with
+ * `completed: false` instead of implying the unscanned items were classified.
+ */
+auditsRouter.get(
+  "/",
+  authenticate,
+  requireRole(["ADMIN", "STAFF"]),
+  validateQuery(listQuerySchema),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const user = req.user;
+      if (!user) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+
+      const query = validatedQuery<ListQuery>(req);
+
+      const where = {
+        ...(user.role === "ADMIN" ? {} : { runById: user.id }),
+        ...(query.mine === "true" ? { runById: user.id } : {}),
+      };
+
+      const [sessions, total] = await Promise.all([
+        prisma.auditSession.findMany({
+          where,
+          select: {
+            id: true,
+            scopeType: true,
+            scopeValue: true,
+            runById: true,
+            startedAt: true,
+            completedAt: true,
+            runBy: { select: { id: true, fullName: true, email: true } },
+          },
+          orderBy: { startedAt: "desc" },
+          take: query.limit,
+          skip: query.offset,
+        }),
+        prisma.auditSession.count({ where }),
+      ]);
+
+      /**
+       * One grouped count for the whole page rather than a query per row. Keyed by
+       * session *and* result, so a session with no rows at all simply has no entry
+       * and the lookup below falls through to zero.
+       */
+      const grouped = sessions.length
+        ? await prisma.auditItemResultRow.groupBy({
+            by: ["auditSessionId", "result"],
+            where: { auditSessionId: { in: sessions.map((session) => session.id) } },
+            _count: { _all: true },
+          })
+        : [];
+
+      const countFor = (sessionId: string, result: string) =>
+        grouped.find((row) => row.auditSessionId === sessionId && row.result === result)?._count._all ??
+        0;
+
+      res.status(200).json({
+        audits: sessions.map((session) => ({
+          ...session,
+          completed: session.completedAt !== null,
+          counts: {
+            found: countFor(session.id, "FOUND"),
+            missing: countFor(session.id, "MISSING"),
+            locationMismatch: countFor(session.id, "LOCATION_MISMATCH"),
+          },
+        })),
+        total,
+        limit: query.limit,
+        offset: query.offset,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 /**
  * `GET /api/v1/audits/:id` — read a session back, completed or not.

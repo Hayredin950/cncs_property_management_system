@@ -285,9 +285,10 @@ re-introduce field hiding.
   mark-as-read, an unread badge polled on an interval (paused when the tab is hidden), and
   the admin's `GET /requests/pending-count` badge in the nav.
 - **Admin (F1.3, F2.4):** `/admin/users` to create staff/admin accounts and
-  `/admin/categories` to add categories. Note carefully that the backend supports **create
-  only** for users (gap G2) — the screen creates, it does not list or edit, and it should say
-  so rather than pretending.
+  `/admin/categories` to add categories. Note carefully that the backend supported **create
+  only** for users at the time (gap G2) — the screen created, it did not list or edit. (Since
+  closed: `GET/PATCH/DELETE /users` and category rename/delete both exist and both screens
+  manage rather than only create.)
 
 ### Go further than the minimum
 
@@ -365,7 +366,7 @@ ambiguous.
   order) — F5.1's text location from Phase 1 already satisfies the underlying need.
 - **Accessibility and responsiveness pass** across every screen; empty / loading / error
   states verified on every list, including the ones added this phase.
-- **`/admin/users`** reflects what the API can actually do — create — with the G2 limitation
+- **`/admin/users`** reflects what the API can actually do, with any remaining limitation
   stated on the page rather than discovered.
 
 ### Go further than the minimum
@@ -431,7 +432,8 @@ size. Three things should be waiting on the other side of Phase 3:
    `GET /audits/:id/report`; **G2** — no user list/manage endpoints; **G3** — no photo upload
    endpoint; **G9** — no department lookup), token storage, whether camera scanning is
    required for the demo, brand assets, and who owns the frontend track. None of these are
-   frontend-fixable.
+   frontend-fixable. *(G1, G2 and G3 have since been closed by the backend — only G9, no
+   `GET /departments`, is still open.)*
 3. **The frontend workstream split** (SDS §5 proposes Public / Staff-Admin / Audit-Reports).
    That split determines how each phase's group divides internally — which, per §0, is the
    one thing this plan deliberately leaves to the group itself.

@@ -2,6 +2,7 @@ import { LogOut, MoreHorizontal, PanelLeftClose, PanelLeftOpen } from "lucide-re
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { AauHeader } from "../components/aau/AauHeader";
+import { HeaderAccountBlock } from "../components/aau/HeaderAccountBlock";
 import { Button } from "../components/Button";
 import { HealthIndicator } from "../components/HealthIndicator";
 import { Modal } from "../components/Modal";
@@ -31,16 +32,23 @@ import { visibleNavItems, type NavItem } from "./navConfig";
  * bottom tab bar (below `lg`) from the same `visibleNavItems()` list, so later
  * phases grow this by editing `navConfig.ts` alone.
  *
- * The sidebar **sticks** and **collapses** (§5.5): it is a `position: sticky`
- * column so a long register table never scrolls the destinations out of reach,
- * and a toggle folds it to an icon rail for the same reason. The collapse
- * preference is persisted (`lib/storage.ts`) because it is a working-style
- * choice, not a per-visit one.
+ * The sidebar **sticks** and **collapses** (§5.5): a long register table never
+ * scrolls the destinations out of reach, and a toggle folds it to an icon rail for
+ * the same reason. The collapse preference is persisted (`lib/storage.ts`) because
+ * it is a working-style choice, not a per-visit one.
+ *
+ * The sticky box is the `aside` itself — see the note on it below for why an inner
+ * wrapper silently failed to stick.
  *
  * The mobile bar is deliberately capped at **five slots** (four destinations +
  * "More"), as the design doc requires: once there are seven destinations, seven
  * equal-width tabs would shrink every touch target below the 44px minimum
  * (§12). The overflow lives in a sheet instead.
+ *
+ * The header's trailing control and the drawer's account section are the *same*
+ * component in both shells (`components/aau/HeaderAccountBlock`), which is the fix
+ * for the menu having shown different things on the landing page and everywhere
+ * else.
  */
 const MOBILE_SLOT_COUNT = 4;
 
@@ -119,21 +127,19 @@ export function AppLayout() {
         Skip to content
       </a>
 
+      {/*
+        The same account block the public shell uses, in both positions. This bar
+        used to show the user's bare name while the public one showed a Dashboard
+        button, and the hamburger drawer here had no account section at all — so the
+        same control opened a different menu depending on the page. One component,
+        two variants, no drift (components/aau/HeaderAccountBlock).
+      */}
       <AauHeader
         entries={staffNav(user.role)}
         home="/dashboard"
         homeBadge={pendingCount}
-        /*
-          Name only, and only from `sm` up. The role chip used to sit here too,
-          which is the single control that made the bar feel crowded on a phone;
-          it now lives at the top of the sidebar / mobile "More" sheet, where
-          there is room for it beside the name.
-        */
-        actions={
-          <span className="hidden text-sm font-medium text-aau-gray-700 sm:inline">
-            {user.fullName}
-          </span>
-        }
+        actions={<HeaderAccountBlock variant="bar" />}
+        mobileActions={<HeaderAccountBlock variant="drawer" />}
       />
 
       <div className="flex flex-1 flex-col lg:flex-row">
@@ -146,11 +152,25 @@ export function AppLayout() {
         */}
         <aside
           className={cn(
-            "hidden shrink-0 self-start transition-[width] duration-200 lg:block",
+            /*
+              **Sticky on the `aside` itself, not on a wrapper inside it.** A
+              `position: sticky` element can only travel within its containing
+              block, and `self-start` sizes a flex child to its own content — so the
+              inner wrapper was the same height as the panel and had nowhere to
+              move: the navigation scrolled off the top with the page, which is
+              exactly what a long register table makes obvious. The flex child is
+              the right sticky box, because the row it sits in is as tall as `main`
+              and that is the space the panel needs to stay put in.
+
+              `ml-4` gives the panel the same breathing room from the window edge
+              that `main` has on its other side, instead of the border sitting flush
+              against the viewport.
+            */
+            "hidden shrink-0 pb-2 transition-[width] duration-200 lg:sticky lg:top-[var(--app-header-h)] lg:ml-4 lg:block lg:max-h-[calc(100vh-var(--app-header-h))] lg:self-start lg:overflow-y-auto",
             collapsed ? "w-[4.5rem]" : "w-64",
           )}
         >
-          <div className="sticky top-[var(--app-header-h)] max-h-[calc(100vh-var(--app-header-h))] overflow-y-auto pb-2">
+          <div>
             <div className="border border-aau-gray-300 bg-white">
               <div
                 className={cn(

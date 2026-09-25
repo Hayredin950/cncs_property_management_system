@@ -23,20 +23,25 @@ Supporting layer: `api/audits.ts`, `api/reports.ts`, `hooks/useAudits.ts`,
 
 ## The audit flow, and why it looks like this
 
-### The backend has no read endpoint for an audit (gap G1)
+### Reading an audit back (gap G1 — closed)
 
-The built API exposes exactly three audit calls: create, scan, complete. There is no `GET /audits/:id` and no `GET /audits` list. Two consequences fall
-out of that, and both are handled rather than papered over:
+The API this phase was built against exposed exactly three audit calls: create, scan, complete.
+There was no `GET /audits/:id` and no `GET /audits` list, and the first version of this phase
+worked around that by keeping the walkthrough in `sessionStorage`. `GET /audits/:id` and
+`GET /audits` now exist, which changes what storage is *for*:
 
-- **The running scan list lives in the browser.** `AuditScanPage` keeps the scans *this*
-  session made and persists them to `sessionStorage` through the same draft helpers every
-  other in-progress form uses (`lib/auditWalkthrough.ts`). A phone reload mid-walkthrough
-  doesn't lose the count; closing the tab does, which is right — an audit resumed days later
-  is not the same walk.
-- **The completion summary is persisted once.** `POST /audits/:id/complete` is the only time the
-  server sends `counts` / `found` / `missing` / `locationMismatch`. The report page reads it
-  from router state, falling back to the mirror in `sessionStorage`, and shows a deliberate
-  "this session's summary isn't available" state on a cold visit rather than inventing numbers.
+- **The running scan list is the server's.** `AuditScanPage` seeds its list from
+  `GET /audits/:id` and merges in the scans this tab has made
+  (`lib/auditWalkthrough.ts` → `mergeStoredScans`), persisting to `sessionStorage` only as a
+  cache for the seconds before that request lands. The old behaviour — an empty list in a new
+  tab while the server held every scan — is what made a saved audit look unsaved.
+- **The completion summary is a read-back, not a one-shot.** `POST /audits/:id/complete`
+  returns `counts` / `found` / `missing` / `locationMismatch` and the report still renders them
+  from router state so the landing is instant, but a cold visit to `/audit/:id/report` now
+  falls back to the stored session instead of a "summary isn't available" state.
+- **`/audits` is the history.** Sessions by date with their scope, runner, status and counts,
+  each linking to its report and its CSV — the screen that turns a stored audit into something
+  findable rather than CSV-only.
 
 ### Department scope only, through the *locked* picker
 
@@ -218,10 +223,9 @@ Three harness fixes came out of writing these:
   completion logic deduplicates. Two devices scanning the same item therefore produce two export
   rows but one classification. This is a backend behaviour, recorded here so it isn't
   rediscovered as a frontend bug.
-- **No audit list.** Sessions are reachable only while the flow is in progress; there is no
-  "browse past audits" screen because there is no endpoint (G1). Consequence: the audit CSV is
-  downloadable from `/reports` only if you kept the session id — the completion screen offers it
-  directly, which is the practical path.
+- **Audit history is paginated, not searchable.** `/audits` lists 20 sessions per page newest
+  first (`AUDITS_PAGE_SIZE`), with an admin-only "only mine" filter. There is no date-range or
+  scope filter, and nothing deletes or reopens a session: completing is one-way by design.
 - **`/map` shows the register's first 100 items.**
 - **PNG icon set** for the manifest, and `ResponsiveList` (design doc §8) remain follow-ups.
 
@@ -229,7 +233,8 @@ Three harness fixes came out of writing these:
 
 `/admin/users` still only creates accounts — there is no list or role-change endpoint (G2), and
 the page says so. `/admin/categories` is likewise create-only. Both are backend gaps, not
-frontend omissions.
+frontend omissions. *(Both were closed afterwards: account list/correct/promote/reset/delete and
+category rename/delete exist now — see `frontend-handoff.md` G2.)*
 
 ## Exit criteria
 

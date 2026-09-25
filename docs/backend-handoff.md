@@ -11,7 +11,7 @@ This is the backend the frontend is building against. Every route below is also 
 | `GET /categories`, `POST /categories` | Public / Admin | List and create categories. |
 | `POST /items` | Staff, Admin | Registers an item and creates its tag ID and QR image. |
 | `GET /items` | Public; richer when signed in | Paginated active-item list: `page`, `limit`, `search`, `categoryId`, `department`. |
-| `GET /items/:tagId`, `PUT /items/:id` | Public; Staff/Admin | Public QR lookup and active-item update with per-field history. Public disposed lookup is 410. |
+| `GET /items/:tagId`, `PUT /items/:id` | Public; Staff/Admin | Public QR lookup and active-item update with per-field history. Public disposed lookup is 410. `PUT` refuses `building`, `floor`, `room` and `ownerId` — those four are transfer-only, whatever the caller's role. |
 | `DELETE /items/:id` | **Admin** | Permanently removes the item *and* its requests, edit history and audit results; accessories are unlinked, not deleted. See the deviation below. |
 | `POST /uploads/photo` | Staff, Admin | Stores an image (`multipart/form-data`, field `photo`, ≤5 MB, JPEG/PNG/WebP/GIF) and returns `{ url }`. |
 | `GET /items/:id/tag`, `POST /items/:id/tag/regenerate` | Staff, Admin | Fetch or re-render a QR PNG; regeneration retains the tag ID. |
@@ -22,6 +22,7 @@ This is the backend the frontend is building against. Every route below is also 
 | `GET /notifications`, `POST /notifications/:id/read` | Signed in | Caller’s own inbox/read state; list supports `unread`, `limit`, `offset`. |
 | `POST /audits`, `POST /audits/:id/scan` | Staff, Admin | Start an audit and record scans as `FOUND`; clients cannot supply a result. |
 | `POST /audits/:id/complete` | Staff, Admin | Completes a `DEPARTMENT` audit, classifies results, and updates `lastAuditedAt` only for `FOUND` items. |
+| `GET /audits`, `GET /audits/:id` | Staff, Admin | Audit history and one session read back with its stored result rows. `GET /audits` is scoped like `GET /requests` (a Staff caller sees their own, an Admin sees all) and supports `mine`, `limit`, `offset`; its `counts` are derived from those rows. |
 | `GET /reports/inventory?format=csv` | Staff, Admin | Active and disposed inventory CSV; filters: `department`, `categoryId`, `status`, `dateFrom`, `dateTo`. |
 | `GET /reports/audit/:auditId?format=csv` | Staff, Admin | CSV for one audit, including an in-progress audit. |
 | `GET /reports/disposals?format=csv` | Staff, Admin | Approved-disposal CSV; filters: `department`, `dateFrom`, `dateTo`. |
@@ -62,7 +63,7 @@ The frontend must never rely on UI hiding alone or duplicate this rule. The API 
 
 - PDF reports are not built; CSV is the only supported format.
 - `LOCATION` audit completion is not built. Only `scopeType: "DEPARTMENT"` completes; other scope types return 400.
-- `GET /audits` audit-history listing is not built.
+- `GET /audits` returns **sessions and counts only**; the per-item breakdown is `GET /audits/:id` or the CSV. There is no audit-session delete or reopen, and `POST /audits/:id/complete` is one-way (a second call is a 409).
 - In-app notifications are built. Real email is not: `NOTIFY_EMAIL` gates a stub that only logs; it has no SMTP transport.
 - Swagger/OpenAPI is not built.
 

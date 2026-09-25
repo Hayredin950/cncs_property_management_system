@@ -533,7 +533,7 @@ Specified as states and behaviour, not code — implementation is a Phase 1 task
 | **Modal / Dialog** | Small (confirm), medium (form) | Focus-trapped, `Esc` closes, click-outside closes (unless a form is dirty — then confirm discard first), returns focus to the triggering element on close. |
 | **ConfirmDialog** | A specialised Dialog for irreversible actions | Title states the action, body states the specific consequence (§11 has exact copy), primary button uses `destructive` styling for reject/dispose and `primary` for approve. |
 | **Drawer / Bottom sheet** | Slides from the right (desktop filters) or up from the bottom (mobile "More" menu, mobile filters) | Same focus-trap rules as Dialog. |
-| **Toast** | `success`/`error`/`info`, auto-dismiss 5s (errors: 8s, or sticky until dismissed for anything needing an action) | Stack cap: 3 visible at once, oldest dismissed first. Every mutation toasts (`frontend-plan.md` §8). |
+| **Toast** | `success`/`error`/`info`, auto-dismiss 5s (errors: 8s, or sticky until dismissed for anything needing an action) | Stack cap: 3 visible at once, oldest dismissed first. Every mutation toasts (`frontend-plan.md` §8). **Anything a user can trigger repeatedly in a second must pass an `id`** (`lib/toast.ts` → `ToastOptions`): same id = the newer message *replaces* the older, so a stream of events reads as one line that stays current instead of a column of near-identical toasts. The audit walkthrough is why — one session, one slot (`scanToastSlot`). |
 | **Skeleton** | Line, block, card, table-row variants matching real content shapes | See §7. |
 | **EmptyState** | Icon + heading + one line of body copy + optional primary action | Copy is specific to *why* the list is empty (§11) — "no items yet" and "no items match these filters" are two different EmptyStates, never the same generic one. |
 | **ErrorState** | Sub-variants for `401`, `403`, `404`, `409`, `410`, `500`, and **offline** (network failure, not an HTTP status) | Each renders the server's own `error` string where one exists (§4 of `frontend-plan.md`); `410` and `404` on the item page are the two that must look like designed pages, not a shared generic error box (see §10.2). |
@@ -542,6 +542,7 @@ Specified as states and behaviour, not code — implementation is a Phase 1 task
 | **TagStickerCard** | On-screen preview of the printable QR tag | See §10.6 and the print stylesheet below. |
 | **NotificationItem** | Icon (from §3.2's code map) + message + relative time + unread dot | Click marks read optimistically and navigates to `relatedRequestId` if present. |
 | **NavItem** | Sidebar / bottom-tab / drawer-row renders of the same underlying item list | Active state uses `brand-600` text + a left border (sidebar) or filled icon (bottom tab) — never colour alone (a bold weight change always accompanies it). |
+| **HeaderAccountBlock** | The header's account chrome, in two variants: `bar` (one compact trailing control) and `drawer` (identity card + Dashboard + Sign out) | Rendered by **both** shells (`AppLayout`, `PublicLayout`) from `components/aau/HeaderAccountBlock` — the drawer used to differ between them, which made the same hamburger open a different menu depending on the page. One control in the bar, the whole account in the drawer. |
 | **SearchBar** | Debounced (300ms), clear button, syncs to the URL query string | Same component on `/`, `/items`, and any admin list. |
 | **FilterBar** | Sticky under the page header on desktop, collapses into a Drawer trigger ("Filters · 2") below `lg` | Carries state in the URL, never local-only state (`frontend-plan.md` §7). |
 | **PhotoFrame** | Fixed-aspect-ratio (4:3) box around `photoUrl`; shows a category-based placeholder icon on missing/broken URL, `loading="lazy"` | `photoUrl` is a plain URL string with no validation that it resolves (§12 of `frontend-plan.md` doesn't cover broken images) — the placeholder is what stops a dead link from becoming a broken-image icon in the middle of a card. |
@@ -864,10 +865,13 @@ tag, and condition inline — the API returns full accessory rows, not just ids)
   restarted for this session.
 - **Report:** three big `StatCard`s (`found`/`missing`/`locationMismatch`, coloured per §3.2)
   from the completion response, then a `ResponsiveList` breakdown per item, then a `Download`
-  button for the CSV. Because there is no `GET /audits/:id/report` (gap G1), **this screen's
-  data only exists immediately after completion** — say so plainly ("This summary is only
-  available right after completing the audit — to review it again later, download the CSV
-  below.") rather than building a "reload" affordance that has nothing to load from.
+  button for the CSV. Gap G1 is closed: the screen renders the summary straight from the
+  completion response (instant, no request) and falls back to `GET /audits/:id` on a cold visit,
+  so a reload or a shared link shows the same report rather than a "not available" state.
+- **History (`/audits`):** sessions newest first — scope, who ran it, started/completed
+  timestamps, the same three counts, an `In progress` / `Completed` chip, and a link to the
+  report plus the CSV. This is the screen that makes a stored audit findable; before it, a
+  session was reachable only by keeping its id.
 
 ### 10.9 `/reports` (Shell B/C)
 
@@ -888,11 +892,12 @@ notifications" — the two read very differently to a returning user).
 
 ### 10.11 `/admin/users`, `/admin/categories` (Shell B, admin only)
 
-Both are **create-only forms with a running "created this session" list below them** — not a
-management table, because there is no list/update/delete endpoint for users (gap G2) and no
-update/delete for categories either. Say this limitation on the page itself ("This creates
-accounts. There's no way to list or edit them here yet.") rather than shipping a table that
-implies more capability than exists. `/admin/categories`'s duplicate-name `409` surfaces
+Both are **management screens: a form plus a table of what already exists.** (Written when there
+was no list/update/delete endpoint for users — gap G2 — and none for categories either, so the
+original guidance was a create-only form with a "created this session" list and the limitation
+stated on the page. Both endpoints exist now.) State what a screen still *cannot* do where that
+is true — `/admin/users` has no demote and no self-service profile — rather than shipping a
+control that implies more capability than exists. `/admin/categories`'s duplicate-name `409` surfaces
 inline under the name field, not as a toast — it's a field-level validation failure, not a
 system event.
 

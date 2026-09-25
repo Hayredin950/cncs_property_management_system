@@ -1,6 +1,7 @@
 import { apiClient } from "../lib/apiClient";
 import type {
   AuditCompletionResponse,
+  AuditListResponse,
   AuditScanRow,
   AuditSession,
   AuditSessionReadback,
@@ -8,11 +9,40 @@ import type {
 } from "../types/audit";
 
 /**
- * Audit sessions (F9) — Staff/Admin: create, scan, complete, and now read a
- * session back (`GET /audits/:id`, which closes gap G1). The client still
- * mirrors the summary into router state so the report renders instantly after
- * completion, but a reload now falls back to the read-back instead of losing it.
+ * Audit sessions (F9) — Staff/Admin: create, scan, complete, list them, and read
+ * one back. The client still mirrors the completion summary into router state so
+ * the report renders instantly after completion, but a reload falls back to the
+ * read-back (`GET /audits/:id`) instead of losing it, and `GET /audits` is what
+ * makes a session findable again at all.
  */
+
+/**
+ * Audits per page. Fixed rather than exposed: the history is scanned by date, not
+ * searched, so the page number is the only thing a caller needs to think about.
+ */
+export const AUDITS_PAGE_SIZE = 20;
+
+/**
+ * `GET /audits` — the sessions this viewer may see, newest first. The server does
+ * the scoping (Staff see their own, Admin sees all), so the client sends no owner.
+ * `mine` is an admin's filter, applied on top of that scope and never instead of
+ * it, which is why it can't widen anyone's view.
+ */
+export function fetchAudits(
+  options: { mine?: boolean; page?: number } = {},
+  signal?: AbortSignal,
+): Promise<AuditListResponse> {
+  const page = Math.max(1, options.page ?? 1);
+  return apiClient.get<AuditListResponse>(
+    "/audits",
+    {
+      limit: AUDITS_PAGE_SIZE,
+      offset: (page - 1) * AUDITS_PAGE_SIZE,
+      ...(options.mine ? { mine: "true" } : {}),
+    },
+    signal,
+  );
+}
 
 /**
  * `GET /audits/:id` — a session and its stored result rows. `404` for an unknown

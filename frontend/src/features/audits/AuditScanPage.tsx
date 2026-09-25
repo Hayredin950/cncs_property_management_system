@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowRight, CheckCircle2, ListChecks } from "lucide-react";
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { fetchItemByTagId } from "../../api/items";
 import { Button } from "../../components/Button";
@@ -8,22 +8,43 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { EmptyState } from "../../components/EmptyState";
 import { Input } from "../../components/Input";
 import { QrScanner } from "../../components/QrScanner";
-import { useCompleteAuditSession, useScanAuditItem } from "../../hooks/useAudits";
-import { appendScan, clearWalkthrough, loadWalkthrough, saveCompletionSummary, saveWalkthrough } from "../../lib/auditWalkthrough";
-import { parseScannedTagId } from "../../lib/formatters";
-import { toast } from "../../lib/toast";
-import { formatDateTimeUTC } from "../../lib/formatters";
+import { useAuditSession, useCompleteAuditSession, useScanAuditItem } from "../../hooks/useAudits";
+import {
+  appendScan,
+  clearWalkthrough,
+  loadWalkthrough,
+  mergeStoredScans,
+  saveCompletionSummary,
+  saveWalkthrough,
+} from "../../lib/auditWalkthrough";
+import { formatDateTimeUTC, parseScannedTagId } from "../../lib/formatters";
+import { scanToastSlot, toast } from "../../lib/toast";
 import { ApiError, NetworkError } from "../../types/api";
+
+/**
+ * How long the same tag is ignored after it has already been handled.
+ *
+ * The camera decodes at 10 fps and a sticker stays in frame for seconds, so
+ * without this every scan re-fired ten times a second: ten lookups, ten "already
+ * scanned" toasts, and — for a tag that matches nothing — ten failed requests,
+ * all for one physical scan. Long enough to cover a real re-read of the same
+ * sticker; short enough that a deliberate second scan or a retry after a bad read
+ * still gets an answer.
+ */
+const REPEAT_TAG_COOLDOWN_MS = 10_000;
 
 /**
  * `/audit/:id/scan` (F9.2) — the live walkthrough.
  *
  * Two things a reader should know before changing this file:
  *
- * 1. **The server keeps no scan listing.** `POST /audits/:id/scan` writes rows
- *    and nothing reads them back until the report export (gap G1), so the running
- *    list below *is* the walkthrough's state. It's persisted per session id so a
- *    phone reload doesn't lose the count (`lib/auditWalkthrough.ts`).
+ * 1. **The stored rows are the walkthrough's base, not its backup.** This used to
+ *    say the server kept no scan listing, and it was true: `POST /audits/:id/scan`
+ *    wrote rows that nothing could read back, so the running list was the only
+ *    copy — per tab, lost on a phone reload, invisible from a second device. Gap
+ *    G1 is closed, so `GET /audits/:id` is the source and `sessionStorage` is only
+ *    a cache in front of it (`mergeStoredScans`). A count that comes back lower
+ *    than the server's is now a bug in that merge, not a missing endpoint.
  * 2. **A scanned QR resolves to an item, then to an item id.** The sticker
  *    encodes the public `/item/:tagId` URL, so this page reuses
  *    `parseScannedTagId` + `GET /items/:tagId` to turn a camera hit into the
@@ -36,15 +57,37 @@ import { ApiError, NetworkError } from "../../types/api";
 export function AuditScanPage() {
   const { id = "" } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  /** The last tag handled, and when — see `REPEAT_TAG_COOLDOWN_MS`. */
+  const lastHandled = useRef<{ tagId: string; at: number } | null>(null);
 
-  const initial = loadWalkthrough(id);
-  const [walkthrough, setWalkthrough] = useState(initial);
+  /** This tab's copy: instant, and the only thing a scan writes to before the server confirms. */
+  const [walkthrough, setWalkthrough] = useState(() => loadWalkthrough(id));
   const [manualValue, setManualValue] = useState("");
   const [scanError, setScanError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const scanMutation = useScanAuditItem(id);
   const completeMutation = useCompleteAuditSession(id);
+
+  /**
+   * The stored session. This is what makes the count survive a *new tab*:
+   * `sessionStorage` is per tab, so the list used to come back empty while the
+   * server already held every scan — the audit looked unsaved when it was saved.
+   *
+   * Merged in render rather than copied into state by an effect: a copy would have
+   * to be re-synced on every refetch, and the merge is a pure function of the two
+   * lists (`mergeStoredScans`).
+   */
+  const sessionQuery = useAuditSession(id);
+  const stored = sessionQuery.data;
+  const scanned = useMemo(
+    () => mergeStoredScans(walkthrough.scanned, stored),
+    [walkthrough.scanned, stored],
+  );
+  // The scope comes from the session, so a fresh tab still says which department
+  // is being walked instead of the generic "scan each item as you reach it".
+  const scopeValue = stored?.scopeValue || walkthrough.scopeValue;
+  const completed = stored?.completed ?? false;
 
   const handleTag = useCallback(
     async (raw: string) => {
@@ -55,8 +98,15 @@ export function AuditScanPage() {
         return;
       }
 
-      if (walkthrough.scanned.some((entry) => entry.tagId === tagId)) {
-        toast.info(`${tagId} is already scanned in this session.`);
+      const now = Date.now();
+      const previous = lastHandled.current;
+      if (previous?.tagId === tagId && now - previous.at < REPEAT_TAG_COOLDOWN_MS) return;
+      lastHandled.current = { tagId, at: now };
+
+      if (scanned.some((entry) => entry.tagId === tagId)) {
+        // Same slot as the success toast: an item already counted is not a second
+        // notification, it is the latest thing that happened at the camera.
+        toast.info(`${tagId} is already scanned in this session.`, { id: scanToastSlot(id) });
         return;
       }
 
@@ -81,7 +131,7 @@ export function AuditScanPage() {
         }
       }
     },
-    [id, scanMutation, walkthrough],
+    [id, scanMutation, walkthrough, scanned],
   );
 
   function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
@@ -107,9 +157,7 @@ export function AuditScanPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Audit in progress</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {walkthrough.scopeValue
-            ? `Scanning items in ${walkthrough.scopeValue}.`
-            : "Scan each item as you reach it."}
+          {scopeValue ? `Scanning items in ${scopeValue}.` : "Scan each item as you reach it."}
         </p>
       </div>
 
@@ -150,10 +198,10 @@ export function AuditScanPage() {
             <ListChecks className="h-4 w-4" aria-hidden="true" />
             Scanned this session
           </h2>
-          <span className="tabular-nums text-sm font-semibold text-slate-900">{walkthrough.scanned.length}</span>
+          <span className="tabular-nums text-sm font-semibold text-slate-900">{scanned.length}</span>
         </div>
 
-        {walkthrough.scanned.length === 0 ? (
+        {scanned.length === 0 ? (
           <EmptyState
             icon={<ListChecks className="h-8 w-8" />}
             heading="Nothing scanned yet"
@@ -161,7 +209,7 @@ export function AuditScanPage() {
           />
         ) : (
           <ul className="flex flex-col gap-2">
-            {walkthrough.scanned.map((entry) => (
+            {scanned.map((entry) => (
               <li
                 key={entry.itemId}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm"
@@ -193,17 +241,31 @@ export function AuditScanPage() {
       <div className="flex flex-wrap justify-end gap-3">
         <Link to={`/audit/${id}/report`}>
           <Button variant="outline" type="button">
-            View report so far
+            {completed ? "View report" : "View report so far"}
           </Button>
         </Link>
+        {/*
+          A completed session is read-only here — the server answers 409 — so the
+          button is replaced rather than left enabled to fail. Reachable now that
+          this page reads stored rows: before, an old session id showed an empty
+          list and the button was disabled for the wrong reason.
+        */}
         <Button
           type="button"
-          disabled={walkthrough.scanned.length === 0}
+          disabled={scanned.length === 0 || completed}
           onClick={() => setConfirmOpen(true)}
         >
           Complete audit
         </Button>
       </div>
+
+      {completed && (
+        <p className="flex items-start gap-2 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success-600" aria-hidden="true" />
+          This audit was completed and can't be scanned into any more. Its report and CSV are on the audit
+          history page.
+        </p>
+      )}
 
       <ConfirmDialog
         open={confirmOpen}

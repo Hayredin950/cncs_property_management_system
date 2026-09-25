@@ -110,6 +110,39 @@ describe("POST /auth/change-password", () => {
     expect(call.data.passwordHash).not.toBe("BrandNewPass1");
   });
 
+  it("refuses a forced change that reuses the temporary password", async () => {
+    /*
+      The case that happened: an admin resets the account with `mustChangePassword`,
+      the holder is taken to the change screen, types the temporary password back —
+      and the old behaviour cleared the flag while leaving the credential exactly as
+      the admin had set it. The account then read as reset and was not.
+    */
+    vi.mocked(prisma.user.findUnique)
+      .mockResolvedValueOnce(authRow(0) as never)
+      .mockResolvedValueOnce({
+        id: "staff-1",
+        fullName: "Demo Staff",
+        email: "staff@cncs.aau.edu.et",
+        passwordHash: await argon2.hash("TempPassword1", { type: argon2.argon2id }),
+        role: "STAFF",
+        createdAt: new Date(),
+        tokenVersion: 0,
+        mustChangePassword: true,
+      } as never);
+
+    const token = createToken({ id: "staff-1", role: "STAFF", ver: 0 });
+    const res = await request(app)
+      .post("/auth/change-password")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: "TempPassword1", newPassword: "TempPassword1" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("differ from your current one");
+    // Nothing is written: the flag stays set and no session is revoked, so the
+    // account is still visibly pending a real change.
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
   it("requires a new password of at least 8 characters", async () => {
     const token = createToken({ id: "staff-1", role: "STAFF" });
     const res = await request(app)

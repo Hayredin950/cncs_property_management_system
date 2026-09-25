@@ -2,10 +2,12 @@ import type { AuditItemResult } from "./enums";
 import type { Item } from "./item";
 
 /**
- * Typed from `backend/src/routes/audits.ts`. There is **no** `GET /audits/:id`
- * (spec-vs-backend gap G1, frontend-plan.md §12), so nothing here is a "fetch an
- * audit" shape — a session is only ever the creation response, the scans this
- * client made, and the completion response.
+ * Typed from `backend/src/routes/audits.ts` and the backend's Prisma schema.
+ *
+ * Gap G1 is closed in both directions now: `GET /audits/:id` reads one session
+ * back, and `GET /audits` lists them. Before the list existed, a session id was
+ * the only way to reach a stored audit and nothing in the app ever showed one —
+ * the rows were saved and simultaneously undiscoverable.
  */
 
 /** One nested user reference, as the creation response selects it. */
@@ -103,6 +105,38 @@ export interface AuditResultRow {
     floor: string;
     room: string;
   };
+}
+
+/**
+ * One row of `GET /audits` — a session plus the counts the server derives from its
+ * stored rows. `completed` is explicit rather than implied by `completedAt`, so a
+ * caller never has to know that the timestamp's presence is the flag.
+ */
+export interface AuditSessionSummary {
+  id: string;
+  scopeType: string;
+  scopeValue: string | null;
+  runById: string;
+  startedAt: string;
+  completedAt: string | null;
+  completed: boolean;
+  counts: {
+    found: number;
+    missing: number;
+    locationMismatch: number;
+  };
+  runBy: AuditUserSummary;
+}
+
+/**
+ * `GET /audits` 200 response. Paginated like every other list in the API
+ * (`items`, `requests`, `notifications`): a page of `audits` plus the `total`.
+ */
+export interface AuditListResponse {
+  audits: AuditSessionSummary[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 /**

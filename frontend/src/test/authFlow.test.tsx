@@ -10,12 +10,17 @@ import { ADMIN_USER } from "./fixtures";
 const API = "http://localhost:4000/api/v1";
 
 /**
- * The top bar and the (admin) sidebar both render the user's name — scope name
- * queries to the header so "is the shell showing the signed-in user" has one
- * unambiguous answer.
+ * Both the sidebar and the mobile drawer's account card render the user's name —
+ * scope name queries to one of them so "is the shell showing the signed-in user"
+ * has one unambiguous answer.
+ *
+ * The name used to be in the top bar, and moved out when the drawer's account
+ * section became the single place the header says who you are
+ * (`components/aau/HeaderAccountBlock`): on a phone the bar has room for exactly
+ * one trailing control, which is the Dashboard button in both shells.
  */
-function header() {
-  return screen.getByRole("banner");
+function sidebar() {
+  return screen.getByRole("complementary");
 }
 
 describe("LoginPage", () => {
@@ -34,7 +39,7 @@ describe("LoginPage", () => {
     // `next` defaults to /dashboard (LoginPage). The dashboard's h1 is the
     // unambiguous landmark; nav links + headings share the word elsewhere.
     expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
-    expect(within(header()).getByText("Abebe Admin")).toBeInTheDocument();
+    expect(within(sidebar()).getByText("Abebe Admin")).toBeInTheDocument();
   });
 
   it("shows the server's 401 message verbatim on bad credentials", async () => {

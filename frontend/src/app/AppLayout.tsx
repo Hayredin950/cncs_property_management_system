@@ -7,6 +7,7 @@ import { Button } from "../components/Button";
 import { HealthIndicator } from "../components/HealthIndicator";
 import { Modal } from "../components/Modal";
 import { RoleBadge } from "../components/StatusBadges";
+import { useUnreadNotificationCount } from "../hooks/useNotifications";
 import { usePendingCount } from "../hooks/useRequests";
 import { cn } from "../lib/cn";
 import { getSidebarCollapsed, setSidebarCollapsed } from "../lib/storage";
@@ -94,6 +95,16 @@ export function AppLayout() {
   const pendingQuery = usePendingCount();
   const pendingCount = user?.role === "ADMIN" ? (pendingQuery.data?.pendingCount ?? 0) : 0;
 
+  /*
+    The inbox badge. Unlike the queue's, this one is not role-gated — a
+    notification belongs to the person reading it, and every signed-in account has
+    an inbox. Both numbers are read from the same queries the pages themselves use
+    (`unreadCount` is a field of the inbox envelope, not a second endpoint), so the
+    badge cannot disagree with the list: marking one read, dismissing one, or
+    clearing the inbox invalidates `["notifications"]` and this follows.
+  */
+  const unreadNotifications = useUnreadNotificationCount();
+
   // RequireAuth already guarantees a user here; this just narrows the type.
   if (!user) return null;
 
@@ -102,9 +113,21 @@ export function AppLayout() {
   const mobileOverflow = items.slice(MOBILE_SLOT_COUNT);
   const overflowActive = mobileOverflow.some((item) => location.pathname.startsWith(item.to));
 
-  function badgeFor(item: NavItem) {
+  /**
+   * The count to render on a destination, with the label a screen reader hears.
+   *
+   * The label is returned alongside the number because the two badges are counted
+   * in different things — "2 pending requests" and "3 unread notifications" — and
+   * a bare "3" on a nav row announces nothing. Both are tone-matched to the
+   * existing warning pill: they are the same kind of thing (a number demanding
+   * attention), and only the label says which.
+   */
+  function badgeFor(item: NavItem): { count: number; label: string } | null {
     if (item.badge === "pending-count" && user?.role === "ADMIN" && pendingCount > 0) {
-      return pendingCount;
+      return { count: pendingCount, label: `${pendingCount} pending requests` };
+    }
+    if (item.badge === "unread-notifications" && unreadNotifications > 0) {
+      return { count: unreadNotifications, label: `${unreadNotifications} unread notifications` };
     }
     return null;
   }
@@ -240,15 +263,15 @@ export function AppLayout() {
                             {badge !== null &&
                               (collapsed ? (
                                 <span
-                                  aria-label={`${badge} pending requests`}
+                                  aria-label={badge.label}
                                   className="absolute right-2 top-2 h-2 w-2 rounded-full bg-warning-600"
                                 />
                               ) : (
                                 <span
-                                  aria-label={`${badge} pending requests`}
+                                  aria-label={badge.label}
                                   className="ml-auto rounded-full bg-warning-100 px-2 py-0.5 text-xs font-semibold text-warning-700"
                                 >
-                                  {badge}
+                                  {badge.count}
                                 </span>
                               ))}
                           </>
@@ -339,10 +362,10 @@ export function AppLayout() {
                     <item.icon className="h-5 w-5" aria-hidden="true" />
                     {badge !== null && (
                       <span
-                        aria-label={`${badge} pending requests`}
+                        aria-label={badge.label}
                         className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-warning-600 px-1 text-[10px] font-bold text-white"
                       >
-                        {badge}
+                        {badge.count}
                       </span>
                     )}
                   </span>
@@ -370,22 +393,36 @@ export function AppLayout() {
 
       <Modal open={moreOpen} onClose={() => setMoreOpen(false)} title="More">
         <nav aria-label="More" className="flex flex-col gap-1">
-          {mobileOverflow.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => setMoreOpen(false)}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium",
-                  isActive ? "bg-brand-50 font-semibold text-brand-700" : "text-aau-gray-700 hover:bg-aau-gray-100",
-                )
-              }
-            >
-              <item.icon className="h-4 w-4" aria-hidden="true" />
-              {item.label}
-            </NavLink>
-          ))}
+          {mobileOverflow.map((item) => {
+            const badge = badgeFor(item);
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => setMoreOpen(false)}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium",
+                    isActive ? "bg-brand-50 font-semibold text-brand-700" : "text-aau-gray-700 hover:bg-aau-gray-100",
+                  )
+                }
+              >
+                <item.icon className="h-4 w-4" aria-hidden="true" />
+                {item.label}
+                {/* Notifications lives here on a phone (the bar caps at four
+                    destinations), so the inbox count has to travel with it —
+                    otherwise the badge would be desktop-only. */}
+                {badge !== null && (
+                  <span
+                    aria-label={badge.label}
+                    className="ml-auto rounded-full bg-warning-100 px-2 py-0.5 text-xs font-semibold text-warning-700"
+                  >
+                    {badge.count}
+                  </span>
+                )}
+              </NavLink>
+            );
+          })}
           <Button
             variant="ghost"
             fullWidth

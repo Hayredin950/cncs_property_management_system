@@ -19,7 +19,8 @@ This is the backend the frontend is building against. Every route below is also 
 | `POST /items/:id/accessories`, `DELETE /items/:id/accessories/:accessoryId` | Staff, Admin | Link/unlink existing accessory items; bundle rules are server-enforced. |
 | `POST /requests`, `GET /requests`, `GET /requests/:id`, `GET /requests/pending-count` | Staff, Admin | Transfer/disposal workflow and scoped review queue. List supports `status`, `type`, `mine`, `limit`, `offset`. |
 | `POST /requests/:id/approve`, `POST /requests/:id/reject` | Admin | Decide a pending request; requester self-decision is blocked server-side. |
-| `GET /notifications`, `POST /notifications/:id/read` | Signed in | Caller’s own inbox/read state; list supports `unread`, `limit`, `offset`. |
+| `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` | Signed in | Caller’s own inbox/read state; list supports `unread`, `limit`, `offset`. `read-all` answers `{ updated }` — the rows that actually flipped, so `0` means "nothing was unread" rather than "the call failed". |
+| `DELETE /notifications/:id`, `DELETE /notifications` | Signed in | Dismiss one message (`{ id, deleted: true }`) or empty the inbox (`{ deleted }`, idempotent). Hard delete, scoped to the caller: an id that is not theirs answers 404, the same response as one that does not exist. |
 | `POST /audits`, `POST /audits/:id/scan` | Staff, Admin | Start an audit and record scans as `FOUND`; clients cannot supply a result. |
 | `POST /audits/:id/complete` | Staff, Admin | Completes a `DEPARTMENT` audit, classifies results, and updates `lastAuditedAt` only for `FOUND` items. |
 | `GET /audits`, `GET /audits/:id` | Staff, Admin | Audit history and one session read back with its stored result rows. `GET /audits` is scoped like `GET /requests` (a Staff caller sees their own, an Admin sees all) and supports `mine`, `limit`, `offset`; its `counts` are derived from those rows. |
@@ -28,6 +29,19 @@ This is the backend the frontend is building against. Every route below is also 
 | `GET /reports/disposals?format=csv` | Staff, Admin | Approved-disposal CSV; filters: `department`, `dateFrom`, `dateTo`. |
 
 Report dates use UTC and `dateTo` includes the whole UTC day. CSV decimals are strings.
+
+## Why a notification may be deleted when nothing else may
+
+The two `DELETE /notifications` routes above are the other place a row is really removed, and they
+are not the same kind of exception as the one recorded directly below. A notification is not a
+record of the item's life — it is a **copy of an event whose original still exists**: the request,
+the `ItemEditLog` row, the audit result. Deleting one loses nothing the register would have kept,
+which is exactly why the inbox can behave like an inbox while every other trail stays append-only.
+
+Both routes scope by `userId` in the `where` of a `deleteMany`, never by `delete({ where: { id } })`
+— the plain form is an IDOR that would let any signed-in account delete any id it guessed.
+`count === 0` answers `404 Notification not found` for "not yours" and "does not exist" alike, so
+the response never confirms that an id it may not touch exists.
 
 ## `DELETE /items/:id` is a deliberate departure from F7.2
 

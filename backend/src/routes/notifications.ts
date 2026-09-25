@@ -100,6 +100,38 @@ notificationsRouter.get(
 );
 
 /**
+ * POST /api/v1/notifications/read-all
+ *
+ * Declared before `/:id/read` for the same reason `/requests/pending-count` is
+ * declared before `/requests/:id`: they are different shapes, but the literal
+ * path has to win the match if the router is ever given a single-segment `:id`
+ * route by mistake.
+ *
+ * `isRead: false` in the `where` is not just an optimisation — it makes
+ * `updated.count` mean "rows this call actually changed", so a caller can tell
+ * "nothing was unread" from "there is nothing here", which a blind `updateMany`
+ * over the whole inbox cannot.
+ */
+notificationsRouter.post(
+  "/read-all",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = requireUser(req);
+
+      const updated = await prisma.notification.updateMany({
+        where: { userId: user.id, isRead: false },
+        data: { isRead: true },
+      });
+
+      res.status(200).json({ updated: updated.count });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
  * POST /api/v1/notifications/:id/read
  *
  * `updateMany` with `userId` in the `where`, not `update({ where: { id } })`.
@@ -128,6 +160,69 @@ notificationsRouter.post(
       }
 
       res.status(200).json({ id: notificationId, isRead: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * DELETE /api/v1/notifications/:id
+ *
+ * Dismissing one message is a hard delete, and that is a deliberate exception to
+ * "records are never destroyed" (F7.2): a notification is not a record of the
+ * item's life — it is a *copy* of an event whose original is the request, the
+ * edit log row or the audit result. Deleting it loses nothing the register would
+ * have kept, which is also why `ItemEditLog` needs no matching delete.
+ *
+ * `deleteMany` with `userId` in the `where`, never `delete({ where: { id } })`:
+ * the plain form is the same IDOR `/:id/read` above avoids — any signed-in user
+ * could delete any id they guessed. `count === 0` answers 404 for "not yours"
+ * and "does not exist" alike, so the response never confirms an id exists.
+ */
+notificationsRouter.delete(
+  "/:id",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = requireUser(req);
+      const notificationId = req.params.id;
+      if (typeof notificationId !== "string") {
+        return res.status(400).json({ error: "Invalid notification ID" });
+      }
+
+      const deleted = await prisma.notification.deleteMany({
+        where: { id: notificationId, userId: user.id },
+      });
+      if (deleted.count === 0) {
+        return res.status(404).json({ error: "Notification not found" });
+      }
+
+      res.status(200).json({ id: notificationId, deleted: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * DELETE /api/v1/notifications
+ *
+ * Empty the caller's inbox. `userId` is the *only* clause — no query parameter
+ * reaches this `where`, so there is no shape of request that clears somebody
+ * else's list. It is not an error to clear an already-empty inbox: `deleted` is
+ * simply 0, which keeps the call idempotent for a caller retrying a timeout.
+ */
+notificationsRouter.delete(
+  "/",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = requireUser(req);
+
+      const deleted = await prisma.notification.deleteMany({ where: { userId: user.id } });
+
+      res.status(200).json({ deleted: deleted.count });
     } catch (err) {
       next(err);
     }

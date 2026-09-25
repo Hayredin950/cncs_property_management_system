@@ -29,7 +29,7 @@ shipped as the `frontend` service of the repo's single `docker compose up`.
 | `/items/new`, `/items/:id/edit` | Register / edit an item (F2.1, F2.3) |
 | `/items/:id` | Staff workbench: QR tag, accessories bundle, edit history (F2.2, F3.4, F6.3) |
 | `/requests`, `/requests/new`, `/requests/:id` | Queue, file a transfer/disposal, approve or reject (F6, F7) |
-| `/notifications` | In-app inbox with mark-as-read (F8) |
+| `/notifications` | In-app inbox: read on open, dismiss one with its X, mark all read, clear all (F8) |
 | `/audits`, `/audit/new`, `/audit/:id/scan`, `/audit/:id/report` | Audit history, walkthrough and completion summary (F9) |
 | `/reports` | Inventory / disposals / audit CSV exports (F10.1, F10.3) |
 | `/admin/users`, `/admin/categories` | Admin-only account and category management (list, create, edit, role change, delete) |
@@ -52,7 +52,7 @@ read that before changing anything visual, and read its §7 before using a Tailw
 next to a child `mx-*`.
 
 **Testing:** `vitest` + React Testing Library + MSW (`src/test/`, plus colocated suites under
-`src/lib` and `src/features`). Twenty-three suites, run in CI on every PR alongside lint and the
+`src/lib` and `src/features`). Twenty-four suites, run in CI on every PR alongside lint and the
 type-checking build.
 
 ## Field visibility is a backend rule — do not re-implement it
@@ -137,6 +137,25 @@ controls were three taps deep before.
   [`backend-handoff.md`](backend-handoff.md) for the endpoint's exact behaviour.
 - **Disposal is still the normal path for retiring an asset.** Delete is deliberately not wired
   into any disposal flow.
+
+### The inbox empties itself, and the nav counts it
+
+`/notifications` grew the three controls an inbox needs, each a different shape of the same
+question: **the X on a card** dismisses that one message, **Mark all as read** zeroes the count
+without removing anything, and **Clear all** empties the list behind a confirmation that names the
+row count. Only `Clear all` destroys anything, which is why it is the only one that asks.
+
+The three mutations share one optimistic helper in `hooks/useNotifications.ts`, and every one of
+them patches **every** cached `["notifications"]` entry rather than the visible one — because the
+sidebar's badge is a second cache entry (the same list at `limit: 1`) and a delete that updated
+only the page would leave the two contradicting each other.
+
+The **Notifications** nav item now carries an unread count, the same way Requests carries the
+review queue's. Two differences from that badge, both deliberate: it is read from the inbox
+endpoint's own `unreadCount` rather than from a new `count` route (one source of truth for a figure
+the page also renders), and it is **not** role-gated — the queue belongs to an admin, but everybody
+has an inbox. On a phone it travels into the "More" sheet, since the bottom bar caps at four
+destinations and Notifications is not one of them.
 
 ### The staff sections open in place on the QR destination
 

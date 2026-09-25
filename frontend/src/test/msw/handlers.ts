@@ -198,6 +198,23 @@ export const handlers = [
     getToken() ? HttpResponse.json({ id: "n-1", isRead: true }) : unauthorized(),
   ),
 
+  /*
+    Inbox housekeeping. Declared before the `/:id` ones so the literal paths read
+    as the exception they are, but the shapes are distinct (`read-all` is one
+    segment, `/:id` is two), so nothing here is order-sensitive.
+  */
+  http.post(`${API}/notifications/read-all`, () =>
+    getToken() ? HttpResponse.json({ updated: 1 }) : unauthorized(),
+  ),
+
+  http.delete(`${API}/notifications/:id`, ({ params }) =>
+    getToken() ? HttpResponse.json({ id: params.id, deleted: true }) : unauthorized(),
+  ),
+
+  http.delete(`${API}/notifications`, () =>
+    getToken() ? HttpResponse.json({ deleted: 1 }) : unauthorized(),
+  ),
+
   /**
    * Audit sessions (F9). The scan endpoint answers with the persisted row, whose
    * `result` is always FOUND — the same shape the real handler returns, so a page

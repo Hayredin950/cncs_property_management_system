@@ -29,3 +29,23 @@ export interface MarkReadResponse {
   id: string;
   isRead: boolean;
 }
+
+/**
+ * `POST /notifications/read-all` response. `updated` counts the rows that
+ * actually flipped, so 0 means "nothing was unread", not "the call failed" — the
+ * endpoint is idempotent and a retry is always safe.
+ */
+export interface MarkAllReadResponse {
+  updated: number;
+}
+
+/** `DELETE /notifications/:id` response — one dismissed message. */
+export interface DismissNotificationResponse {
+  id: string;
+  deleted: true;
+}
+
+/** `DELETE /notifications` response — how many rows left the inbox. */
+export interface ClearNotificationsResponse {
+  deleted: number;
+}

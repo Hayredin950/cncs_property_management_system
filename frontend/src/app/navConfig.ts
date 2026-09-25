@@ -27,8 +27,16 @@ export interface NavItem {
    * shell (see docs/frontend-phase-1.md).
    */
   phase: 1 | 2 | 3;
-  /** Renders the live pending-review count next to the label (admins only — the queue is theirs). */
-  badge?: "pending-count";
+  /**
+   * Renders a live count next to the label. Two kinds, and they are measured in
+   * different things — see `badgeFor` in `AppLayout.tsx`:
+   *
+   *   - `pending-count` — the review queue's size, shown to an admin only, since
+   *     the queue is theirs.
+   *   - `unread-notifications` — the signed-in user's own unread inbox, shown to
+   *     whoever is signed in, because everyone has one.
+   */
+  badge?: "pending-count" | "unread-notifications";
 }
 
 /** Phase 3: the last of the plan's destinations — audit and reports — is now in the nav. */
@@ -39,7 +47,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Scan", to: "/scan", icon: ScanLine, roles: ["ADMIN", "STAFF"], phase: 1, emphasized: true },
   { label: "Items", to: "/items", icon: Package, roles: ["ADMIN", "STAFF"], phase: 1 },
   { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["ADMIN", "STAFF"], phase: 2, badge: "pending-count" },
-  { label: "Notifications", to: "/notifications", icon: Bell, roles: ["ADMIN", "STAFF"], phase: 2 },
+  { label: "Notifications", to: "/notifications", icon: Bell, roles: ["ADMIN", "STAFF"], phase: 2, badge: "unread-notifications" },
   { label: "New item", to: "/items/new", icon: Tag, roles: ["ADMIN", "STAFF"], phase: 2 },
   { label: "Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["ADMIN", "STAFF"], phase: 3 },
   { label: "Audit history", to: "/audits", icon: History, roles: ["ADMIN", "STAFF"], phase: 3 },

@@ -18,6 +18,7 @@ vi.mock("../lib/prisma.js", () => {
       createMany: vi.fn(),
       findMany: vi.fn(),
       updateMany: vi.fn(),
+      deleteMany: vi.fn(),
       count: vi.fn(),
     },
     $transaction: vi.fn(async (arg: unknown) =>
@@ -211,5 +212,149 @@ describe("POST /notifications/:id/read", () => {
 
     expect(prefixed.status).toBe(200);
     expect(bare.body).toEqual(prefixed.body);
+  });
+});
+
+describe("POST /notifications/read-all", () => {
+  it("marks every unread row of the caller's own inbox", async () => {
+    vi.mocked(prisma.notification.updateMany).mockResolvedValueOnce({ count: 3 } as never);
+
+    const res = await request(app)
+      .post("/notifications/read-all")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ updated: 3 });
+    // `isRead: false` makes `updated` mean "rows this call changed"; `userId`
+    // makes the inbox the caller's and nobody else's.
+    expect(prisma.notification.updateMany).toHaveBeenCalledWith({
+      where: { userId: "staff-1", isRead: false },
+      data: { isRead: true },
+    });
+  });
+
+  it("reports zero rather than failing when nothing was unread", async () => {
+    vi.mocked(prisma.notification.updateMany).mockResolvedValueOnce({ count: 0 } as never);
+
+    const res = await request(app)
+      .post("/notifications/read-all")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ updated: 0 });
+  });
+
+  it("is not shadowed by the :id/read route, under either mount path", async () => {
+    vi.mocked(prisma.notification.updateMany).mockResolvedValue({ count: 1 } as never);
+
+    const prefixed = await request(app)
+      .post("/api/v1/notifications/read-all")
+      .set("Authorization", `Bearer ${staffToken}`);
+    const bare = await request(app)
+      .post("/notifications/read-all")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(prefixed.status).toBe(200);
+    expect(bare.body).toEqual(prefixed.body);
+    // A literal path, not an id: `where` is the inbox filter, never `{ id }`.
+    expect(vi.mocked(prisma.notification.updateMany).mock.calls[0]?.[0]?.where).toEqual({
+      userId: "staff-1",
+      isRead: false,
+    });
+  });
+
+  it("needs a token", async () => {
+    const res = await request(app).post("/notifications/read-all");
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Missing or malformed Authorization header" });
+    expect(prisma.notification.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /notifications/:id", () => {
+  it("dismisses the caller's own notification", async () => {
+    vi.mocked(prisma.notification.deleteMany).mockResolvedValueOnce({ count: 1 } as never);
+
+    const res = await request(app)
+      .delete("/notifications/notif-1")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ id: "notif-1", deleted: true });
+    expect(prisma.notification.deleteMany).toHaveBeenCalledWith({
+      where: { id: "notif-1", userId: "staff-1" },
+    });
+  });
+
+  it("cannot be used to delete someone else's notification (IDOR)", async () => {
+    // `delete({ where: { id } })` would have succeeded here. `deleteMany` with
+    // the userId in the where matches nothing, and count === 0 is the 404.
+    vi.mocked(prisma.notification.deleteMany).mockResolvedValueOnce({ count: 0 } as never);
+
+    const res = await request(app)
+      .delete("/notifications/notif-belonging-to-admin")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Notification not found" });
+    expect(vi.mocked(prisma.notification.deleteMany).mock.calls[0]?.[0]?.where).toEqual({
+      id: "notif-belonging-to-admin",
+      userId: "staff-1",
+    });
+  });
+
+  it("needs a token", async () => {
+    const res = await request(app).delete("/notifications/notif-1");
+
+    expect(res.status).toBe(401);
+    expect(prisma.notification.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /notifications", () => {
+  it("empties only the caller's inbox", async () => {
+    vi.mocked(prisma.notification.deleteMany).mockResolvedValueOnce({ count: 4 } as never);
+
+    const res = await request(app)
+      .delete("/notifications")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deleted: 4 });
+    // Nothing but the userId — no parameter reaches this `where`.
+    expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { userId: "admin-1" } });
+  });
+
+  it("is idempotent on an already-empty inbox", async () => {
+    vi.mocked(prisma.notification.deleteMany).mockResolvedValueOnce({ count: 0 } as never);
+
+    const res = await request(app)
+      .delete("/notifications")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deleted: 0 });
+  });
+
+  it("is reachable under both mount paths", async () => {
+    vi.mocked(prisma.notification.deleteMany).mockResolvedValue({ count: 2 } as never);
+
+    const prefixed = await request(app)
+      .delete("/api/v1/notifications")
+      .set("Authorization", `Bearer ${staffToken}`);
+    const bare = await request(app)
+      .delete("/notifications")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(prefixed.status).toBe(200);
+    expect(bare.body).toEqual(prefixed.body);
+  });
+
+  it("needs a token", async () => {
+    const res = await request(app).delete("/notifications");
+
+    expect(res.status).toBe(401);
+    expect(prisma.notification.deleteMany).not.toHaveBeenCalled();
   });
 });

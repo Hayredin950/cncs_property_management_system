@@ -34,7 +34,7 @@ All of SRS F1–F10, with the SRS's own priorities and cut order. The SRS names 
 | F5.2 | Campus map | P1 | `/map` — **the single feature cut first** |
 | F6 | Transfer workflow | P0 | File request, list, admin review + approve/reject |
 | F7 | Disposal workflow | P0 | Same flow with `type: DISPOSAL`; disposed states |
-| F8 | Notifications | P1 | Inbox + unread badge (email is a stub) |
+| F8 | Notifications | P1 | Inbox (dismiss one, mark all read, clear all) + an unread badge on the nav item (email is a stub) |
 | F9 | Scan-assisted audit | P1 | Start session, live scan, report |
 | F10 | Reporting & export | P1 | CSV downloads (PDF not built) |
 

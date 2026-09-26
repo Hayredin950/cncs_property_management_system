@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useRef, type ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { IconButton } from "./IconButton";
 
@@ -30,16 +30,25 @@ export function Modal({ open, onClose, title, children, size = "sm", className }
 
   /*
     `onClose` is almost always an inline arrow, so it is a new function on every
-    render. Keeping it in a ref lets the effect below depend on `open` alone.
+    render. `useEffectEvent` is the purpose-built answer: the keydown listener
+    below always sees the latest `onClose`, without it becoming a dependency of
+    the effect.
 
     That is not a micro-optimisation — it was a bug. With `onClose` in the dep
     array the effect re-ran on every render, and since its cleanup restores focus
     to the trigger, each keystroke inside a dialog moved focus out of the field:
     typing "Notebooks" into a rename dialog registered only the "N", because the
     rest of the characters were dispatched to the button focus had jumped to.
+    `adminCategories.test.tsx` types a full word into that exact dialog, which is
+    what keeps this from creeping back.
+
+    This replaced a ref that was assigned during render (`onCloseRef.current =
+    onClose`). That worked, but mutating a ref while rendering is unsafe under
+    concurrent rendering, which is what `react-hooks/refs` was reporting.
   */
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const closeFromKeyboard = useEffectEvent(() => {
+    onClose();
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -53,7 +62,7 @@ export function Modal({ open, onClose, title, children, size = "sm", className }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.stopPropagation();
-        onCloseRef.current();
+        closeFromKeyboard();
         return;
       }
       if (event.key !== "Tab" || !dialogRef.current) return;

@@ -307,12 +307,19 @@ export function AppLayout() {
               <HealthIndicator
                 className={cn("mb-2", collapsed ? "justify-center" : "justify-start")}
               />
+              {/*
+                Subdued-danger, matching the mobile drawer's Sign out
+                (`components/aau/HeaderAccountBlock`): signing out is one action
+                and must not look like two depending on the shell. Not the
+                saturated `destructive` variant — nothing is deleted here.
+              */}
               <Button
                 variant="ghost"
                 size="sm"
                 fullWidth
                 leftIcon={<LogOut className="h-4 w-4" />}
                 onClick={signOut}
+                className="text-danger-700 hover:bg-danger-50"
               >
                 <span className={cn(collapsed && "sr-only")}>Sign out</span>
               </Button>
@@ -426,7 +433,7 @@ export function AppLayout() {
           <Button
             variant="ghost"
             fullWidth
-            className="mt-1 justify-start"
+            className="mt-1 justify-start text-danger-700 hover:bg-danger-50"
             leftIcon={<LogOut className="h-4 w-4" />}
             onClick={() => {
               setMoreOpen(false);

@@ -96,14 +96,25 @@ export function HeaderAccountBlock({ variant, className }: HeaderAccountBlockPro
   }
 
   return (
-    <div className={cn("flex flex-col gap-4", className)}>
+    <div className={cn("flex flex-col gap-3", className)}>
       {/*
         The identity card, and the reason the role chip moved here at all: on a
         phone the bar has room for one control, so "you are signed in as an Admin"
-        needs a home with space for it. Bordered and tinted so it reads as a card
-        rather than as three more menu rows.
+        needs a home with space for it.
+
+        It uses `Card`'s recipe exactly — `rounded-md` (`radius-md`, the card and
+        button radius, not `radius-lg`, which the design doc reserves for modals),
+        a `slate`-free `aau-gray-200` hairline, `bg-white`, and `e1` (`shadow-sm`).
+        It used to be a `bg-aau-gray-50` box on a white sheet, which is why it read
+        as a flat grey rectangle: with no elevation and no contrast against the
+        surface behind it, there was nothing to see but the fill.
+
+        The avatar keeps `radius-full` / `bg-brand-600` ("Avatars, dot indicators,
+        pill badges" in §5.2; `brand-600` is the app's primary). It is the only
+        avatar in the app — there is no avatar column and no upload for one — so
+        there is no second treatment to reconcile it with.
       */}
-      <div className="flex items-center gap-3 rounded-lg border border-aau-gray-200 bg-aau-gray-50 p-3">
+      <div className="flex items-center gap-3 rounded-md border border-aau-gray-200 bg-white p-4 shadow-sm">
         <span
           aria-hidden="true"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white"
@@ -117,6 +128,19 @@ export function HeaderAccountBlock({ variant, className }: HeaderAccountBlockPro
         </span>
       </div>
 
+      {/*
+        Two real `Button`s, and deliberately two *different* variants: `outline`
+        for the navigation action, and a subdued-danger `ghost` for leaving.
+
+        Sign-out is not destructive — nothing is deleted — so the saturated
+        `destructive` variant would over-signal and put a red button in the one
+        place a user goes to leave quietly. The danger *text* colour on the ghost
+        surface is the app's existing token doing the app's existing job: "this is
+        the action that ends the session", distinct from the boxed Dashboard above
+        it without inventing a style. The same treatment is on the desktop
+        sidebar's Sign out (`app/AppLayout.tsx`), because signing out should not
+        look like two different actions depending on which shell you are in.
+      */}
       <Button
         variant="outline"
         fullWidth
@@ -125,7 +149,13 @@ export function HeaderAccountBlock({ variant, className }: HeaderAccountBlockPro
       >
         Dashboard
       </Button>
-      <Button variant="ghost" fullWidth leftIcon={<LogOut className="h-4 w-4" />} onClick={signOut}>
+      <Button
+        variant="ghost"
+        fullWidth
+        leftIcon={<LogOut className="h-4 w-4" />}
+        onClick={signOut}
+        className="text-danger-700 hover:bg-danger-50"
+      >
         Sign out
       </Button>
     </div>

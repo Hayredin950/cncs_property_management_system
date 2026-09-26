@@ -281,22 +281,40 @@ export function AauHeader({
         )}
       </nav>
 
-      {/* ---------- Mobile drawer ---------- */}
+      {/*
+        ---------- Mobile drawer ----------
+
+        A full-screen panel, so it is laid out like one: the `aau-gray-50` page
+        surface, then three blocks on it at a single `gap-4` rhythm — search, the
+        destination card, the account card. Before this it was a white sheet of
+        bare rows with hairline dividers and a `mt-4 border-t` guess for the
+        account block, which read as four unrelated pieces stacked up.
+
+        Both lists are *cards* (`rounded-md border bg-white shadow-sm` — `Card`'s
+        own recipe) and rows are `rounded-md` hover targets inside them, which is
+        the same shape the authenticated "More" sheet already uses. No hairline
+        dividers: a row is delimited by its own hover/active surface.
+
+        The content column is `flex-1` on a `flex flex-col` root rather than
+        `h-[calc(100%-64px)]`: the header's real height is content-driven (it is
+        the logo's height plus `py-2`), so the old `64px` was a magic number that
+        would silently clip the last row the day the lockup grew.
+      */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 bg-white lg:hidden">
-          <div className="flex items-center justify-between border-b border-aau-gray-line px-3 py-2">
+        <div className="fixed inset-0 z-50 flex flex-col bg-aau-gray-50 lg:hidden">
+          <div className="flex shrink-0 items-center justify-between border-b border-aau-gray-line bg-white px-3 py-2">
             <AauLogo />
             <button
               type="button"
               onClick={() => updatePanel({ mobile: false })}
               aria-label="Close menu"
-              className="rounded-lg p-2 text-aau-gray-600 hover:bg-aau-gray-100"
+              className="rounded-md p-2 text-aau-gray-600 hover:bg-aau-gray-100"
             >
               <X className="h-6 w-6" aria-hidden="true" />
             </button>
           </div>
 
-          <div className="h-[calc(100%-64px)] overflow-y-auto px-4 pb-16 pt-4">
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-10 pt-4">
             <input
               type="search"
               value={query}
@@ -306,34 +324,56 @@ export function AauHeader({
               }}
               placeholder={SEARCH_PLACEHOLDER}
               aria-label={SEARCH_PLACEHOLDER}
-              className="h-12 w-full rounded-sm border border-aau-gray-300 px-3 text-base focus:border-brand-600 focus:outline-none"
+              className="h-12 w-full shrink-0 rounded-sm border border-aau-gray-300 bg-white px-3 text-base focus:border-brand-600 focus:outline-none"
             />
 
-            <nav aria-label="Mobile" className="mt-4 flex flex-col gap-1">
+            <nav
+              aria-label="Mobile"
+              className="flex flex-col gap-1 rounded-md border border-aau-gray-200 bg-white p-2 shadow-sm"
+            >
+              {/*
+                `AauHomeIcon`, not a `lucide` mark: this is the official header's
+                own home glyph, so it matches the desktop home button exactly.
+              */}
               <Link
                 to={home}
-                className="flex items-center gap-2 rounded-sm px-2 py-3 font-medium text-aau-gray-800 hover:bg-brand-50"
+                className={cn(MOBILE_ROW, location.pathname === home && MOBILE_ROW_ACTIVE)}
               >
-                <AauHomeIcon className="h-5 w-5" /> Home
+                <AauHomeIcon className="h-4 w-4 shrink-0" aria-hidden="true" /> Home
               </Link>
 
               {entries.map((entry) =>
                 isNavMenu(entry) ? (
                   <MobileMenu key={entry.label} menu={entry} />
                 ) : (
-                  <Link
-                    key={entry.label}
-                    to={entry.to}
-                    className="rounded-sm px-2 py-3 font-medium text-aau-gray-800 hover:bg-brand-50"
-                  >
+                  <Link key={entry.label} to={entry.to} className={MOBILE_ROW}>
+                    {entry.icon && <entry.icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
                     {entry.label}
                   </Link>
                 ),
               )}
             </nav>
 
+            {/*
+              A labelled section, and the label is doing real work: the account
+              block repeats `Dashboard` — which is also the first tab in the
+              bottom bar, and, for a signed-in user, what the drawer's own `Home`
+              row points at. That repetition is a convenience (the drawer is
+              reachable from public pages, where no tab bar exists), so it is
+              stated rather than hidden: "Account" is what makes the block read as
+              a set of things about *you* instead of a mystery second nav.
+
+              Nothing is wrapped around `mobileActions` itself — the identity card
+              it renders is already a card, and a card inside a card is the one
+              thing that would make this look less like the rest of the app.
+            */}
             {mobileActions && (
-              <div className="mt-4 border-t border-aau-gray-200 pt-4">{mobileActions}</div>
+              <section className="flex flex-col gap-3">
+                <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-aau-custom-blue">
+                  Account
+                </h2>
+                {mobileActions}
+              </section>
             )}
           </div>
         </div>
@@ -405,38 +445,60 @@ function DesktopMenu({ menu, panelId, open, onToggle, onHover }: DesktopMenuProp
   );
 }
 
+/**
+ * One row of the drawer's destination card.
+ *
+ * Hoisted to a constant because four places render the same row — Home, a plain
+ * entry, an accordion trigger, and the accordion's own links — and the drawer's
+ * whole defect was rows that had drifted into three different shapes. The active
+ * treatment is the app's `NavItem` rule (§8): `brand-700` text *and* a bold
+ * weight, never colour alone.
+ */
+const MOBILE_ROW =
+  "flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium text-aau-gray-700 transition-colors hover:bg-aau-gray-100";
+
+/** The same row, marked current — colour plus weight, per the design doc. */
+const MOBILE_ROW_ACTIVE = "bg-brand-50 font-semibold text-brand-700 hover:bg-brand-50";
+
 /** Accordion entry inside the mobile drawer — upstream flattens the same tree. */
 function MobileMenu({ menu }: { menu: AauNavMenu }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
 
   return (
-    <div className="border-b border-aau-gray-200 pb-1">
+    <div className="flex flex-col">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="flex w-full items-center justify-between rounded-sm px-2 py-3 font-medium text-aau-gray-800 hover:bg-brand-50"
+        className={cn("w-full", MOBILE_ROW, open && MOBILE_ROW_ACTIVE)}
       >
+        {menu.icon && <menu.icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
         {menu.label}
         <ChevronDown
-          className={cn("h-4 w-4 transition-transform duration-200", open && "rotate-180")}
+          className={cn("ml-auto h-4 w-4 shrink-0 transition-transform duration-200", open && "rotate-180")}
           aria-hidden="true"
         />
       </button>
+      {/*
+        Indented by `pl-3` and lighter than its trigger, so the open panel reads as
+        belonging to the row above it. The section headings are kept from the
+        desktop menu — same 12px uppercase `customBlue-main` — so a destination has
+        the same name in both places.
+      */}
       {open && (
-        <div id={panelId} className="pb-2">
+        <div id={panelId} className="flex flex-col gap-1 pb-1 pl-3">
           {menu.sections.map((section) => (
-            <div key={section.heading} className="mt-2">
-              <div className="mb-1 ml-2 text-xs font-semibold uppercase text-aau-custom-blue">
+            <div key={section.heading} className="flex flex-col gap-1 pt-1">
+              <div className="px-3 text-xs font-semibold uppercase tracking-wide text-aau-custom-blue">
                 {section.heading}
               </div>
               {section.links.map((link) => (
                 <Link
                   key={`${section.heading}-${link.to}-${link.label}`}
                   to={link.to}
-                  className="block rounded-sm px-2 py-2 text-sm text-aau-gray-700 hover:bg-brand-50"
+                  className="block rounded-md px-3 py-2 text-sm text-aau-gray-700 transition-colors hover:bg-aau-gray-100"
                 >
                   {link.label}
                 </Link>

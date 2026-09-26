@@ -159,6 +159,39 @@ the page also renders), and it is **not** role-gated — the queue belongs to an
 has an inbox. On a phone it travels into the "More" sheet, since the bottom bar caps at four
 destinations and Notifications is not one of them.
 
+### The mobile drawer is one panel, not four stacked blocks
+
+The hamburger drawer (`components/aau/AauHeader`) is the only surface where the two nav idioms in
+this app meet: the portal's flat, icon-bearing destination list and the marketing header's grouped
+menu tree (`Work` / `Audit` / `Admin`). It had drifted into something neither pattern would have
+produced — full-width rows separated by hairlines, a flat grey identity box, and two account
+actions styled as if they were more menu rows.
+
+It is now laid out like the full-screen panel it is: an `aau-gray-50` page surface carrying three
+blocks at one `gap-4` rhythm — the search field, the destination **card**, the account **card**. Both
+lists use `Card`'s own recipe (`rounded-md`, `bg-white`, `shadow-sm`), and rows are `rounded-md`
+hover targets inside them, matching the authenticated "More" sheet. There are no hairline dividers:
+a row is delimited by its own hover/active surface.
+
+- **Icons on every row.** `icon` is an optional field on `AauNavLink` / `AauNavMenu`, read by the
+drawer **only** — the desktop bar is a class-for-class copy of `aau.edu.et`'s, which has plain text
+in its top level, so an icon there would be the one detail announcing the header is not the official
+one. `Home` keeps the header's own `AauHomeIcon` glyph so it matches the desktop home button.
+- **Active state follows `NavItem` (§8):** `brand-700` text *and* a bold weight — never colour alone.
+- **The account block is a labelled section.** The identity card is `Card`'s recipe (it used to be a
+`bg-aau-gray-50` box on a white sheet, which is why it read as a flat grey rectangle — no elevation,
+no contrast against the surface behind it), the avatar keeps `radius-full` / `bg-brand-600`, and the
+two actions are real `Button`s: `outline` for the navigation action, a subdued-danger `ghost` for
+Sign out. Not the saturated `destructive` variant — nothing is deleted, and a filled red button
+would over-signal in the one place a user goes to leave quietly. The desktop sidebar and the "More"
+sheet carry the same treatment, because signing out should not look like two actions depending on
+the shell.
+- **The repeated `Dashboard` is deliberate, and now labelled.** It is also the bottom bar's first tab
+and, for a signed-in user, what the drawer's own `Home` row points at. It stays — the drawer is
+reachable from public pages, where no tab bar exists — so the `Account` heading is what makes the
+block read as a set of things about *you* rather than a mystery second nav. `headerAccount.test.tsx`
+pins the count and `mobileDrawer.test.tsx` pins the label.
+
 ### The staff sections open in place on the QR destination
 
 A signed-in viewer of `/item/:tagId` gets a **"View staff detail & tag"** disclosure under the

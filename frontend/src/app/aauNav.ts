@@ -1,3 +1,11 @@
+import {
+  Briefcase,
+  ClipboardCheck,
+  Info,
+  Package,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
 import type { Role } from "../types/enums";
 
 /**
@@ -20,6 +28,16 @@ import type { Role } from "../types/enums";
 export interface AauNavLink {
   label: string;
   to: string;
+  /**
+   * The drawer's leading icon, from the same `lucide` set the bottom tab bar and
+   * the portal sidebar use.
+   *
+   * Optional, and read by the mobile drawer only: the desktop menu bar is a
+   * deliberate class-for-class copy of `aau.edu.et`'s, which has no icons in its
+   * top level, so adding one there would be the single detail announcing that the
+   * header is not the official one.
+   */
+  icon?: LucideIcon;
 }
 
 export interface AauNavMenuSection {
@@ -31,6 +49,8 @@ export interface AauNavMenuSection {
 export interface AauNavMenu {
   label: string;
   sections: AauNavMenuSection[];
+  /** See `AauNavLink.icon` — drawer only, never the desktop bar. */
+  icon?: LucideIcon;
 }
 
 export type AauNavEntry = AauNavLink | AauNavMenu;
@@ -54,6 +74,7 @@ export function isNavMenu(entry: AauNavEntry): entry is AauNavMenu {
 export const PUBLIC_NAV: AauNavEntry[] = [
   {
     label: "Assets",
+    icon: Package,
     sections: [
       {
         heading: "Find an asset",
@@ -70,6 +91,7 @@ export const PUBLIC_NAV: AauNavEntry[] = [
   },
   {
     label: "About",
+    icon: Info,
     sections: [
       {
         heading: "This system",
@@ -101,6 +123,7 @@ export function staffNav(role: Role): AauNavEntry[] {
   const entries: AauNavEntry[] = [
     {
       label: "Work",
+      icon: Briefcase,
       sections: [
         {
           heading: "Assets",
@@ -124,6 +147,7 @@ export function staffNav(role: Role): AauNavEntry[] {
     },
     {
       label: "Audit",
+      icon: ClipboardCheck,
       sections: [
         {
           heading: "Counting",
@@ -149,6 +173,7 @@ export function staffNav(role: Role): AauNavEntry[] {
   if (role === "ADMIN") {
     entries.push({
       label: "Admin",
+      icon: ShieldCheck,
       sections: [
         {
           heading: "Access",

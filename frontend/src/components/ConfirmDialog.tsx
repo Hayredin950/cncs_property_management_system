@@ -13,16 +13,20 @@ export interface ConfirmDialogProps {
    */
   body: ReactNode;
   confirmLabel?: string;
-  /** `destructive` for reject/dispose/regenerate, `primary` for approve. */
+  /** `destructive` for reject/dispose, `primary` for approve or a re-render. */
   tone?: "primary" | "destructive";
   loading?: boolean;
 }
 
 /**
- * §8's specialised Dialog for irreversible actions — approve, reject, tag
- * regeneration, completing an audit. The primary button styles with the tone;
- * the dialog must not be dismissible by the confirm handler failing silently
- * (loading keeps it open and visible).
+ * §8's specialised Dialog for consequential actions — approve, reject, dispose,
+ * completing an audit. The primary button styles with the tone; the dialog must
+ * not be dismissible by the confirm handler failing silently (loading keeps it
+ * open and visible).
+ *
+ * Tag re-rendering uses this too, but with the default `primary` tone: it
+ * rewrites the cached PNG without changing the Tag ID or its link, so nothing is
+ * destroyed and a destructive style would overstate it.
  */
 export function ConfirmDialog({
   open,

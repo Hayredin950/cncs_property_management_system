@@ -266,7 +266,9 @@ re-introduce field hiding.
   F2.2 exists specifically to fix "the office never tracked whether the laptop had a bag",
   so the bundle reads as a real list, not just another field.
 - **Tags (F3.4, F3.5):** print/download the sticker and `POST /items/:id/tag/regenerate`,
-  with copy that says plainly that the *sticker* is replaced and the Tag ID is unchanged. The
+  with copy that says plainly that the *image* is re-rendered and re-cached while the Tag ID and
+  its link are unchanged — so stickers already on items keep working. (The old copy claimed a
+  sticker "stops working"; because the encoded URL never changes, that was simply false.) The
   print path is a real `@media print` stylesheet (`frontend-design-system.md` §10.6) — QR
   image, mono tag ID, item name, no app chrome — not a "save as PDF and hope" workaround.
 - **Item history (F2.3, F6.3):** a history view over `GET /items/:id/history`, **grouped by

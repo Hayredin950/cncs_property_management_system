@@ -14,7 +14,7 @@ This is the backend the frontend is building against. Every route below is also 
 | `GET /items/:tagId`, `PUT /items/:id` | Public; Staff/Admin | Public QR lookup and active-item update with per-field history. Public disposed lookup is 410. `PUT` refuses `building`, `floor`, `room` and `ownerId` — those four are transfer-only, whatever the caller's role. |
 | `DELETE /items/:id` | **Admin** | Permanently removes the item *and* its requests, edit history and audit results; accessories are unlinked, not deleted. See the deviation below. |
 | `POST /uploads/photo` | Staff, Admin | Stores an image (`multipart/form-data`, field `photo`, ≤5 MB, JPEG/PNG/WebP/GIF) and returns `{ url }`. |
-| `GET /items/:id/tag`, `POST /items/:id/tag/regenerate` | Staff, Admin | Fetch or re-render a QR PNG; regeneration retains the tag ID. |
+| `GET /items/:id/tag`, `POST /items/:id/tag/regenerate` | Staff, Admin | Fetch or re-render a QR PNG; regeneration retains the tag ID and its link, so already-printed stickers stay valid. The PNG is a deterministic function of (tag ID, `PUBLIC_BASE_URL`), so re-rendering is really a cache rewrite. |
 | `GET /items/:id/history` | Staff, Admin | Edit history, including disposed items; `field`, `limit`, `offset`. |
 | `POST /items/:id/accessories`, `DELETE /items/:id/accessories/:accessoryId` | Staff, Admin | Link/unlink existing accessory items; bundle rules are server-enforced. |
 | `POST /requests`, `GET /requests`, `GET /requests/:id`, `GET /requests/pending-count` | Staff, Admin | Transfer/disposal workflow and scoped review queue. List supports `status`, `type`, `mine`, `limit`, `offset`. |

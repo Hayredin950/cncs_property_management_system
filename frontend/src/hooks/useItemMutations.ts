@@ -76,7 +76,7 @@ export function useRegenerateTag(itemId: string) {
   return useMutation({
     mutationFn: () => regenerateTag(itemId),
     onSuccess: () => {
-      toast.success("Tag regenerated — print the new sticker. The Tag ID did not change.");
+      toast.success("Tag image re-rendered. The Tag ID and its link are unchanged.");
       void queryClient.invalidateQueries({ queryKey: ["item"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't regenerate the tag"),

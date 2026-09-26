@@ -39,11 +39,13 @@ export function TagRegenerateSection({
   disposed: boolean;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Bumped on every successful regeneration so `TagPanel` knows to re-fetch.
+  const [tagVersion, setTagVersion] = useState(0);
   const regenerate = useRegenerateTag(itemId);
 
   return (
     <div className="flex flex-col gap-3">
-      <TagPanel itemId={itemId} tagId={tagId} itemName={itemName} />
+      <TagPanel itemId={itemId} tagId={tagId} itemName={itemName} refreshKey={tagVersion} />
       <Button
         variant="outline"
         size="sm"
@@ -67,16 +69,19 @@ export function TagRegenerateSection({
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => {
-          regenerate.mutate(undefined, { onSettled: () => setConfirmOpen(false) });
+          regenerate.mutate(undefined, {
+            onSuccess: () => setTagVersion((version) => version + 1),
+            onSettled: () => setConfirmOpen(false),
+          });
         }}
-        title="Regenerate this tag?"
-        tone="destructive"
+        title="Re-render this tag?"
         loading={regenerate.isPending}
-        confirmLabel="Regenerate"
+        confirmLabel="Re-render image"
         body={
           <>
-            This replaces the printed sticker's QR design for <strong className="tag-id">{tagId}</strong>. Any
-            sticker already stuck on the item stops working. <strong>The Tag ID itself does not change.</strong>
+            This re-renders and re-caches the QR image for <strong className="tag-id">{tagId}</strong>. The Tag ID and
+            the link it encodes do not change, so a sticker already stuck on the item keeps working. Print a fresh copy
+            only if the old one is damaged or lost.
           </>
         }
       />

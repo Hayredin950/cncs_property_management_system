@@ -162,6 +162,16 @@ export const handlers = [
 
   http.get(`${API}/items/:id/tag`, () => (getToken() ? tagPng() : unauthorized())),
 
+  http.post(`${API}/items/:id/tag/regenerate`, () =>
+    getToken()
+      ? HttpResponse.json({
+          tagId: PRIVILEGED_ITEM.tagId,
+          url: `http://localhost:5173/item/${PRIVILEGED_ITEM.tagId}`,
+          dataUrl: "data:image/png;base64,PGZha2UtcG5nLWJ5dGVzPg==",
+        })
+      : unauthorized(),
+  ),
+
   http.get(`${API}/items/:id/history`, () =>
     getToken() ? HttpResponse.json(HISTORY_FIXTURE) : unauthorized(),
   ),

@@ -10,6 +10,13 @@ export interface TagPanelProps {
   itemId: string;
   tagId: string;
   itemName: string;
+  /**
+   * Bump to re-fetch the PNG after an external change (F3.5 regeneration). The
+   * image is loaded by a plain effect rather than a React Query hook, so
+   * `invalidateQueries(["item"])` never reaches it — this is the explicit
+   * "the server has a new render" signal instead.
+   */
+  refreshKey?: number;
 }
 
 /**
@@ -18,15 +25,18 @@ export interface TagPanelProps {
  * the print stylesheet in styles/globals.css — everything else on the page is
  * hidden when a staff member prints the sticker.
  */
-export function TagPanel({ itemId, tagId, itemName }: TagPanelProps) {
+export function TagPanel({ itemId, tagId, itemName, refreshKey = 0 }: TagPanelProps) {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  // Resets when the item changes, derived during render via the prev-state
-  // pattern rather than setState inside the effect (react-hooks rule).
-  const [prevItemId, setPrevItemId] = useState(itemId);
-  if (prevItemId !== itemId) {
-    setPrevItemId(itemId);
+  // Resets when the item or the refresh key changes, derived during render via
+  // the prev-state pattern rather than setState inside the effect (react-hooks
+  // rule). Both parts matter: a new item is a different image entirely, while a
+  // new refresh key means the *same* tag was re-rendered on the server.
+  const key = `${itemId}:${refreshKey}`;
+  const [prevKey, setPrevKey] = useState(key);
+  if (prevKey !== key) {
+    setPrevKey(key);
     setImgUrl(null);
     setFailed(false);
     setLoading(true);
@@ -53,7 +63,7 @@ export function TagPanel({ itemId, tagId, itemName }: TagPanelProps) {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [itemId]);
+  }, [itemId, refreshKey]);
 
   async function handleDownload() {
     try {

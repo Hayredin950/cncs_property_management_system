@@ -47,7 +47,7 @@ and were migrated anyway, on purpose.
 | `GET /categories` | public | |
 | `POST /categories` | Admin | `name` is `@unique` |
 | `GET /items/:id/tag` | Staff, Admin | Returns the QR PNG for an existing tag id |
-| `POST /items/:id/tag/regenerate` | Staff, Admin | New **image**, same tag id (F3.5) — the physical sticker is replaced, the record is not |
+| `POST /items/:id/tag/regenerate` | Staff, Admin | Re-renders and re-caches the QR image, same tag id (F3.5) — the record is not touched, and existing stickers keep working |
 
 Every path above is also mounted under `/api/v1` (added in Phase 2 — both spellings reach the same
 handler).
@@ -136,6 +136,14 @@ an equality match on the column, and the QR payload is a URL built around whatev
 F3.5's reasoning is worth restating because it looks like a bug otherwise: a lost or damaged sticker
 is a *printing* problem, and issuing a new id would orphan the old sticker and split the item's
 history across two identifiers.
+
+Because the QR payload is `${PUBLIC_BASE_URL}/item/${tagId}` and neither half changes, regeneration
+produces a **byte-identical PNG** — `regenerateTagQR` is literally `generateTagQR` with a different
+name. That is the correct outcome, not a broken feature: the value it delivers is re-writing the
+on-disk cache (which `GET /items/:id/tag` also does on a miss) and the sticker it lets staff print.
+The UI copy says exactly that — "re-renders and re-caches the QR image; the Tag ID and the link it
+encodes do not change" — rather than claiming an old sticker is invalidated, which was never true
+and would have scared staff off the one safe repair path.
 
 ## Deviations from the bootstrap checklist
 

@@ -133,3 +133,49 @@ describe("audit walkthrough — stored scans", () => {
     expect(screen.getByRole("button", { name: "Complete audit" })).toBeDisabled();
   });
 });
+
+/**
+ * The other half of "the audit doesn't give much detail". The report page has
+ * always shown the counts and pointed at the CSV for anything else, even though
+ * every row behind those counts was already stored and already returned by
+ * `GET /audits/:id` — the page simply never rendered it. This is that render.
+ */
+describe("the audit report — per-item breakdown", () => {
+  it("lists every item behind the counts, grouped by result", async () => {
+    server.use(
+      http.get(`${API}/audits/:id`, () =>
+        HttpResponse.json(
+          AUDIT_READBACK(AUDIT_SESSION.id, {
+            completed: true,
+            completedAt: "2026-09-22T08:30:00.000Z",
+            counts: { found: 1, missing: 1, locationMismatch: 1 },
+            rows: AUDIT_STORED_ROWS,
+          }),
+        ),
+      ),
+    );
+
+    setToken("test-token");
+    renderWithProviders({ initialEntries: [`/audit/${AUDIT_SESSION.id}/report`] });
+
+    expect(
+      await screen.findByRole("heading", { name: "Items in this audit" }),
+    ).toBeInTheDocument();
+
+    // One heading per result group, each naming its own count — the row counts
+    // and the summary cards are the same numbers, from the same server rows.
+    expect(screen.getByRole("heading", { name: "Found (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Missing (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Outside scope (1)" })).toBeInTheDocument();
+
+    /*
+      The detail the counts throw away. A `MISSING` row is the interesting one:
+      there is no scan behind it — completion wrote it — so showing it is the
+      only way the page can answer "missing *what*, exactly?".
+    */
+    expect(screen.getByText(PRIVILEGED_ITEM.name)).toBeInTheDocument();
+    expect(screen.getByText("Missing Monitor")).toBeInTheDocument();
+    expect(screen.getByText("Misplaced Projector")).toBeInTheDocument();
+    expect(screen.getByText("CNCS-MISS0000")).toBeInTheDocument();
+  });
+});

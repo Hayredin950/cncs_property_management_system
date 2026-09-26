@@ -9,6 +9,7 @@ import {
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
 import { createRateLimiter, noRateLimit } from "../middleware/rateLimit.js";
+import { normalizeEmail } from "../utils/email.js";
 
 const router: ExpressRouter = Router();
 
@@ -90,18 +91,28 @@ router.post(
 
     const { name, fullName, email, id, emailOrId, password, role } = parseResult.data;
     const resolvedName = (name ?? fullName)!;
-    const effectiveEmail = (email ?? emailOrId ?? id)!;
+    const effectiveEmail = normalizeEmail((email ?? emailOrId ?? id)!);
     const effectiveId = id;
 
     try {
-      const orConditions: Array<{ email?: string; id?: string }> = [
-        { email: effectiveEmail },
+      /**
+       * The email arms match without regard to case — see `utils/email.ts`.
+       * Without that, registering `Admin@x` beside an existing `admin@x` passes
+       * this check and creates the second account for one address. The `id` arms
+       * stay exact: `STAFF-007` and `staff-007` are different ids, and the value
+       * may not be an address at all.
+       */
+      const orConditions: Array<{
+        email?: { equals: string; mode: "insensitive" };
+        id?: string;
+      }> = [
+        { email: { equals: effectiveEmail, mode: "insensitive" } },
         { id: effectiveEmail },
       ];
 
       if (effectiveId && effectiveId !== effectiveEmail) {
         orConditions.push({ id: effectiveId });
-        orConditions.push({ email: effectiveId });
+        orConditions.push({ email: { equals: effectiveId, mode: "insensitive" } });
       }
 
       const existingUser = await prisma.user.findFirst({
@@ -196,7 +207,13 @@ router.post(
       const user = await prisma.user.findFirst({
         where: {
           OR: [
-            { email: effectiveIdentifier },
+            /**
+             * Case-insensitively, and that is the whole point of the change:
+             * `admin@cncs.aau.edu.et` typed with a capital A is the same mailbox
+             * and used to answer 401. The `id` arm stays exact — an id is an
+             * identifier, and two ids differing only by case are two ids.
+             */
+            { email: { equals: effectiveIdentifier, mode: "insensitive" } },
             { id: effectiveIdentifier },
           ],
         },

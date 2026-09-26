@@ -7,6 +7,7 @@ import {
   requireRole,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
+import { normalizeEmail } from "../utils/email.js";
 
 export const usersRouter: Router = Router();
 
@@ -110,12 +111,24 @@ usersRouter.patch(
         return;
       }
 
-      const { fullName, email } = parsed.data;
+      const { fullName } = parsed.data;
+      const email =
+        parsed.data.email === undefined ? undefined : normalizeEmail(parsed.data.email);
 
-      // Changing an email to one already in use is a 409, not a 500 from the
-      // unique constraint — checked here so the message can name the conflict.
-      if (email && email !== existing.email) {
-        const clash = await prisma.user.findUnique({ where: { email } });
+      /**
+       * Changing an email to one already in use is a 409, not a 500 from the
+       * unique constraint — checked here so the message can name the conflict.
+       *
+       * Compared without regard to case, and excluding this account, for the same
+       * reason login is (`utils/email.ts`): the unique index is case-sensitive, so
+       * an exact check would let `Admin@x` be set on one account while `admin@x`
+       * sits on another. The `id: { not: id }` clause is what stops a legacy row
+       * still stored as `Admin@x` from clashing with itself once normalised.
+       */
+      if (email !== undefined && email !== existing.email) {
+        const clash = await prisma.user.findFirst({
+          where: { email: { equals: email, mode: "insensitive" }, id: { not: id } },
+        });
         if (clash) {
           res.status(409).json({ error: "Another account already uses this email" });
           return;

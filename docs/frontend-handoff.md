@@ -107,7 +107,7 @@ guards all of it — do not simplify those paths away.
 
 ## Added after Phase 3
 
-Two changes landed after the plan's three phases, both driven by demo feedback.
+These landed after the plan's three phases, driven by demo feedback and a review pass.
 
 ### Photos are uploaded, not pasted (F3.4)
 
@@ -128,8 +128,10 @@ Two changes landed after the plan's three phases, both driven by demo feedback.
 `/items` grid — the QR destination is where a scan and every post-save redirect lands, and the
 controls were three taps deep before.
 
-- **Staff** get Edit. **Admin** get Edit and Delete. Signed-out visitors get nothing, so the public
-  QR page keeps its public chrome.
+- **Staff** and **Admin** both get Edit. Signed-out visitors get nothing, so the public QR page
+  keeps its public chrome. There is deliberately **no Delete control in the UI** — `ItemActions`
+  briefly had one and it was removed: correction happens by editing, and retiring an asset is a
+  request, not a delete.
 - `DELETE /items/:id` is the only endpoint in the API that destroys a record, against F7.2
   everywhere else. It exists for data correction (a typo'd or duplicated registration that editing
   cannot fix), and its confirmation names the casualties — edit history, requests, audit results —
@@ -176,6 +178,56 @@ panel dropped — it opens a *form*, not a second view of the same item — and 
 this page would have no path to the workflow the sticker exists for. Moving an item is only ever
 that request: the edit form refuses `building`, `floor`, `room` and `ownerId` server-side, for
 every role including Admin.
+
+### What an edit may change, and what only a transfer may
+
+`PUT /items/:id` refuses four columns — `building`, `floor`, `room` and `ownerId` — because each is
+part of a TRANSFER's payload, and approving a move is the flow that exists to guard them. In the
+edit form those four render `readOnly` and greyed, and a note beside them points at the request.
+
+**`department` is not one of those four, and the form now places it so it cannot be mistaken for
+one.** It spent a while rendered inside the same greyed "Location" block, just above the note that
+says location can only change by transfer — close enough that a reviewer reading the form reported
+the department dropdown as *"not changable directly"*. Nothing was disabled; the grouping was
+saying the wrong thing about an ordinary editable column. Department now sits in **Identity**
+alongside Name and Category (in *both* modes, so create and edit still lay out identically), with a
+hint spelling out the boundary. The three address fields keep the locked block to themselves,
+which is also what the note now names.
+
+The claim being pinned here is worth stating plainly: **which department files an item is an
+ordinary edit; where the item physically sits is not.** The audit scope filter
+(`DEPARTMENT`/`BUILDING`) is why the first one has to stay correctable without paperwork.
+
+### Sign-in ignores the casing you type
+
+`Admin@cncs.aau.edu.et` used to answer **Invalid credentials** while `admin@cncs.aau.edu.et` worked,
+because the email unique index is case-sensitive on PostgreSQL and the lookup compared exactly.
+The backend now matches the address without regard to case and stores it lowercased
+(`utils/email.ts`); a staff `id` such as `STAFF-007` is still matched exactly, since an id is an
+identifier, not an address.
+
+**Nothing on the frontend changed for this** — the login form still sends the address as typed, and
+that is the point: entering your own address in two different casings should never be a different
+result. The rule and its one remaining limitation (an old case-only duplicate pair, which needs a
+migration to repair) are written up in [`backend-handoff.md`](backend-handoff.md).
+
+### The audit report shows the rows behind the counts
+
+The report page had three numbers — found, missing, outside scope — and a sentence pointing at the
+CSV for "what, exactly?". That was reported as **"the audit doesn't give much detail"**, and the data
+was never the problem: `GET /audits/:id` had been returning one row per item (tag, name, department,
+building, floor, room) the whole time, including the `MISSING` rows completion writes for items that
+were never scanned.
+
+Those rows are now rendered under the summary, grouped by result. It is a **read, not a recompute**:
+the rows are the same stored rows the counts are derived from. The session is
+fetched whenever there is an id, even when the counts are already in hand from the completion
+response, because only the read-back carries the item detail.
+
+The remaining limit is on the server side and is stated rather than papered over: **a session does not
+snapshot its scope**, so `MISSING` and "outside scope" are classified against the register as it
+stands at completion. See the audit bullets under "Stretch and intentionally absent work" in
+[`backend-handoff.md`](backend-handoff.md).
 
 ## What was deliberately cut, and why
 

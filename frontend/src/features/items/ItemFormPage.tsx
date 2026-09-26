@@ -271,10 +271,18 @@ function CreateItemForm() {
             {...register("categoryId")}
             required
           />
+          {/*
+            Department belongs with the item's identity, not with the address
+            fields below. In edit mode the address fields are `readOnly` (only an
+            approved transfer moves an item), and the picker sitting inside that
+            greyed block read as locked too — a reviewer looking at the form
+            reported the department dropdown as "not changeable". It always was
+            editable; the grouping was lying about it.
+          */}
+          <DepartmentPicker value={watch("department") || ""} onChange={(v) => setDepartment(v)} error={errors.department?.message} />
         </FormSection>
 
         <FormSection heading="Location" columns>
-          <DepartmentPicker value={watch("department") || ""} onChange={(v) => setDepartment(v)} error={errors.department?.message} />
           <Input label="Building" error={errors.building?.message} {...register("building")} required />
           <Input label="Floor" error={errors.floor?.message} {...register("floor")} required />
           <Input label="Room" error={errors.room?.message} {...register("room")} required />
@@ -477,15 +485,22 @@ function EditItemInner({
               {...register("categoryId")}
               required
             />
-          </FormSection>
-
-          <FormSection heading="Location" columns>
+            {/*
+              Department is editable here — deliberately, and it no longer sits
+              among the transfer-only fields, where it read as locked. Only an
+              item's *address* (building/floor/room) and its custodian need an
+              approval (SRS F6); which department files it is an ordinary edit.
+            */}
             <DepartmentPicker
               value={watch("department") || ""}
               onChange={(v) => setDepartment(v)}
               error={errors.department?.message}
               disabled={disposed}
+              hint="Editable here — only the building, floor, room and custodian need an approved transfer."
             />
+          </FormSection>
+
+          <FormSection heading="Location" columns>
             {/*
               Building, floor and room are `readOnly`, not `disabled`: the server
               compares the submitted body against the stored row, so unchanged
@@ -499,14 +514,15 @@ function EditItemInner({
             <Input label="Room" error={errors.room?.message} {...register("room")} readOnly required />
             {!disposed && (
               <p className="rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-600 sm:col-span-2">
-                Where this item is, and whose it is, can only change through an approved transfer.{" "}
+                An item's building, floor, room and custodian can only change through an approved
+                transfer.{" "}
                 <Link
                   to={`/requests/new?item=${encodeURIComponent(item.tagId)}`}
                   className="font-medium text-brand-700 underline-offset-4 hover:underline"
                 >
                   File a transfer request
                 </Link>{" "}
-                and an admin approves the move.
+                and an admin approves the move. The department above is a normal edit.
               </p>
             )}
           </FormSection>

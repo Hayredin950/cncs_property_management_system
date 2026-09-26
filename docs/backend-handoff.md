@@ -7,7 +7,7 @@ This is the backend the frontend is building against. Every route below is also 
 | Endpoint | Access | What it does |
 | --- | --- | --- |
 | `GET /health` | Public | Returns `{ "status": "ok" }`. |
-| `POST /auth/register`, `POST /auth/login`, `GET /auth/me` | Admin / Public / signed in | Account creation, one-day JWT login, and current-account lookup. |
+| `POST /auth/register`, `POST /auth/login`, `GET /auth/me` | Admin / Public / signed in | Account creation, one-day JWT login, and current-account lookup. The address is matched **without regard to case** and stored lowercased; a staff `id` like `STAFF-007` is matched exactly. See "Email is one address" below. |
 | `GET /categories`, `POST /categories` | Public / Admin | List and create categories. |
 | `POST /items` | Staff, Admin | Registers an item and creates its tag ID and QR image. |
 | `GET /items` | Public; richer when signed in | Paginated active-item list: `page`, `limit`, `search`, `categoryId`, `department`. |
@@ -30,6 +30,23 @@ This is the backend the frontend is building against. Every route below is also 
 
 Report dates use UTC and `dateTo` includes the whole UTC day. CSV decimals are strings.
 
+## Email is one address, whatever its casing
+
+`User.email` is `@unique` on PostgreSQL, where `=` is case-sensitive, so without a rule
+`Admin@cncs.aau.edu.et` and `admin@cncs.aau.edu.et` are two rows and two accounts — and only the exact
+spelling could sign in. Login now matches the address with `mode: "insensitive"`, `POST /auth/register`
+and `PATCH /users/:id` both reject a clash that differs only by case, and an address is stored
+lowercased (`utils/email.ts`).
+
+Both halves are load-bearing. Comparing insensitively without normalising on write would still allow
+two rows for one address, and `findFirst` would then pick between them arbitrarily; normalising
+without the insensitive comparison would strand accounts already stored in mixed case.
+
+`id` is matched exactly throughout. The register route doubles as "register by staff ID", where the
+value in the `email` column is an identifier such as `STAFF-007`; `normalizeEmail` only lowercases
+values containing `@`, so an identifier is never rewritten, and two ids differing only by case remain
+two ids.
+
 ## Why a notification may be deleted when nothing else may
 
 The two `DELETE /notifications` routes above are the other place a row is really removed, and they
@@ -42,6 +59,29 @@ Both routes scope by `userId` in the `where` of a `deleteMany`, never by `delete
 — the plain form is an IDOR that would let any signed-in account delete any id it guessed.
 `count === 0` answers `404 Notification not found` for "not yours" and "does not exist" alike, so
 the response never confirms that an id it may not touch exists.
+
+## Any Staff member may edit any active item — deliberately
+
+`PUT /items/:id` is `requireRole(["ADMIN", "STAFF"])` with no check that the caller owns the item, and
+`ItemActions` offers Edit to every signed-in viewer. This is a decision, not an oversight — it was
+raised in review ("any staff member seems to be able to edit items even if they weren't the one who
+added them"), so the reasoning is recorded rather than rediscovered.
+
+Registration is not custody. Staff register what they find, then move, audit and repair it, and a
+correction should not be blocked because the person who typed the row has left the university or is on
+leave. The register is also the *shared* fact: the value of a correction is that whoever notices the
+mistake can make it.
+
+**What is already restricted** is the part that would make an edit a lie about *where an item is*.
+`building`, `floor`, `room` and `ownerId` are refused by `PUT /items/:id` for every role, Admin
+included, and only an approved TRANSFER request may change them. So a Staff member may correct the
+description of an item they did not register, and may not quietly move it or hand it to themselves.
+
+**If it is ever changed** to "the custodian or an Admin", the places that have to move together are:
+this route, `ItemActions`, the QR page's staff section, the audit walkthrough, the transfer cascade
+(which reassigns `ownerId`), and the demo seed, where Staff are expected to edit seeded items. It is a
+one-line role check with a wide blast radius, which is exactly why it should be a decision rather than
+a drive-by change.
 
 ## `DELETE /items/:id` is a deliberate departure from F7.2
 
@@ -77,7 +117,8 @@ The frontend must never rely on UI hiding alone or duplicate this rule. The API 
 
 - PDF reports are not built; CSV is the only supported format.
 - `LOCATION` audit completion is not built. Only `scopeType: "DEPARTMENT"` completes; other scope types return 400.
-- `GET /audits` returns **sessions and counts only**; the per-item breakdown is `GET /audits/:id` or the CSV. There is no audit-session delete or reopen, and `POST /audits/:id/complete` is one-way (a second call is a 409).
+- `GET /audits` returns **sessions and counts only**; the per-item breakdown — tag, name, room and result for every row — is `GET /audits/:id`, which the report page now renders, and the CSV. There is no audit-session delete or reopen, and `POST /audits/:id/complete` is one-way (a second call is a 409).
+- **An audit does not snapshot its scope.** Nothing writes a list of "items in scope" when a session starts: `POST /audits/:id/complete` computes FOUND/MISSING/LOCATION_MISMATCH by running the scope filter *at completion* and comparing it with the stored scans. An item registered, moved or disposed during the audit is therefore classified against its state then, not at the start, and an item that was in scope at the start and later deleted leaves no trace of having been in scope at all. Cheap to add (a scope-snapshot table, or an id list on the session) and deliberately deferred — it is the honest limit of what the current numbers mean.
 - In-app notifications are built. Real email is not: `NOTIFY_EMAIL` gates a stub that only logs; it has no SMTP transport.
 - Swagger/OpenAPI is not built.
 
@@ -85,6 +126,7 @@ The frontend must never rely on UI hiding alone or duplicate this rule. The API 
 
 - No test database exists. Route tests mock Prisma, so database transactions and query clauses are not automated end-to-end.
 - Completion deduplicates scans for classification, but audit CSV exports every persisted scan row. A double scan produces duplicate rows.
+- The email unique index is case-sensitive, so an account pair created before the case-insensitive rule (or inserted directly) can still differ only by case; login then matches whichever row `findFirst` returns first. The durable fix is a `citext` column or a functional unique index on `lower(email)`, which needs a migration — the rule above prevents new pairs, it cannot repair old ones.
 - `auditId` is interpolated directly into the audit download filename; it is neither UUID-validated nor header-sanitized separately.
 - Privileged `GET /items` cost fields are `Prisma.Decimal` values serialized as strings; handle them as strings until a deliberate API change.
 - Seed tags use `CNCS-DEMO-000n`, while new tags use `CNCS-` plus eight uppercase hex characters. Lookup does not parse the format, so this is deliberate fixture inconsistency.

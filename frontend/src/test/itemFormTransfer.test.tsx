@@ -39,6 +39,49 @@ describe("item edit form — transfer-owned columns", () => {
     );
   });
 
+  /**
+   * The department is *not* transfer-owned, and it must not look as if it were.
+   *
+   * It spent a while rendered inside the greyed "Location" block directly under
+   * the read-only building/floor/room, which made a reviewer read the whole
+   * section — department included — as locked. Nothing was actually disabled;
+   * the layout was saying the wrong thing about an ordinary editable column.
+   * This pins both halves: the control is live, and its change reaches the API.
+   */
+  it("keeps the department editable and sends it on save", async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.put(`${API}/items/${PRIVILEGED_ITEM.id}`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(PRIVILEGED_ITEM);
+      }),
+    );
+
+    setToken("test-token");
+    renderWithProviders({ initialEntries: [`/items/${PRIVILEGED_ITEM.id}/edit`] });
+    const user = userEvent.setup();
+
+    await screen.findByRole("heading", { name: `Edit ${PRIVILEGED_ITEM.name}` });
+
+    const department = screen.getByLabelText("Department");
+    expect(department).toBeEnabled();
+    expect(department).not.toHaveAttribute("readonly");
+
+    await user.selectOptions(department, "Biology");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ department: "Biology" });
+    // The transfer-only columns still ride along unchanged — that is what the
+    // server compares to decide whether the body is an unapproved move.
+    expect(body).toMatchObject({
+      building: PRIVILEGED_ITEM.building,
+      floor: PRIVILEGED_ITEM.floor,
+      room: PRIVILEGED_ITEM.room,
+      ownerId: PRIVILEGED_ITEM.ownerId,
+    });
+  });
+
   it("keeps the item's own custodian on save instead of the signed-in editor", async () => {
     let body: Record<string, unknown> | null = null;
     server.use(

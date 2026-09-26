@@ -37,14 +37,23 @@ export function AuditReportPage() {
   const cached = fromState ?? loadCompletionSummary(id);
   const walkthrough = loadWalkthrough(id);
 
-  // Only fetched when the summary is not already in hand — the common path
-  // (just completed, landed here) does not wait on a request.
+  /**
+   * Always fetched when there is an id, even though the counts above may already
+   * be in hand. The counts come instantly from the completion response; the
+   * per-item breakdown does not, because `found` / `missing` / `locationMismatch`
+   * are *item ids* — they carry no name, tag or room. Only `GET /audits/:id`
+   * carries those, so the request exists for the table below and the summary
+   * above never waits on it.
+   */
   const sessionQuery = useQuery({
     queryKey: ["audit", id],
     queryFn: ({ signal }) => fetchAuditSession(id, signal),
-    enabled: Boolean(id) && !cached,
+    enabled: Boolean(id),
     retry: false,
   });
+
+  /** One stored result row per item, `MISSING` rows included (`scannedAt: null`). */
+  const rows = sessionQuery.data?.rows ?? [];
 
   const summary: AuditCompletionResponse | null = cached
     ? cached
@@ -149,9 +158,81 @@ export function AuditReportPage() {
           stamped with this completion time. <strong className="font-semibold text-slate-900">Missing</strong> items
           are active items in the audited scope that weren&apos;t scanned;{" "}
           <strong className="font-semibold text-slate-900">outside scope</strong> items were scanned but don&apos;t
-          belong to the scope being audited. The per-item breakdown — tag, room and result for each row — is in the
-          CSV export, not on this page.
+          belong to the scope being audited. Every row behind those three numbers is listed below, and those same
+          rows are what the CSV export contains.
         </p>
+      </Card>
+
+      {/*
+        The breakdown the summary counts are made of. It was a documented gap —
+        "the audit doesn't give much detail" — because the page showed three
+        numbers and pointed at the CSV for anything else, even though the server
+        had been storing a row per item all along. Reading it back is one
+        request, and nothing here is recomputed: the rows are the server's.
+      */}
+      <Card className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Items in this audit
+          </h2>
+          {rows.length > 0 && (
+            <span className="text-xs text-slate-500">
+              {rows.length} row{rows.length === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+
+        {sessionQuery.isPending ? (
+          <p className="text-sm text-slate-500" role="status">
+            Loading the per-item breakdown…
+          </p>
+        ) : sessionQuery.isError ? (
+          <p className="text-sm text-slate-500">
+            The per-item breakdown couldn&apos;t be loaded. The CSV export still contains every row.
+          </p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No result rows are stored for this session yet. An audit that was started but never completed records
+            only the items that were scanned, so there is nothing to classify.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {([
+              { result: "FOUND", label: "Found" },
+              { result: "MISSING", label: "Missing" },
+              { result: "LOCATION_MISMATCH", label: "Outside scope" },
+            ] as const).map((group) => {
+              const groupRows = rows.filter((row) => row.result === group.result);
+              if (groupRows.length === 0) return null;
+
+              return (
+                <section key={group.result} className="flex flex-col gap-1">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    {group.label} <span className="text-slate-500">({groupRows.length})</span>
+                  </h3>
+                  <ul className="divide-y divide-slate-100">
+                    {groupRows.map((row) => (
+                      <li
+                        key={`${group.result}-${row.itemId}`}
+                        className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-slate-900">{row.item.name}</p>
+                          <p className="font-mono text-xs text-slate-500">{row.item.tagId}</p>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {[row.item.building, row.item.floor, row.item.room]
+                            .filter(Boolean)
+                            .join(" · ")} · {row.item.department}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       <div className="flex flex-wrap justify-end gap-3">

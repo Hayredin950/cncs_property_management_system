@@ -16,6 +16,7 @@ export interface DepartmentPickerProps {
   error?: string | undefined;
   disabled?: boolean | undefined;
   required?: boolean | undefined;
+  hint?: string | undefined;
   className?: string | undefined;
 }
 
@@ -44,6 +45,7 @@ export function DepartmentPicker({
   error,
   disabled,
   required,
+  hint,
   className,
 }: DepartmentPickerProps) {
   const knownDepartments = useKnownDepartments();
@@ -58,6 +60,7 @@ export function DepartmentPicker({
       error={error}
       disabled={disabled}
       required={required}
+      hint={hint}
       options={options}
       placeholder="Select a department"
     />

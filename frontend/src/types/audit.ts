@@ -75,9 +75,9 @@ export interface AuditWalkthroughState {
 
 /**
  * `POST /audits/:id/complete` 200 response. `counts` is the summary the report
- * page renders; `found`/`missing`/`locationMismatch` are item-id lists. A
- * `MISSING` row carries no item detail, which is why the report page shows
- * counts and points at the CSV export for the per-item breakdown.
+ * page renders; `found`/`missing`/`locationMismatch` are item-id lists and carry
+ * no item detail, which is why the per-item breakdown comes from
+ * `GET /audits/:id` instead — its `rows` do.
  */
 export interface AuditCompletionResponse {
   auditSessionId: string;
@@ -143,7 +143,8 @@ export interface AuditListResponse {
  * `GET /audits/:id` 200 response — the read-back that closes gap G1. It carries
  * the same `counts`/id-lists the completion response returns, plus the stored
  * `rows`, so the report survives a reload instead of living only in router
- * state.
+ * state — and `rows` is the only place the breakdown's item detail (tag, name,
+ * room) comes from.
  */
 export interface AuditSessionReadback {
   id: string;

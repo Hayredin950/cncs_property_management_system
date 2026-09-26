@@ -12,6 +12,7 @@ vi.mock("../lib/prisma.js", () => {
     user: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
     },
@@ -108,9 +109,14 @@ describe("PATCH /users/:id", () => {
   });
 
   it("returns 409 when the email belongs to another account", async () => {
-    vi.mocked(prisma.user.findUnique)
-      .mockResolvedValueOnce({ id: "user-1", email: "old@cnus.aau.edu.et" } as never)
-      .mockResolvedValueOnce({ id: "user-2", email: "taken@cnus.aau.edu.et" } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "user-1",
+      email: "old@cnus.aau.edu.et",
+    } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+      id: "user-2",
+      email: "taken@cnus.aau.edu.et",
+    } as never);
 
     const res = await request(app)
       .patch("/users/user-1")
@@ -118,6 +124,53 @@ describe("PATCH /users/:id", () => {
       .send({ email: "taken@cnus.aau.edu.et" });
 
     expect(res.status).toBe(409);
+  });
+
+  it("catches a clash that differs only by case", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "user-1",
+      email: "old@cnus.aau.edu.et",
+    } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({ id: "user-2" } as never);
+
+    const res = await request(app)
+      .patch("/users/user-1")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ email: "Taken@CNUS.aau.edu.et" });
+
+    expect(res.status).toBe(409);
+
+    // The comparison has to be the insensitive one, and it has to exclude the
+    // account being edited — otherwise re-saving a legacy mixed-case email would
+    // collide with the row it is already on.
+    const where = vi.mocked(prisma.user.findFirst).mock.calls[0]?.[0]?.where as {
+      email: { equals: string; mode: string };
+      id: { not: string };
+    };
+    expect(where.email.mode).toBe("insensitive");
+    expect(where.email.equals).toBe("taken@cnus.aau.edu.et");
+    expect(where.id).toEqual({ not: "user-1" });
+  });
+
+  it("stores an edited email lowercased", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "user-1",
+      email: "old@cnus.aau.edu.et",
+    } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+    vi.mocked(prisma.user.update).mockResolvedValueOnce(
+      adminUserRow({ email: "new@cnus.aau.edu.et" }) as never,
+    );
+
+    const res = await request(app)
+      .patch("/users/user-1")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ email: "New@CNUS.aau.edu.et" });
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(prisma.user.update).mock.calls[0]?.[0]?.data?.email).toBe(
+      "new@cnus.aau.edu.et",
+    );
   });
 
   it("returns 200 and the updated account", async () => {

@@ -163,6 +163,37 @@ describe("/notifications — clear all", () => {
     expect(calls).toEqual([]);
     expect(screen.getByText(/needs review/i)).toBeInTheDocument();
   });
+
+  /**
+   * The cursor audit, pinned where it can actually be seen.
+   *
+   * Everything else clickable in the app is a `<button>`, an `<a>` or an
+   * `<input>`, and gets its cursor from either the UA stylesheet or the one global
+   * rule in `styles/globals.css` (Tailwind v4 made buttons `cursor: default`).
+   * The dialog's backdrop is the single exception — a click-to-dismiss `<div>` —
+   * so it is the only place a cursor has to be written by hand, and the only place
+   * the hand-written one can go wrong.
+   */
+  it("makes the dismiss backdrop a pointer without leaking it into the dialog", async () => {
+    statefulInbox();
+    await openInbox();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /clear all/i }));
+    const dialog = await screen.findByRole("dialog", { name: /clear all notifications/i });
+
+    // Clickable, so it looks clickable.
+    expect(dialog.parentElement).toHaveClass("cursor-pointer");
+    // `cursor` is an inherited property, so the panel has to reset it: without
+    // this, every heading and sentence in the dialog would inherit the pointer
+    // from the overlay along with it.
+    expect(dialog).toHaveClass("cursor-default");
+    // And the reset must not reach the controls *inside* the panel — a button in
+    // a dialog is still a button.
+    expect(within(dialog).getByRole("button", { name: /cancel/i })).not.toHaveClass(
+      "cursor-default",
+    );
+  });
 });
 
 /**

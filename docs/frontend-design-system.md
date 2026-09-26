@@ -503,6 +503,16 @@ below is unambiguous even if a name shifts release to release.
 - **Hover is a desktop-only enhancement.** Nothing required to complete a task may be
   hover-only — there is no hover on a touchscreen. Every hover-revealed affordance (a table
   row's action icons, say) has a persistent or tap-visible equivalent below `lg`.
+- **Pointer cursor on everything that responds to a click — and nothing else.** This is not
+  free: **Tailwind v4 made `<button>` `cursor: default`**, matching the browser, so a control
+  built from a `<button>` no longer looks clickable while an `<a>` still does. The app restores
+  it once, globally, in `styles/globals.css` (`button:not(:disabled)` → `pointer`,
+  `button:disabled` → `not-allowed`); components do not carry a `cursor-pointer` class each.
+  The rule cuts both ways, and the reverse is the one that gets forgotten: a pointer on a
+  surface that does nothing is the same defect mirrored. The two places the app deliberately
+  departs from the global rule are the dialog's backdrop (clickable → `pointer`, cancelling the
+  dialog it sits behind) and the dialog panel inside it (`default`, because `cursor` inherits
+  and every sentence in the dialog would otherwise inherit the pointer too).
 - **Confirm before anything irreversible.** Approve, reject, tag regeneration, and filing a
   disposal request each show a confirmation dialog with the specific consequence spelled out
   (§11) — never a bare "Are you sure?". These are exactly the actions a live demo or a

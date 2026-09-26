@@ -33,6 +33,44 @@
     border-radius: 2px;
   }
 
+  /*
+   * Cursor affordances — the companion to the focus ring above.
+   *
+   * Tailwind v4 changed the default cursor on buttons. Its upgrade guide says it
+   * plainly: "Buttons now use `cursor: default` instead of `cursor: pointer` to
+   * match the default browser behavior." So every control in this app — `Button`,
+   * `IconButton` and the raw `<button>`s in the shells — hovered as a text arrow.
+   * `<a>` still gets its pointer from the UA stylesheet, which is exactly why the
+   * link-shaped surfaces (the item cards, the request rows, the dashboard tiles)
+   * looked right while the actual controls did not.
+   *
+   * Restored globally rather than as a `cursor-pointer` class per component:
+   * the class is needed on the ~15 raw buttons too (the drawer's triggers, the
+   * bottom tab bar, the sidebar's collapse toggle), and it can be forgotten on
+   * the next one added. One rule, nothing to remember.
+   *
+   * `:not(:disabled)` is load-bearing in the other direction. A disabled control
+   * that shows a pointer invites a click that cannot happen, so it gets
+   * `not-allowed` instead — the same answer the form controls already gave
+   * (`Button`, `IconButton`, `Input`, `Select`, `Textarea`).
+   *
+   * Both selectors live in `base`, so a component that genuinely wants something
+   * else still wins: a utility in the `utilities` layer overrides this, which is
+   * what keeps the two deliberate exceptions in the app honest (see
+   * `components/Modal.tsx`, where the dialog panel resets to `cursor-default`
+   * inside a pointer-dismiss backdrop).
+   */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
   /* §12: first focusable element on every page, visually hidden until focused. */
   .skip-link {
     @apply sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50;

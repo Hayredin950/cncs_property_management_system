@@ -89,8 +89,16 @@ export function Modal({ open, onClose, title, children, size = "sm", className }
     // The backdrop is pointer- and keyboard-closable: click-through dismissal
     // plus an explicit keydown for Space/Enter when the overlay itself holds
     // focus (jsx-a11y: a click handler needs a keyboard path).
+    //
+    // It is the one clickable surface in the app that is not a `<button>`, an
+    // `<a>` or an `<input>`, so it is the one place the global button rule in
+    // `styles/globals.css` cannot reach. `cursor-pointer` says the dimmed area is
+    // clickable; the dialog then resets to `cursor-default`, because `cursor` is
+    // an inherited property and without that reset every heading and sentence in
+    // the dialog would inherit the pointer with it. Form controls inside set
+    // their own, so only the plain text would have been wrong.
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-4 sm:items-center cursor-pointer"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -108,7 +116,7 @@ export function Modal({ open, onClose, title, children, size = "sm", className }
         aria-label={title}
         tabIndex={-1}
         className={cn(
-          "w-full rounded-md bg-white p-5 shadow-lg",
+          "w-full rounded-md bg-white p-5 shadow-lg cursor-default",
           size === "sm" ? "max-w-sm" : "max-w-lg",
           className,
         )}

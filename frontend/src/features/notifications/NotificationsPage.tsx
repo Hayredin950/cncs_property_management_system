@@ -232,10 +232,19 @@ function NotificationRow({
           // No related request: the message block is a real button so keyboard
           // users can reach the mark-as-read action (jsx-a11y: no static click
           // handlers).
+          //
+          // It carries no cursor utility, and that is deliberate. This block used
+          // to set `cursor-default` — redundant when written, since Tailwind v4
+          // already defaults buttons to the arrow — but the block above is a
+          // `<Link>` in the branch where the notification points at a request. The
+          // same rectangle, in the same position, in the same card, therefore gave
+          // a pointer in one case and an arrow in the other, for a reason nothing
+          // on screen explains. Both branches are now the pointer the global
+          // button rule gives (`styles/globals.css`).
           <button
             type="button"
             onClick={onOpen}
-            className="min-w-0 flex-1 cursor-default rounded-sm text-left"
+            className="min-w-0 flex-1 rounded-sm text-left"
             aria-label={notification.isRead ? undefined : "Mark notification as read"}
           >
             {body}

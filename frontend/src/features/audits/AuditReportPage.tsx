@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, HelpCircle, MapPinOff } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { fetchAuditSession } from "../../api/audits";
 import { saveReport, downloadAuditReport } from "../../api/reports";
@@ -9,10 +9,56 @@ import { Card } from "../../components/Card";
 import { EmptyState } from "../../components/EmptyState";
 import { Skeleton } from "../../components/Skeleton";
 import { StatCard } from "../../components/StatCard";
+import { cn } from "../../lib/cn";
 import { loadCompletionSummary, loadWalkthrough } from "../../lib/auditWalkthrough";
 import { formatDateTimeUTC } from "../../lib/formatters";
 import { toast } from "../../lib/toast";
-import type { AuditCompletionResponse } from "../../types/audit";
+import type { AuditCompletionResponse, AuditResultRow } from "../../types/audit";
+
+/**
+ * One breakdown group, keyed to the same three results the summary cards above
+ * report — and deliberately coloured *from the same tokens*.
+ *
+ * The cards use `StatCard tone="success" | "warning" | "danger"`, whose icons
+ * are the `-600` step of each scale. Here the heading follows
+ * frontend-design-system.md §3.1's "50/600/700 rule" — a `-50` tint behind it, a
+ * `-600` accent down its left edge, and `-700` text on top — which is exactly the
+ * palette `Badge` encodes. Tokens, not hex: a theme change that repoints
+ * `--color-success-*` moves the cards and these bands together, and nothing here
+ * has to know the colour.
+ *
+ * The icon is the card's icon, not a lookalike: `CheckCircle2` / `HelpCircle` /
+ * `MapPinOff` are imported once and used in both places, so "Found" cannot end up
+ * a tick above and a dot below.
+ */
+interface ResultGroup {
+  result: AuditResultRow["result"];
+  label: string;
+  icon: ReactNode;
+  /** Tint at `-50`, left accent at `-600`, text at `-700`. */
+  heading: string;
+}
+
+const RESULT_GROUPS: readonly ResultGroup[] = [
+  {
+    result: "FOUND",
+    label: "Found",
+    icon: <CheckCircle2 className="h-4 w-4" />,
+    heading: "bg-success-50 text-success-700 border-success-600",
+  },
+  {
+    result: "MISSING",
+    label: "Missing",
+    icon: <HelpCircle className="h-4 w-4" />,
+    heading: "bg-warning-50 text-warning-700 border-warning-600",
+  },
+  {
+    result: "LOCATION_MISMATCH",
+    label: "Outside scope",
+    icon: <MapPinOff className="h-4 w-4" />,
+    heading: "bg-danger-50 text-danger-700 border-danger-600",
+  },
+];
 
 /**
  * `/audit/:id/report` (F9.3) — the completion summary.
@@ -197,20 +243,36 @@ export function AuditReportPage() {
           </p>
         ) : (
           <div className="flex flex-col gap-4">
-            {([
-              { result: "FOUND", label: "Found" },
-              { result: "MISSING", label: "Missing" },
-              { result: "LOCATION_MISMATCH", label: "Outside scope" },
-            ] as const).map((group) => {
+            {RESULT_GROUPS.map((group) => {
               const groupRows = rows.filter((row) => row.result === group.result);
               if (groupRows.length === 0) return null;
 
               return (
-                <section key={group.result} className="flex flex-col gap-1">
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    {group.label} <span className="text-slate-500">({groupRows.length})</span>
+                <section
+                  key={group.result}
+                  className="flex flex-col overflow-hidden rounded-md border border-slate-200"
+                >
+                  {/*
+                    The colour lives on the heading band, not on the rows: every
+                    row is the same neutral card content, so a long list stays
+                    readable and the page does not turn into three coloured
+                    blocks. The accent stripe and the icon both carry the tone as
+                    well (§3.4 — colour is never the only signal), and the icon
+                    is `aria-hidden` so the heading still reads "Found (1)".
+                  */}
+                  <h3
+                    className={cn(
+                      "flex items-center gap-2 border-l-4 px-3 py-2 text-sm font-semibold",
+                      group.heading,
+                    )}
+                  >
+                    <span className="shrink-0" aria-hidden="true">
+                      {group.icon}
+                    </span>
+                    {group.label}{" "}
+                    <span className="font-normal opacity-80">({groupRows.length})</span>
                   </h3>
-                  <ul className="divide-y divide-slate-100">
+                  <ul className="divide-y divide-slate-100 px-3">
                     {groupRows.map((row) => (
                       <li
                         key={`${group.result}-${row.itemId}`}

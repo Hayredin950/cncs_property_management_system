@@ -169,6 +169,31 @@ describe("the audit report — per-item breakdown", () => {
     expect(screen.getByRole("heading", { name: "Outside scope (1)" })).toBeInTheDocument();
 
     /*
+      Each group wears its summary card's colour, from the same tokens the card
+      uses (`-50` tint, `-700` text) rather than a hex value, so casual-theming or
+      repointing the brand scale moves both together. Pinned here because the
+      tones are the one thing a screenshot review cannot check.
+    */
+    expect(screen.getByRole("heading", { name: "Found (1)" })).toHaveClass(
+      "bg-success-50",
+      "text-success-700",
+    );
+    expect(screen.getByRole("heading", { name: "Missing (1)" })).toHaveClass(
+      "bg-warning-50",
+      "text-warning-700",
+    );
+    expect(screen.getByRole("heading", { name: "Outside scope (1)" })).toHaveClass(
+      "bg-danger-50",
+      "text-danger-700",
+    );
+
+    // Colour is never the only signal (§3.4): the card's icon rides along on each
+    // heading, not merely on the count.
+    for (const name of ["Found (1)", "Missing (1)", "Outside scope (1)"]) {
+      expect(screen.getByRole("heading", { name }).querySelector("svg")).not.toBeNull();
+    }
+
+    /*
       The detail the counts throw away. A `MISSING` row is the interesting one:
       there is no scan behind it — completion wrote it — so showing it is the
       only way the page can answer "missing *what*, exactly?".

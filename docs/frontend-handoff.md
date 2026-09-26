@@ -224,6 +224,15 @@ the rows are the same stored rows the counts are derived from. The session is
 fetched whenever there is an id, even when the counts are already in hand from the completion
 response, because only the read-back carries the item detail.
 
+Each group heading is **colour-coded to the summary card directly above it** — green for Found,
+amber for Missing, AAU red for outside scope — using the same three tokens and the same three
+`lucide` icons, so a reader moving from the card to its list is following one colour, not matching
+two. The rule is §3.1's *50/600/700*: a `-50` tint band behind the heading, a `-600` accent stripe
+on its left edge, `-700` text. Only the **heading** is tinted; the rows keep their neutral card
+content, so a long list stays readable and the page does not become three coloured blocks. The
+icon is `aria-hidden`, so the heading's accessible name is still exactly "Found (1)". No hex value
+appears in the component.
+
 The remaining limit is on the server side and is stated rather than papered over: **a session does not
 snapshot its scope**, so `MISSING` and "outside scope" are classified against the register as it
 stands at completion. See the audit bullets under "Stretch and intentionally absent work" in

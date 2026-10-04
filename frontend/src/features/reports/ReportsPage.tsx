@@ -1,9 +1,8 @@
-import { Download, FileBarChart, MonitorCheck, ScanLine } from "lucide-react";
+import { Download, FileBarChart, FileText, MonitorCheck, ScanLine } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
-import { EmptyState } from "../../components/EmptyState";
 import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
 import { downloadDisposalsReport, downloadInventoryReport, downloadAuditReport, saveReport } from "../../api/reports";
@@ -12,11 +11,16 @@ import { useItems } from "../../hooks/useItems";
 import { toast } from "../../lib/toast";
 import { ITEM_STATUSES, ITEM_STATUS_LABELS } from "../../types/enums";
 import type { ItemStatus } from "../../types/enums";
-import type { DisposalsReportQuery, InventoryReportQuery, ReportDownload } from "../../types/report";
+import type {
+  DisposalsReportQuery,
+  InventoryReportQuery,
+  ReportDownload,
+  ReportFormat,
+} from "../../types/report";
 
 /**
- * `/reports` (F10.1, F10.3) — the three CSV exports, each with exactly the
- * filters its endpoint supports:
+ * `/reports` (F10.1, F10.3) — the three exports, each in CSV or PDF with exactly
+ * the filters its endpoint supports:
  *
  * - **Inventory**: department, category, status, date range (registered).
  * - **Disposals**: department, date range (decided).
@@ -31,8 +35,9 @@ import type { DisposalsReportQuery, InventoryReportQuery, ReportDownload } from 
  *    labelled UTC for that reason; the server rejects a start-after-end range, so
  *    this page checks it first and says why rather than surfacing a raw 400.
  *
- * CSV only: F10.2's PDF is deliberately not built, and the page states it rather
- * than offering a disabled button.
+ * PDF is offered beside CSV on every card. The two buttons share the same filters
+ * and differ only in `format`, so there is one code path and nothing to keep in
+ * step.
  */
 export function ReportsPage() {
   const navigate = useNavigate();
@@ -78,7 +83,7 @@ export function ReportsPage() {
     return null;
   }
 
-  function handleInventory() {
+  function handleInventory(format: ReportFormat) {
     const invalid = rangeError(inventory.dateFrom, inventory.dateTo);
     if (invalid) {
       setError(invalid);
@@ -92,10 +97,10 @@ export function ReportsPage() {
       ...(inventory.dateFrom ? { dateFrom: inventory.dateFrom } : {}),
       ...(inventory.dateTo ? { dateTo: inventory.dateTo } : {}),
     };
-    void run("inventory", () => downloadInventoryReport(query));
+    void run(`inventory-${format}`, () => downloadInventoryReport(query, format));
   }
 
-  function handleDisposals() {
+  function handleDisposals(format: ReportFormat) {
     const invalid = rangeError(disposals.dateFrom, disposals.dateTo);
     if (invalid) {
       setError(invalid);
@@ -107,7 +112,7 @@ export function ReportsPage() {
       ...(disposals.dateFrom ? { dateFrom: disposals.dateFrom } : {}),
       ...(disposals.dateTo ? { dateTo: disposals.dateTo } : {}),
     };
-    void run("disposals", () => downloadDisposalsReport(query));
+    void run(`disposals-${format}`, () => downloadDisposalsReport(query, format));
   }
 
   return (
@@ -115,8 +120,8 @@ export function ReportsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Every export is CSV, downloaded with your session&apos;s credentials. Date filters are UTC, and the end
-          date includes the whole day.
+          Every export is available as CSV or PDF, downloaded with your session&apos;s credentials. Date filters are
+          UTC, and the end date includes the whole day.
         </p>
       </div>
 
@@ -174,12 +179,21 @@ export function ReportsPage() {
             />
           </div>
         </div>
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            leftIcon={<FileText className="h-4 w-4" />}
+            loading={pendingKey === "inventory-pdf"}
+            onClick={() => handleInventory("pdf")}
+          >
+            Download inventory PDF
+          </Button>
           <Button
             type="button"
             leftIcon={<Download className="h-4 w-4" />}
-            loading={pendingKey === "inventory"}
-            onClick={handleInventory}
+            loading={pendingKey === "inventory-csv"}
+            onClick={() => handleInventory("csv")}
           >
             Download inventory CSV
           </Button>
@@ -214,12 +228,21 @@ export function ReportsPage() {
             hint="UTC"
           />
         </div>
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            leftIcon={<FileText className="h-4 w-4" />}
+            loading={pendingKey === "disposals-pdf"}
+            onClick={() => handleDisposals("pdf")}
+          >
+            Download disposals PDF
+          </Button>
           <Button
             type="button"
             leftIcon={<Download className="h-4 w-4" />}
-            loading={pendingKey === "disposals"}
-            onClick={handleDisposals}
+            loading={pendingKey === "disposals-csv"}
+            onClick={() => handleDisposals("csv")}
           >
             Download disposals CSV
           </Button>
@@ -246,21 +269,25 @@ export function ReportsPage() {
           </Button>
           <Button
             type="button"
-            leftIcon={<Download className="h-4 w-4" />}
-            loading={pendingKey === "audit"}
+            variant="outline"
+            leftIcon={<FileText className="h-4 w-4" />}
+            loading={pendingKey === "audit-pdf"}
             disabled={!auditId.trim()}
-            onClick={() => void run("audit", () => downloadAuditReport(auditId.trim()))}
+            onClick={() => void run("audit-pdf", () => downloadAuditReport(auditId.trim(), "pdf"))}
+          >
+            Download audit PDF
+          </Button>
+          <Button
+            type="button"
+            leftIcon={<Download className="h-4 w-4" />}
+            loading={pendingKey === "audit-csv"}
+            disabled={!auditId.trim()}
+            onClick={() => void run("audit-csv", () => downloadAuditReport(auditId.trim(), "csv"))}
           >
             Download audit CSV
           </Button>
         </div>
       </Card>
-
-      <EmptyState
-        icon={<FileBarChart className="h-8 w-8" />}
-        heading="PDF exports aren't available"
-        body="Only CSV is generated. A formatted PDF was marked a stretch item and deliberately not built — open the CSV in a spreadsheet instead."
-      />
     </div>
   );
 }

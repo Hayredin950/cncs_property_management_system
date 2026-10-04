@@ -24,11 +24,11 @@ This is the backend the frontend is building against. Every route below is also 
 | `POST /audits`, `POST /audits/:id/scan` | Staff, Admin | Start an audit and record scans as `FOUND`; clients cannot supply a result. |
 | `POST /audits/:id/complete` | Staff, Admin | Completes a `DEPARTMENT` audit, classifies results, and updates `lastAuditedAt` only for `FOUND` items. |
 | `GET /audits`, `GET /audits/:id` | Staff, Admin | Audit history and one session read back with its stored result rows. `GET /audits` is scoped like `GET /requests` (a Staff caller sees their own, an Admin sees all) and supports `mine`, `limit`, `offset`; its `counts` are derived from those rows. |
-| `GET /reports/inventory?format=csv` | Staff, Admin | Active and disposed inventory CSV; filters: `department`, `categoryId`, `status`, `dateFrom`, `dateTo`. |
-| `GET /reports/audit/:auditId?format=csv` | Staff, Admin | CSV for one audit, including an in-progress audit. |
-| `GET /reports/disposals?format=csv` | Staff, Admin | Approved-disposal CSV; filters: `department`, `dateFrom`, `dateTo`. |
+| `GET /reports/inventory?format=csv\|pdf` | Staff, Admin | Active and disposed inventory; filters: `department`, `categoryId`, `status`, `dateFrom`, `dateTo`. |
+| `GET /reports/audit/:auditId?format=csv\|pdf` | Staff, Admin | One audit, including an in-progress one. |
+| `GET /reports/disposals?format=csv\|pdf` | Staff, Admin | Approved disposals; filters: `department`, `dateFrom`, `dateTo`. |
 
-Report dates use UTC and `dateTo` includes the whole UTC day. CSV decimals are strings.
+Report dates use UTC and `dateTo` includes the whole UTC day. CSV decimals are strings. Every report supports `format=csv` (the default) and `format=pdf`; anything else is a 400. The two formats are built from the same headers and rows (`utils/csv.ts`, `utils/pdf.ts`), so they cannot drift.
 
 ## Email is one address, whatever its casing
 
@@ -115,8 +115,8 @@ The frontend must never rely on UI hiding alone or duplicate this rule. The API 
 
 ## Stretch and intentionally absent work
 
-- PDF reports are not built; CSV is the only supported format.
-- `LOCATION` audit completion is not built. Only `scopeType: "DEPARTMENT"` completes; other scope types return 400.
+- PDF reports **are** built now (F10.2), as a hand-rolled dependency-free table writer (`utils/pdf.ts`). `?format=` anything other than `csv` or `pdf` is a 400.
+- `LOCATION` audit completion is not built. `DEPARTMENT` and `BUILDING` both complete; any other scope type returns 400.
 - `GET /audits` returns **sessions and counts only**; the per-item breakdown — tag, name, room and result for every row — is `GET /audits/:id`, which the report page now renders, and the CSV. There is no audit-session delete or reopen, and `POST /audits/:id/complete` is one-way (a second call is a 409).
 - **An audit does not snapshot its scope.** Nothing writes a list of "items in scope" when a session starts: `POST /audits/:id/complete` computes FOUND/MISSING/LOCATION_MISMATCH by running the scope filter *at completion* and comparing it with the stored scans. An item registered, moved or disposed during the audit is therefore classified against its state then, not at the start, and an item that was in scope at the start and later deleted leaves no trace of having been in scope at all. Cheap to add (a scope-snapshot table, or an id list on the session) and deliberately deferred — it is the honest limit of what the current numbers mean.
 - In-app notifications are built. Real email is not: `NOTIFY_EMAIL` gates a stub that only logs; it has no SMTP transport.
@@ -125,7 +125,7 @@ The frontend must never rely on UI hiding alone or duplicate this rule. The API 
 ## Known rough edges
 
 - No test database exists. Route tests mock Prisma, so database transactions and query clauses are not automated end-to-end.
-- Completion deduplicates scans for classification, but audit CSV exports every persisted scan row. A double scan produces duplicate rows.
+- Completion deduplicates scans for classification, and the readers now collapse duplicate scan rows too (`collapseAuditRows` in `services/auditCompletion.ts`, used by `GET /audits`, `GET /audits/:id` and the audit export). A double-scan no longer inflates the FOUND count or duplicate a CSV/PDF line. What is *not* enforced is uniqueness at the persistence layer: `AuditItemResultRow` still accepts multiple rows for one item, so the raw table remains scan-level.
 - The email unique index is case-sensitive, so an account pair created before the case-insensitive rule (or inserted directly) can still differ only by case; login then matches whichever row `findFirst` returns first. The durable fix is a `citext` column or a functional unique index on `lower(email)`, which needs a migration — the rule above prevents new pairs, it cannot repair old ones.
 - `auditId` is interpolated directly into the audit download filename; it is neither UUID-validated nor header-sanitized separately.
 - Privileged `GET /items` cost fields are `Prisma.Decimal` values serialized as strings; handle them as strings until a deliberate API change.

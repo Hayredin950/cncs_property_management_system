@@ -4,8 +4,10 @@ import { prisma } from "../lib/prisma.js";
 import { httpError } from "../lib/httpError.js";
 import { authenticate, requireRole } from "../middleware/auth.js";
 import { validateQuery, validatedQuery, type ValidatedRequest } from "../middleware/validate.js";
+import { collapseAuditRows } from "../services/auditCompletion.js";
 import { allItemsWhere } from "../services/itemVisibility.js";
 import { toCsv, type CsvValue } from "../utils/csv.js";
+import { toPdfTable } from "../utils/pdf.js";
 
 /**
  * Report exports (SRS F10). Staff/Admin only — these are internal
@@ -17,17 +19,17 @@ import { toCsv, type CsvValue } from "../utils/csv.js";
  * "queryable in reports/history", and hiding it here would be the one call
  * site `itemVisibility.ts` warns about.
  *
- * Only `format=csv` is supported. The three-phase plan marks PDF a
- * stretch/cut-first item; CSV is the one every exit criterion requires, so
- * that's the only format this file commits to. `?format=` anything else is
- * a 400, not a silent fallback to JSON — a report endpoint that quietly
- * returns JSON when a client typos the query string is a worse failure mode
- * than a clear rejection.
+ * Both `format=csv` and `format=pdf` are supported, CSV by default. The three-
+ * phase plan marks PDF a stretch/cut-first item, and it is now built on top of
+ * the same headers/rows the CSV path already produces (`utils/pdf.ts`), so the
+ * two formats cannot drift apart. `?format=` anything else is a 400, not a
+ * silent fallback to JSON — a report endpoint that quietly returns JSON when a
+ * client typos the query string is a worse failure mode than a clear rejection.
  */
 
 export const reportsRouter: ExpressRouter = Router();
 
-const FORMAT = z.enum(["csv"]).default("csv");
+const FORMAT = z.enum(["csv", "pdf"]).default("csv");
 
 /**
  * `dateFrom`/`dateTo` are inclusive on both endpoints, and a range with
@@ -82,6 +84,7 @@ const disposalsQuerySchema = z
 type DisposalsQuery = z.infer<typeof disposalsQuerySchema>;
 
 const auditReportQuerySchema = z.object({ format: FORMAT });
+type AuditReportQuery = z.infer<typeof auditReportQuerySchema>;
 
 /**
  * Inclusive upper bound: a bare `dateTo` should include that whole day, not
@@ -105,6 +108,25 @@ function sendCsv(res: Response, filename: string, csv: string): void {
     .type("text/csv")
     .set("Content-Disposition", `attachment; filename="${filename}"`)
     .send(csv);
+}
+
+/**
+ * Same headers/rows as the CSV path, rendered as a table. Kept beside `sendCsv`
+ * so a new report only has to build its rows once and pick a format at the end.
+ */
+function sendPdf(
+  res: Response,
+  filename: string,
+  title: string,
+  headers: string[],
+  rows: Array<Record<string, CsvValue>>,
+): void {
+  const pdf = toPdfTable({ title, subtitle: `Generated ${new Date().toISOString()}`, headers, rows });
+  res
+    .status(200)
+    .type("application/pdf")
+    .set("Content-Disposition", `attachment; filename="${filename}"`)
+    .send(pdf);
 }
 
 function todayStamp(): string {
@@ -211,6 +233,10 @@ reportsRouter.get(
         lastAuditedAt: item.lastAuditedAt,
       }));
 
+      if (query.format === "pdf") {
+        sendPdf(res, `inventory-report-${todayStamp()}.pdf`, "CNCS Property - Inventory report", headers, rows);
+        return;
+      }
       sendCsv(res, `inventory-report-${todayStamp()}.csv`, toCsv(headers, rows));
     } catch (err) {
       next(err);
@@ -234,6 +260,7 @@ reportsRouter.get(
   validateQuery(auditReportQuerySchema),
   async (req: ValidatedRequest, res: Response, next: NextFunction) => {
     try {
+      const query = validatedQuery<AuditReportQuery>(req);
       const auditId = req.params.auditId;
       if (typeof auditId !== "string") {
         throw httpError(400, "Audit session ID is required");
@@ -257,6 +284,7 @@ reportsRouter.get(
       const resultRows = await prisma.auditItemResultRow.findMany({
         where: { auditSessionId: auditId },
         select: {
+          itemId: true,
           result: true,
           scannedAt: true,
           item: {
@@ -272,6 +300,14 @@ reportsRouter.get(
         },
         orderBy: [{ result: "asc" }, { item: { tagId: "asc" } }],
       });
+
+      /*
+        One row per item, not per scan: a sticker scanned twice persists two
+        FOUND rows, and the export previously emitted both (D11). The collapse
+        keeps the latest `scannedAt` and is the same helper `GET /audits/:id`
+        uses, so the CSV and the on-screen breakdown cannot disagree.
+      */
+      const collapsedRows = collapseAuditRows(resultRows);
 
       const headers = [
         "auditSessionId",
@@ -289,7 +325,7 @@ reportsRouter.get(
         "result",
         "scannedAt",
       ];
-      const rows: Array<Record<string, CsvValue>> = resultRows.map((row) => ({
+      const rows: Array<Record<string, CsvValue>> = collapsedRows.map((row) => ({
         auditSessionId: session.id,
         scopeType: session.scopeType,
         scopeValue: session.scopeValue,
@@ -306,6 +342,18 @@ reportsRouter.get(
         scannedAt: row.scannedAt,
       }));
 
+      if (query.format === "pdf") {
+        sendPdf(
+          res,
+          `audit-report-${auditId}.pdf`,
+          `CNCS Property - Audit report (${session.scopeType}${
+            session.scopeValue ? `: ${session.scopeValue}` : ""
+          })`,
+          headers,
+          rows,
+        );
+        return;
+      }
       sendCsv(res, `audit-report-${auditId}.csv`, toCsv(headers, rows));
     } catch (err) {
       next(err);
@@ -394,6 +442,10 @@ reportsRouter.get(
         decidedAt: r.decidedAt,
       }));
 
+      if (query.format === "pdf") {
+        sendPdf(res, `disposals-report-${todayStamp()}.pdf`, "CNCS Property - Disposals report", headers, rows);
+        return;
+      }
       sendCsv(res, `disposals-report-${todayStamp()}.csv`, toCsv(headers, rows));
     } catch (err) {
       next(err);

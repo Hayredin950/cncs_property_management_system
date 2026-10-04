@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
-import { computeAuditResults } from "../services/auditCompletion.js";
+import { collapseAuditRows, computeAuditResults } from "../services/auditCompletion.js";
 
 export const auditsRouter: Router = Router();
 
@@ -363,21 +363,22 @@ auditsRouter.get(
       ]);
 
       /**
-       * One grouped count for the whole page rather than a query per row. Keyed by
-       * session *and* result, so a session with no rows at all simply has no entry
-       * and the lookup below falls through to zero.
+       * One grouped query for the whole page rather than a query per row, grouped
+       * by `itemId` as well as `result` so a double-scanned item is counted once.
+       * Each returned group *is* one item in one result state, so the count of
+       * groups — not `_count._all` — is the number this session reports. A session
+       * with no rows at all simply has no group and falls through to zero.
        */
       const grouped = sessions.length
         ? await prisma.auditItemResultRow.groupBy({
-            by: ["auditSessionId", "result"],
+            by: ["auditSessionId", "itemId", "result"],
             where: { auditSessionId: { in: sessions.map((session) => session.id) } },
             _count: { _all: true },
           })
         : [];
 
       const countFor = (sessionId: string, result: string) =>
-        grouped.find((row) => row.auditSessionId === sessionId && row.result === result)?._count._all ??
-        0;
+        grouped.filter((row) => row.auditSessionId === sessionId && row.result === result).length;
 
       res.status(200).json({
         audits: sessions.map((session) => ({
@@ -445,8 +446,15 @@ auditsRouter.get(
         },
       });
 
+      /*
+        One row per item, even when a sticker was scanned twice: the scan endpoint
+        appends a row per accepted call, so without this the read-back would report
+        an inflated FOUND count and render the same item twice in the breakdown.
+      */
+      const collapsedRows = collapseAuditRows(rows);
+
       const byResult = (result: string) =>
-        rows.filter((row) => row.result === result).map((row) => row.itemId);
+        collapsedRows.filter((row) => row.result === result).map((row) => row.itemId);
 
       res.status(200).json({
         id: session.id,
@@ -457,14 +465,14 @@ auditsRouter.get(
         completedAt: session.completedAt,
         completed: session.completedAt !== null,
         counts: {
-          found: rows.filter((row) => row.result === "FOUND").length,
-          missing: rows.filter((row) => row.result === "MISSING").length,
-          locationMismatch: rows.filter((row) => row.result === "LOCATION_MISMATCH").length,
+          found: collapsedRows.filter((row) => row.result === "FOUND").length,
+          missing: collapsedRows.filter((row) => row.result === "MISSING").length,
+          locationMismatch: collapsedRows.filter((row) => row.result === "LOCATION_MISMATCH").length,
         },
         found: byResult("FOUND"),
         missing: byResult("MISSING"),
         locationMismatch: byResult("LOCATION_MISMATCH"),
-        rows,
+        rows: collapsedRows,
       });
     } catch (err) {
       next(err);

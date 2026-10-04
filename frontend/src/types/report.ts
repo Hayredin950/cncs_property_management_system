@@ -1,15 +1,17 @@
 import type { ItemStatus } from "./enums";
 
 /**
- * Typed from `backend/src/routes/reports.ts`. All three exports are CSV only —
- * `?format=` anything else is a 400, not a silent JSON fallback (F10.2's PDF is
- * deliberately not built; see docs/frontend-phase-3.md).
+ * Typed from `backend/src/routes/reports.ts`. Every export supports CSV and PDF;
+ * `?format=` anything else is a 400, not a silent JSON fallback (F10.2).
  *
  * Dates are sent as `YYYY-MM-DD` strings; the server parses them as UTC and
  * `dateTo` includes the whole UTC day. Every date control in the reports UI is
  * therefore labelled UTC — a bare date range would otherwise silently lose or
  * gain a day depending on the viewer's timezone.
  */
+
+/** The two formats every report endpoint accepts (`csv` is the server default). */
+export type ReportFormat = "csv" | "pdf";
 
 export interface InventoryReportQuery {
   department?: string;

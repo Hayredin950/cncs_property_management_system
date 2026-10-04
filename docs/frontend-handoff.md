@@ -31,7 +31,7 @@ shipped as the `frontend` service of the repo's single `docker compose up`.
 | `/requests`, `/requests/new`, `/requests/:id` | Queue, file a transfer/disposal, approve or reject (F6, F7) |
 | `/notifications` | In-app inbox: read on open, dismiss one with its X, mark all read, clear all (F8) |
 | `/audits`, `/audit/new`, `/audit/:id/scan`, `/audit/:id/report` | Audit history, walkthrough and completion summary (F9) |
-| `/reports` | Inventory / disposals / audit CSV exports (F10.1, F10.3) |
+| `/reports` | Inventory / disposals / audit CSV or PDF exports (F10.1, F10.2, F10.3) |
 | `/admin/users`, `/admin/categories` | Admin-only account and category management (list, create, edit, role change, delete) |
 | `*` | The 404 — also what a role-scoped route renders for the wrong role (never a separate "forbidden" page) |
 
@@ -83,7 +83,7 @@ deliberate asymmetry: `/item/:tagId` is the public route, `/items/:id` is the st
 
 ### Downloads are fetched, never linked
 
-The QR tag PNG and all three report CSVs sit behind `authenticate`. A plain `<a href>` sends no
+The QR tag PNG and every report download (CSV or PDF) sit behind `authenticate`. A plain `<a href>` sends no
 `Authorization` header, so it would save a 401 body under a `.csv` name. Everything binary goes
 through `apiClient.blob()` → `downloadBlob()`.
 
@@ -275,9 +275,10 @@ stands at completion. See the audit bullets under "Stretch and intentionally abs
 
 - **`/map` as a real map.** No coordinates or tiles exist in the schema. It ships as building
   grouping, which answers the actual question. The SRS cut order lists F5.2 first; it survived as
-  this.
-- **PDF exports (F10.2).** Stretch item, never built. `/reports` states this rather than offering
-  a disabled button. CSV only, `?format=` anything else is a 400.
+  this.- **~~PDF exports (F10.2).~~** Built. `/reports` and the audit report page offer
+  a PDF beside the CSV on every export; both hit the same endpoint with
+  `format=pdf`, so the only difference is the extension. `?format=` anything other
+  than `csv` or `pdf` is a 400.
 - **Real email (F8.3).** The backend gates a stub transport behind `NOTIFY_EMAIL`; the frontend
   only knows in-app notifications.
 - **A `canReview` role.** Approval is ADMIN-only; the SRS leaves the reviewer role unresolved and
@@ -299,11 +300,7 @@ one on the page rather than failing silently.
 | G2 | No *public* user API | `GET /users` is **Admin-only**, and that single endpoint is what `/admin/users` and the item form's custodian picker read. A Staff registrar therefore cannot enumerate accounts, so the picker offers them only their own — by choice, not by failure. There is still no self-service profile or account-deactivation endpoint |
 | ~~G3~~ | **Closed.** `POST /uploads/photo` exists now | The photo field takes a camera shot, a device file, or a pasted URL — in create mode too, which is why the upload is item-less and returns a URL the form submits |
 | G4 | 1-day JWT, no refresh | Sessions end after a day of inactivity even though F1.4 says until explicit logout |
-| G9 | No `GET /departments` | Department lists are derived from one page of `GET /items`; the audit picker is locked to those values because completion matches `scopeValue` exactly and case-sensitively |
-
-Backend-side note recorded here so it isn't rediscovered as a frontend bug: **duplicate scan rows
-appear in the audit CSV.** The scan endpoint appends a row per accepted call; completion
-deduplicates for classification. Two devices scanning one item → two export rows, one result.
+| G9 | No `GET /departments` | Department lists are derived from one page of `GET /items`; the audit picker is locked to those values because completion matches `scopeValue` exactly and case-sensitively |~~Backend-side note: duplicate scan rows appeared in the audit CSV.~~ Fixed. The scan endpoint still appends a row per accepted call, but every reader now collapses them per item (`collapseAuditRows`), so the CSV, the PDF and the on-screen breakdown each show one row — and the report's FOUND count is items, not scans.
 
 ## Running it
 

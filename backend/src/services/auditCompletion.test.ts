@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeAuditResults } from "./auditCompletion.js";
+import { collapseAuditRows, computeAuditResults } from "./auditCompletion.js";
 
 describe("computeAuditResults", () => {
   it("classifies an all-found audit", () => {
@@ -68,5 +68,44 @@ describe("computeAuditResults", () => {
 
     expect(inScope).toEqual(["item-1", "item-2"]);
     expect(scanned).toEqual(["item-1", "item-1", "item-3"]);
+  });
+});
+
+describe("collapseAuditRows", () => {
+  const row = (itemId: string, scannedAt: Date | null) => ({ itemId, scannedAt });
+
+  it("keeps one row per item, in order of first appearance", () => {
+    const collapsed = collapseAuditRows([
+      row("item-1", new Date("2026-01-01T10:00:00.000Z")),
+      row("item-2", new Date("2026-01-01T10:01:00.000Z")),
+      row("item-1", new Date("2026-01-01T10:02:00.000Z")),
+    ]);
+
+    expect(collapsed.map((r) => r.itemId)).toEqual(["item-1", "item-2"]);
+  });
+
+  it("keeps the latest scannedAt when a sticker is scanned twice", () => {
+    const collapsed = collapseAuditRows([
+      row("item-1", new Date("2026-01-01T10:00:00.000Z")),
+      row("item-1", new Date("2026-01-01T11:30:00.000Z")),
+    ]);
+
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0]!.scannedAt).toEqual(new Date("2026-01-01T11:30:00.000Z"));
+  });
+
+  it("prefers a real scan over a completion-written MISSING row (scannedAt null)", () => {
+    const collapsed = collapseAuditRows([
+      row("item-1", null),
+      row("item-1", new Date("2026-01-01T10:00:00.000Z")),
+    ]);
+
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0]!.scannedAt).not.toBeNull();
+  });
+
+  it("is a no-op when no item repeats", () => {
+    const rows = [row("a", null), row("b", null), row("c", null)];
+    expect(collapseAuditRows(rows)).toEqual(rows);
   });
 });

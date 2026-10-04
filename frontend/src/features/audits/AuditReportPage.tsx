@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Download, HelpCircle, MapPinOff } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileText, HelpCircle, MapPinOff } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { fetchAuditSession } from "../../api/audits";
@@ -14,6 +14,7 @@ import { loadCompletionSummary, loadWalkthrough } from "../../lib/auditWalkthrou
 import { formatDateTimeUTC } from "../../lib/formatters";
 import { toast } from "../../lib/toast";
 import type { AuditCompletionResponse, AuditResultRow } from "../../types/audit";
+import type { ReportFormat } from "../../types/report";
 
 /**
  * One breakdown group, keyed to the same three results the summary cards above
@@ -77,7 +78,9 @@ const RESULT_GROUPS: readonly ResultGroup[] = [
 export function AuditReportPage() {
   const { id = "" } = useParams<{ id: string }>();
   const location = useLocation();
-  const [downloading, setDownloading] = useState(false);
+  // Which format is in flight (null when idle), so the two download buttons show
+  // their own spinner instead of both appearing busy.
+  const [downloading, setDownloading] = useState<ReportFormat | null>(null);
 
   const fromState = (location.state as { summary?: AuditCompletionResponse } | null)?.summary;
   const cached = fromState ?? loadCompletionSummary(id);
@@ -154,15 +157,15 @@ export function AuditReportPage() {
     );
   }
 
-  async function handleDownload() {
-    setDownloading(true);
+  async function handleDownload(format: ReportFormat) {
+    setDownloading(format);
     try {
-      const filename = await saveReport(() => downloadAuditReport(id));
+      const filename = await saveReport(() => downloadAuditReport(id, format));
       toast.success(`Downloaded ${filename}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't download the audit report");
     } finally {
-      setDownloading(false);
+      setDownloading(null);
     }
   }
 
@@ -205,7 +208,7 @@ export function AuditReportPage() {
           are active items in the audited scope that weren&apos;t scanned;{" "}
           <strong className="font-semibold text-slate-900">outside scope</strong> items were scanned but don&apos;t
           belong to the scope being audited. Every row behind those three numbers is listed below, and those same
-          rows are what the CSV export contains.
+          rows are what the CSV and PDF exports contain.
         </p>
       </Card>
 
@@ -301,9 +304,20 @@ export function AuditReportPage() {
         <Button
           type="button"
           variant="outline"
+          leftIcon={<FileText className="h-4 w-4" />}
+          loading={downloading === "pdf"}
+          disabled={downloading !== null && downloading !== "pdf"}
+          onClick={() => void handleDownload("pdf")}
+        >
+          Download audit PDF
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
           leftIcon={<Download className="h-4 w-4" />}
-          loading={downloading}
-          onClick={() => void handleDownload()}
+          loading={downloading === "csv"}
+          disabled={downloading !== null && downloading !== "csv"}
+          onClick={() => void handleDownload("csv")}
         >
           Download audit CSV
         </Button>

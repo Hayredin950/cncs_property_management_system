@@ -286,6 +286,50 @@ describe("report exports (F10)", () => {
     expect(filenames).toContain("audit-report-audit-1.csv");
   });
 
+  it("downloads PDFs with format=pdf and a .pdf filename", async () => {
+    const requests: Request[] = [];
+    const record = ({ request }: { request: Request }) => {
+      requests.push(request);
+      return new HttpResponse("%PDF-1.4\n%%EOF\n", {
+        headers: { "Content-Type": "application/pdf" },
+      });
+    };
+
+    server.use(
+      http.get(`${API}/reports/inventory`, record),
+      http.get(`${API}/reports/disposals`, record),
+      http.get(`${API}/reports/audit/:auditId`, record),
+    );
+
+    const { filenames } = captureDownloads();
+
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/reports"] });
+    const user = userEvent.setup();
+
+    await screen.findByRole("heading", { name: "Reports" });
+
+    await user.click(screen.getByRole("button", { name: "Download inventory PDF" }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(new URL(requests[0]!.url).searchParams.get("format")).toBe("pdf");
+    expect(requests[0]!.headers.get("authorization")).toBe("Bearer test-token");
+
+    await user.click(screen.getByRole("button", { name: "Download disposals PDF" }));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(new URL(requests[1]!.url).searchParams.get("format")).toBe("pdf");
+
+    await user.type(screen.getByLabelText("Audit session ID"), "audit-1");
+    await user.click(screen.getByRole("button", { name: "Download audit PDF" }));
+    await waitFor(() => expect(requests).toHaveLength(3));
+    expect(new URL(requests[2]!.url).pathname).toBe("/api/v1/reports/audit/audit-1");
+    expect(new URL(requests[2]!.url).searchParams.get("format")).toBe("pdf");
+
+    expect(filenames).toHaveLength(3);
+    expect(filenames.some((name) => /^inventory-report-\d{4}-\d{2}-\d{2}\.pdf$/.test(name))).toBe(true);
+    expect(filenames.some((name) => /^disposals-report-\d{4}-\d{2}-\d{2}\.pdf$/.test(name))).toBe(true);
+    expect(filenames).toContain("audit-report-audit-1.pdf");
+  });
+
   it("catches a reversed date range before it reaches the API", async () => {
     let reportCalls = 0;
     server.use(

@@ -44,10 +44,48 @@ describe("Report Endpoints", () => {
 
     it("returns 400 for an unsupported format", async () => {
       const res = await request(app)
-        .get("/api/v1/reports/inventory?format=pdf")
+        .get("/api/v1/reports/inventory?format=xlsx")
         .set("Authorization", `Bearer ${staffToken}`);
 
       expect(res.status).toBe(400);
+    });
+
+    it("returns a PDF attachment when format=pdf, from the same headers and rows", async () => {
+      vi.mocked(prisma.item.findMany).mockResolvedValueOnce([
+        {
+          tagId: "CNCS-0001",
+          name: "Dell Laptop",
+          category: { name: "Electronics" },
+          department: "Computer Science",
+          building: "CNCS Building",
+          floor: "3",
+          room: "312",
+          owner: { fullName: "Demo Staff", email: "staff@cncs.aau.edu.et" },
+          condition: "GOOD",
+          purchaseCost: { toString: () => "25000" },
+          currentValue: { toString: () => "18000" },
+          brand: "Dell",
+          model: "Latitude 5420",
+          serialNumber: "SN-123",
+          status: "ACTIVE",
+          disposalReason: null,
+          disposedAt: null,
+          registeredAt: new Date("2026-01-10T00:00:00.000Z"),
+          lastAuditedAt: null,
+        },
+      ] as never);
+
+      const res = await request(app)
+        .get("/api/v1/reports/inventory?format=pdf")
+        .set("Authorization", `Bearer ${staffToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("application/pdf");
+      expect(res.headers["content-disposition"]).toContain("inventory-report");
+      expect(res.headers["content-disposition"]).toContain(".pdf");
+      // Express sends a Buffer by default; `res.text` is empty for binary, so
+      // assert on the raw body instead.
+      expect(Buffer.from(res.body).toString("latin1")).toContain("%PDF-1.4");
     });
 
     it("returns 400 when dateFrom is after dateTo", async () => {
@@ -164,6 +202,7 @@ describe("Report Endpoints", () => {
       } as never);
       vi.mocked(prisma.auditItemResultRow.findMany).mockResolvedValueOnce([
         {
+          itemId: "item-1",
           result: "FOUND",
           scannedAt: new Date("2026-03-01T10:00:00.000Z"),
           item: {
@@ -188,6 +227,75 @@ describe("Report Endpoints", () => {
       expect(res.text).toContain("DEPARTMENT,CNCS");
       expect(res.text).toContain("CNCS-0001,Dell Laptop");
       expect(res.text).toContain("FOUND");
+    });
+
+    it("emits one row per item when a sticker was scanned twice (D11)", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+        id: auditId,
+        scopeType: "DEPARTMENT",
+        scopeValue: "CNCS",
+        startedAt: new Date("2026-03-01T09:00:00.000Z"),
+        completedAt: null,
+        runBy: { fullName: "Jane Doe", email: "jane@cncs.aau.edu.et" },
+      } as never);
+      vi.mocked(prisma.auditItemResultRow.findMany).mockResolvedValueOnce([
+        {
+          itemId: "item-1",
+          result: "FOUND",
+          scannedAt: new Date("2026-03-01T10:00:00.000Z"),
+          item: {
+            tagId: "CNCS-0001",
+            name: "Dell Laptop",
+            department: "CNCS",
+            building: "CNCS Building",
+            floor: "3",
+            room: "312",
+          },
+        },
+        {
+          itemId: "item-1",
+          result: "FOUND",
+          scannedAt: new Date("2026-03-01T10:05:00.000Z"),
+          item: {
+            tagId: "CNCS-0001",
+            name: "Dell Laptop",
+            department: "CNCS",
+            building: "CNCS Building",
+            floor: "3",
+            room: "312",
+          },
+        },
+      ] as never);
+
+      const res = await request(app)
+        .get(`/api/v1/reports/audit/${auditId}`)
+        .set("Authorization", `Bearer ${staffToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.text.match(/CNCS-0001/g)).toHaveLength(1);
+      // The latest scan time is the one the collapsed row keeps.
+      expect(res.text).toContain("2026-03-01T10:05:00.000Z");
+    });
+
+    it("returns a PDF attachment when format=pdf", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+        id: auditId,
+        scopeType: "DEPARTMENT",
+        scopeValue: "CNCS",
+        startedAt: new Date("2026-03-01T09:00:00.000Z"),
+        completedAt: null,
+        runBy: { fullName: "Jane Doe", email: "jane@cncs.aau.edu.et" },
+      } as never);
+      vi.mocked(prisma.auditItemResultRow.findMany).mockResolvedValueOnce([] as never);
+
+      const res = await request(app)
+        .get(`/api/v1/reports/audit/${auditId}?format=pdf`)
+        .set("Authorization", `Bearer ${staffToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("application/pdf");
+      expect(res.headers["content-disposition"]).toContain(`audit-report-${auditId}.pdf`);
+      expect(Buffer.from(res.body).toString("latin1")).toContain("%PDF-1.4");
     });
 
     it("still returns 200 with only FOUND rows for an in-progress (not yet completed) session", async () => {
@@ -272,6 +380,20 @@ describe("Report Endpoints", () => {
       expect(res.text).toContain("Beyond repair");
       expect(res.text).toContain("Demo Staff");
       expect(res.text).toContain("System Admin");
+    });
+
+    it("returns a PDF attachment when format=pdf", async () => {
+      vi.mocked(prisma.request.findMany).mockResolvedValueOnce([] as never);
+
+      const res = await request(app)
+        .get("/api/v1/reports/disposals?format=pdf")
+        .set("Authorization", `Bearer ${staffToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("application/pdf");
+      expect(res.headers["content-disposition"]).toContain("disposals-report");
+      expect(res.headers["content-disposition"]).toContain(".pdf");
+      expect(Buffer.from(res.body).toString("latin1")).toContain("%PDF-1.4");
     });
   });
 });

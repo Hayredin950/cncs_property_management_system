@@ -17,9 +17,9 @@ over.
 | `POST /audits`                | 1    | Ammar  | Starts a session with a scope (`scopeType`/`scopeValue`)                                                         |
 | `POST /audits/:id/scan`       | 1    | Ammar  | Records an item as physically scanned. Always persists `FOUND` — see [The audit lifecycle](#the-audit-lifecycle) |
 | `POST /audits/:id/complete`   | 2    | Latera | Computes `MISSING` / `LOCATION_MISMATCH`, closes the session, updates `lastAuditedAt`                            |
-| `GET /reports/inventory`      | 3    | Naomi  | CSV, all items (ACTIVE + DISPOSED)                                                                               |
-| `GET /reports/audit/:auditId` | 3    | Naomi  | CSV, one row per scan/classification                                                                             |
-| `GET /reports/disposals`      | 3    | Naomi  | CSV, one row per approved disposal `Request`                                                                     |
+| `GET /reports/inventory`      | 3    | Naomi  | CSV/PDF, all items (ACTIVE + DISPOSED)                                                                           |
+| `GET /reports/audit/:auditId` | 3    | Naomi  | CSV/PDF, one row per item (duplicate scans collapsed)                                                            |
+| `GET /reports/disposals`      | 3    | Naomi  | CSV/PDF, one row per approved disposal `Request`                                                                 |
 
 No schema changes across any of the three steps. `AuditSession` and `AuditItemResultRow`
 were migrated in Phase 1 and sat unused until this phase.
@@ -60,7 +60,7 @@ were migrated in Phase 1 and sat unused until this phase.
    audit completed
         |
         v
-9. Reports export the audit, inventory, and disposal history as CSV
+9. Reports export the audit, inventory, and disposal history as CSV or PDF
 ```
 
 ## Step 1 — Create audits and record scans
@@ -166,11 +166,10 @@ Finalizes an audit session and calculates the result for every relevant item.
 
 ## Step 3 — Reports
 
-**Owner:** Naomi.
-
-All three reports are Staff/Admin only, CSV only (`?format=` anything else is 400, not a
-silent JSON fallback), built on a hand-rolled RFC 4180 serializer (`utils/csv.ts`) rather
-than a new dependency.
+**Owner:** Naomi.All three reports are Staff/Admin only and come as CSV or PDF (`?format=csv` default,
+`?format=pdf` now built, anything else is 400, not a silent JSON fallback). Both formats
+are hand-rolled rather than pulling a dependency — RFC 4180 CSV (`utils/csv.ts`) and a
+minimal monospaced PDF table (`utils/pdf.ts`) — and both render the same headers and rows.
 
 - **`GET /reports/inventory`** — queries through `allItemsWhere()`, not
   `activeItemsWhere()`. Phase 2 left `allItemsWhere()` deliberately uncalled specifically
@@ -215,9 +214,9 @@ APPROVED`), not `Item.status`. Only the request row carries requester, reviewer,
 | POST   | `/audits`                 | Create an audit session                        |
 | POST   | `/audits/:id/scan`        | Record a physical scan as FOUND                |
 | POST   | `/audits/:id/complete`    | Calculate final results and complete the audit |
-| GET    | `/reports/inventory`      | Export all items as CSV                        |
-| GET    | `/reports/audit/:auditId` | Export one audit session's results as CSV      |
-| GET    | `/reports/disposals`      | Export approved disposals as CSV               |
+| GET    | `/reports/inventory`      | Export all items as CSV or PDF                 |
+| GET    | `/reports/audit/:auditId` | Export one audit session's results as CSV/PDF  |
+| GET    | `/reports/disposals`      | Export approved disposals as CSV or PDF        |
 
 ## Decision register (Phase 3)
 
@@ -228,22 +227,24 @@ Continuing Phase 2's D1–D7 numbering.
 | D8  | What does `scopeType` mean, and which values are supported?                          | Only `"DEPARTMENT"` (matches `Item.department`) is implemented. `scopeType` has no schema enum — it's a plain `String` — so this is an application-level decision, not a database constraint. Any other value, including `"LOCATION"`, returns 400 rather than a guessed parsing of `scopeValue`. **Still open:** what `LOCATION`'s `scopeValue` format should be.                                                   |
 | D9  | Does `lastAuditedAt` update for every in-scope item, or only confirmed-present ones? | Only `FOUND` items. A `MISSING` item was never verified present, so it doesn't get a fresh audit timestamp.                                                                                                                                                                                                                                                                                                          |
 | D10 | How is an out-of-scope scan classified?                                              | `LOCATION_MISMATCH`, computed at completion — not rejected at scan time, not silently dropped.                                                                                                                                                                                                                                                                                                                       |
-| D11 | How are duplicate scans of the same item handled?                                    | Classification math collapses them via `Set` — one logical result per item per audit. **Not yet enforced at the persistence layer**: `AuditItemResultRow` has no unique constraint on `(auditSessionId, itemId)`, and the audit CSV report currently emits one row per underlying scan record, not one per item — a double-scanned item will appear twice in the exported report. **Open — tracked as a known gap.** |
+| D11 | How are duplicate scans of the same item handled?                                    | Classification math collapses them via `Set` — one logical result per item per audit — and the **readers collapse them too** (`collapseAuditRows`, keeping the latest `scannedAt`), so `GET /audits`, `GET /audits/:id`, the CSV and the PDF each report one item once and the FOUND count is items, not scans. **Not enforced at the persistence layer**: `AuditItemResultRow` has no unique constraint on `(auditSessionId, itemId)`, so the raw table stays scan-level. |
 | D12 | Which `Item` source does the disposals report read from?                             | `Request` history, not `Item.status` — confirmed necessary because the seed script resets demo items to `ACTIVE`, which would silently erase disposal records from a status-based report on every re-seed.                                                                                                                                                                                                           |
 
 ## Known gaps at the end of Phase 3
 
-1. **Duplicate-scan rows are not deduplicated in the audit report** (D11). Recommended
-   fix: group by `itemId` in the report query, keeping the latest `scannedAt`, or
-   enforce uniqueness at the database level.
+1. **~~Duplicate-scan rows are not deduplicated in the audit report~~** (D11).
+   **Closed** by read-side collapsing (`collapseAuditRows`, latest `scannedAt`), applied
+   to `GET /audits`, `GET /audits/:id` and the export. The remaining choice is whether
+   to also add a unique constraint on `(auditSessionId, itemId)`, which needs a
+   migration and so was left out.
 2. **`LOCATION` scope type is unimplemented** (D8). Needs a product decision on
    `scopeValue`'s format before it can be built.
 3. **`auditId` route param is used unsanitized in a response header**
    (`Content-Disposition` on the audit report). Low risk — only reachable after a
    successful session lookup — but not yet hardened with `encodeURIComponent` or upfront
-   UUID validation the way `audits.ts` validates `itemId`.
-4. **No PDF export.** Marked stretch/cut-first in the original delivery plan; CSV is the
-   only format every exit criterion requires.
+   UUID validation the way `audits.ts` validates `itemId`.4. **PDF export is built** (was marked stretch/cut-first). A hand-rolled,
+   dependency-free table writer (`utils/pdf.ts`) sits beside the CSV serializer and
+   shares its headers and rows, so `?format=csv` and `?format=pdf` cannot diverge.
 5. **Inherited from Phase 1: still no test database.** Every route test in this phase
    mocks Prisma. Manual verification against seeded Neon data (done for Step 3) is the
    only place these reports have met a real database.

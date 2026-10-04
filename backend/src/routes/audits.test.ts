@@ -390,9 +390,21 @@ describe("GET /audits", () => {
     vi.clearAllMocks();
     vi.mocked(prisma.auditSession.findMany).mockResolvedValue([SESSION] as never);
     vi.mocked(prisma.auditSession.count).mockResolvedValue(1 as never);
+    // One group per (session, item, result) — the server counts groups, so 12
+    // FOUND groups is 12 distinct found items, whatever `_all` would say.
     vi.mocked(prisma.auditItemResultRow.groupBy).mockResolvedValue([
-      { auditSessionId: "session-1", result: "FOUND", _count: { _all: 12 } },
-      { auditSessionId: "session-1", result: "MISSING", _count: { _all: 3 } },
+      ...Array.from({ length: 12 }, (_, i) => ({
+        auditSessionId: "session-1",
+        itemId: `found-${i}`,
+        result: "FOUND",
+        _count: { _all: 1 },
+      })),
+      ...Array.from({ length: 3 }, (_, i) => ({
+        auditSessionId: "session-1",
+        itemId: `missing-${i}`,
+        result: "MISSING",
+        _count: { _all: 1 },
+      })),
     ] as never);
   });
 
@@ -423,6 +435,16 @@ describe("GET /audits", () => {
     expect(vi.mocked(prisma.auditSession.findMany).mock.calls[1]?.[0]?.where).toEqual({
       runById: "user-admin-1",
     });
+  });
+
+  it("counts items, not scan rows, when an item was scanned more than once (D11)", async () => {
+    vi.mocked(prisma.auditItemResultRow.groupBy).mockResolvedValue([
+      { auditSessionId: "session-1", itemId: "item-1", result: "FOUND", _count: { _all: 3 } },
+    ] as never);
+
+    const res = await request(app).get("/api/v1/audits").set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.body.audits[0].counts).toEqual({ found: 1, missing: 0, locationMismatch: 0 });
   });
 
   it("derives the counts from the stored rows and marks the session complete", async () => {
@@ -460,5 +482,43 @@ describe("GET /audits", () => {
     expect(res.status).toBe(200);
     expect(res.body.audits).toEqual([]);
     expect(prisma.auditItemResultRow.groupBy).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /audits/:id", () => {
+  const staffToken = createToken({ id: "user-staff-1", role: "STAFF" });
+
+  const item = {
+    tagId: "CNCS-0001",
+    name: "Dell Laptop",
+    department: "CNCS",
+    building: "CNCS Building",
+    floor: "3",
+    room: "312",
+  };
+
+  it("collapses duplicate scan rows so each item appears once (D11)", async () => {
+    vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+      id: "session-1",
+      scopeType: "DEPARTMENT",
+      scopeValue: "Computer Science",
+      runById: "user-staff-1",
+      startedAt: new Date("2026-09-20T08:00:00.000Z"),
+      completedAt: new Date("2026-09-20T09:30:00.000Z"),
+    } as never);
+    vi.mocked(prisma.auditItemResultRow.findMany).mockResolvedValueOnce([
+      { itemId: "item-1", result: "FOUND", scannedAt: new Date("2026-09-20T09:00:00.000Z"), item },
+      { itemId: "item-1", result: "FOUND", scannedAt: new Date("2026-09-20T09:05:00.000Z"), item },
+      { itemId: "item-2", result: "MISSING", scannedAt: null, item },
+    ] as never);
+
+    const res = await request(app)
+      .get("/api/v1/audits/session-1")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.counts).toEqual({ found: 1, missing: 1, locationMismatch: 0 });
+    expect(res.body.found).toEqual(["item-1"]);
+    expect(res.body.rows).toHaveLength(2);
   });
 });

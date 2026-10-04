@@ -12,7 +12,7 @@ first. The consolidated handoff is [`frontend-handoff.md`](frontend-handoff.md).
 | Start an audit (department scope) | `/audit/new` | `features/audits/AuditNewPage.tsx` |
 | Live scan walkthrough | `/audit/:id/scan` | `features/audits/AuditScanPage.tsx` |
 | Completion summary | `/audit/:id/report` | `features/audits/AuditReportPage.tsx` |
-| CSV exports (inventory / disposals / audit) | `/reports` | `features/reports/ReportsPage.tsx` |
+| CSV/PDF exports (inventory / disposals / audit) | `/reports` | `features/reports/ReportsPage.tsx` |
 | Browse by building | `/map` | `features/public/MapPage.tsx` |
 | "Is the backend up?" | public footer | `components/HealthIndicator.tsx`, `api/system.ts`, `hooks/useHealth.ts` |
 | PWA-lite (Add to Home Screen) | — | `public/manifest.webmanifest`, `index.html` |
@@ -74,8 +74,8 @@ behind `authenticate`, so a bare link sends no Bearer token and cheerfully downl
 named `.csv`. The download tests assert the `Authorization` header explicitly for exactly that
 reason, alongside:
 
-- `format=csv` on every request (anything else is a 400, not a JSON fallback — F10.2's PDF is
-  deliberately not built, and `/reports` says so instead of offering a dead button);
+- `format=csv` or `format=pdf` on every request (anything else is a 400, not a JSON fallback —
+  F10.2's PDF is built now, `utils/pdf.ts`, and every export offers both);
 - the filename, which mirrors the server's own `YYYY-MM-DD` stamp
   (`inventory-report-2026-09-22.csv`);
 - each export's supported filters and nothing more — inventory: department, category, status,
@@ -123,13 +123,13 @@ subset as if it were everything.
 | a scan sends only `{ itemId }` | a client cannot declare its own audit result |
 | already-completed session → 409 | the API's string is surfaced, nothing is retried |
 | unknown tag → failed scan | a bad sticker is never a silent success |
-| all three CSVs carry the auth header + `format=csv` | the bug a plain `<a href>` hides |
+| every report download carries the auth header + `format=csv`/`format=pdf` | the bug a plain `<a href>` hides |
 | reversed date range | caught client-side; the request is never sent |
 | `/map` groups by building | the link target stays the QR contract's singular `/item/:tagId` |
 | register an item | `POST /items` carries no `parentItemId` |
 | bundle an accessory, then reach the request form | `POST /items/:id/accessories` is `{ accessoryItemIds: [...] }`, and the item's request link lands on a *pre-filled* form |
 | file a transfer, then approve it once | `POST /requests` carries the transfer fields; approval fires exactly once, through the `ConfirmDialog` |
-| audit → scan → complete → every export | the audit's own export plus all three from `/reports`, each with `format=csv` |
+| audit → scan → complete → every export | the audit's own export plus all three from `/reports`, each with `format=csv` or `format=pdf` |
 
 The plan asks for one cross-phase walkthrough (§4, "Full-walkthrough test"). It runs as four
 focused cases instead of one fifteen-screen mega-test, deliberately: the plan's requirement is
@@ -216,7 +216,7 @@ Three harness fixes came out of writing these:
 
 ## Known limits
 
-- **CSV only.** No PDF (F10.2 was a stretch item), no email delivery beyond the backend's
+- **CSV or PDF.** F10.2's PDF was a stretch item and **is now built** (`utils/pdf.ts`); no email delivery beyond the backend's
   `NOTIFY_EMAIL` stub.
 - **Duplicate scan rows in the audit export.** The scan endpoint appends a row per accepted call
   and the client guards against re-scanning an item it has already recorded; the *server's*

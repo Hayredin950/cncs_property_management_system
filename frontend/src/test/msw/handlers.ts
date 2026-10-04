@@ -274,10 +274,10 @@ export const handlers = [
   }),
 
   /**
-   * Report exports (F10) — CSV only, behind `authenticate`. The `format=csv`
-   * default matches the server's `z.enum(["csv"]).default("csv")`, so a client
-   * that forgot the parameter would still get a file here but a 400 in real life;
-   * the download tests assert the parameter explicitly for that reason.
+   * Report exports (F10) — CSV or PDF, behind `authenticate`. The server defaults
+   * `format` to `csv` (`z.enum(["csv", "pdf"]).default("csv")`), so a client that
+   * forgot the parameter would still get a file; the download tests assert the
+   * parameter explicitly anyway, and now cover the PDF path too.
    */
   http.get(`${API}/reports/inventory`, () => (getToken() ? csv() : unauthorized())),
   http.get(`${API}/reports/disposals`, () => (getToken() ? csv() : unauthorized())),

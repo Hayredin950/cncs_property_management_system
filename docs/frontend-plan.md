@@ -36,10 +36,10 @@ All of SRS F1–F10, with the SRS's own priorities and cut order. The SRS names 
 | F7 | Disposal workflow | P0 | Same flow with `type: DISPOSAL`; disposed states |
 | F8 | Notifications | P1 | Inbox (dismiss one, mark all read, clear all) + an unread badge on the nav item (email is a stub) |
 | F9 | Scan-assisted audit | P1 | Start session, live scan, report |
-| F10 | Reporting & export | P1 | CSV downloads (PDF not built) |
+| F10 | Reporting & export | P1 | CSV and PDF downloads |
 
 **Out of scope** (SRS §8 and the built backend): MOFED integration, offline mode, native
-apps, consumables, GPS, automatic email-domain role detection, PDF export, real email.
+apps, consumables, GPS, automatic email-domain role detection, real email.
 
 ## 2. Stack
 
@@ -298,8 +298,8 @@ this table is the contract, that document is the blueprint.
   scans — `MISSING` rows are written by completion and were never scanned.
 
 ### Reports (F10)
-- **CSV only** (`format=csv`; anything else is 400) and staff/admin only, so they download
-  through the authenticated client into a Blob.
+- **CSV or PDF** (`format=csv` default, `format=pdf`; anything else is 400) and staff/admin
+  only, so they download through the authenticated client into a Blob.
 - Inventory filters: `department`, `categoryId`, `status`, `dateFrom`, `dateTo`. Disposals:
   `department`, `dateFrom`, `dateTo`. Audit: path param `auditId`.
 - Dates are UTC and `dateTo` includes the whole day — label the range as UTC so a user does
@@ -435,8 +435,9 @@ Restated from the handoff because they are frontend-visible:
 - **No OpenAPI spec.** Types in `src/types/` are hand-written from this doc and the routes;
   they drift silently. A shared/generated contract is a worthwhile follow-up.
 - **Privileged cost fields are strings** until the API shape changes deliberately.
-- **Audit CSV exports duplicate scans** that completion deduplicates. The UI cannot fix this
-  and should not present either number as authoritative.
+- **Audit exports used to duplicate scans** that completion deduplicates; the readers now
+  collapse them too (`collapseAuditRows`), so the CSV, the PDF and the on-screen breakdown each
+  show one row per item and the FOUND count is items, not scans.
 - **No test database** (backend) — mocked route tests mean some contract details are
   unverified against real Postgres.
 - **Email is a stub** — in-app notifications are the only real channel.

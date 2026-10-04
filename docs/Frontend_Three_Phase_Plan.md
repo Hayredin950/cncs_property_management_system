@@ -361,8 +361,8 @@ ambiguous.
   department, category, status, date range; disposals: department, date range; audit: the
   session). All three download through the **authenticated blob helper** built in Phase 1.
   Dates are UTC and `dateTo` includes the whole day — label the range as UTC so a user
-  doesn't silently lose or gain a day. CSV only; `?format=` anything else is a 400, not a
-  silent JSON fallback (F10.2's PDF is deliberately not built).
+  doesn't silently lose or gain a day. CSV or PDF (`?format=csv` default); `?format=`
+  anything else is a 400, not a silent JSON fallback (F10.2's PDF is built — `utils/pdf.ts`).
 - **`/map` (F5.2):** buildings highlighted from the location data already captured, linking
   to the items in each. **This is the first thing cut if Phase 3 runs short** (SRS §7 cut
   order) — F5.1's text location from Phase 1 already satisfies the underlying need.
@@ -385,8 +385,9 @@ ambiguous.
 
 - **Full-walkthrough test:** sign in as admin → register an item → bundle an accessory →
   file a transfer → approve it → start an audit → scan → complete → download all three
-  CSVs, asserting the request the UI makes at each step.
-- Report downloads: correct query parameters, correct filename, `format=csv` present, and
+  exports, asserting the request the UI makes at each step.
+- Report downloads: correct query parameters, correct filename, `format=csv`/`format=pdf`
+  present, and
   the auth header attached — the bug a plain `<a href>` hides.
 - Audit: completing an already-completed session is refused (`409`), a client cannot supply
   its own result, and the rendered summary matches the API's counts.
@@ -395,9 +396,9 @@ ambiguous.
 
 ### Documentation
 
-- `docs/frontend-phase-3.md`: the audit and report UI flows, the CSV download mechanism, and
-  the known limits (CSV only, duplicate scan rows in the audit export that the completion
-  logic deduplicates).
+- `docs/frontend-phase-3.md`: the audit and report UI flows, the CSV/PDF download mechanism,
+  and the known limits (duplicate scan rows in the audit export, which every reader now
+  collapses via `collapseAuditRows`).
 - `docs/frontend-handoff.md`, mirroring `docs/backend-handoff.md`: what's built, what's
   deliberately cut and why (map, PDF, real email), the spec-vs-backend gaps restated for
   whoever picks this up, and — one more time — that field visibility is server-enforced and

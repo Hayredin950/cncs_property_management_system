@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Modify this file to customize your launch splash screen -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="?android:colorBackground" />
+    <!--
+      White, explicitly — not `?android:colorBackground`. This file is the one that
+      wins from API 21 up, and on a phone in dark mode `colorBackground` is black, so
+      the app opened onto a black window while its own first frame is white: a flash
+      of the wrong app. This client has no dark theme, so the window it opens in is
+      the window it keeps.
+    -->
+    <item android:drawable="@android:color/white" />
 
     <!-- You can insert your own image assets here -->
     <!-- <item>

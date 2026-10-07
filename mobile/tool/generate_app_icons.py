@@ -17,7 +17,6 @@ Outputs:
 
   android/app/src/main/res/mipmap-*/ic_launcher.png            legacy launcher icon
   android/app/src/main/res/mipmap-*/ic_launcher_foreground.png adaptive foreground
-  android/app/src/main/res/mipmap-*/ic_launcher_monochrome.png themed-icon silhouette
   android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml   adaptive icon
   android/app/src/main/res/values/ic_launcher_background.xml   the background colour
   web/icons/*.png                                              PWA icons + favicon
@@ -86,19 +85,16 @@ def centred_mark(mark: Image.Image, size: int, fraction: float) -> Image.Image:
     return canvas
 
 
-def silhouette(mark: Image.Image, size: int, fraction: float) -> Image.Image:
-    """The mark's shape as one flat colour, for Android 13+ themed icons.
-
-    The launcher tints this layer, so only the outline matters — an alpha cut-out of
-    the mark itself, which is why it is derived from the transparent master rather
-    than from the navy tile.
-    """
-    shape = centred_mark(mark, size, fraction)
-    pixels = np.array(shape)
-    ink = pixels[:, :, 3]
-    pixels[:, :, 0:3] = 255
-    pixels[:, :, 3] = (ink > ALPHA_THRESHOLD) * 255
-    return Image.fromarray(pixels, "RGBA")
+#
+# There is deliberately no `monochrome` layer, so no themed-icon silhouette is
+# generated. Android tints that layer with a single colour, and the measure of it is
+# the mark's **alpha**: the mark is a solid shape (74% of its bounding box, with no
+# enclosed transparent area at all), because its design lives in its colour, not in
+# cut-outs. A silhouette of it is therefore a featureless blob — which is exactly
+# what a phone with themed icons enabled drew: one flat dark shape where the mark
+# had been, the colour gone and only the edges left to see. With no monochrome
+# layer the launcher keeps the real icon instead of inventing a worse version of it;
+# `centred_mark` above is what draws the layer we do ship.
 
 
 def save(image: Image.Image, path: pathlib.Path) -> None:
@@ -108,7 +104,7 @@ def save(image: Image.Image, path: pathlib.Path) -> None:
 
 
 def write_adaptive_xml() -> None:
-    """The adaptive icon: a flat navy background, the mark, and a themed silhouette."""
+    """The adaptive icon: a flat navy background and the mark."""
     save_text(
         RES / "mipmap-anydpi-v26/ic_launcher.xml",
         """<?xml version="1.0" encoding="utf-8"?>
@@ -121,7 +117,6 @@ def write_adaptive_xml() -> None:
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@mipmap/ic_launcher_foreground" />
-    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
 </adaptive-icon>
 """,
     )
@@ -174,8 +169,9 @@ def main() -> None:
     for density, size in ADAPTIVE_SIZES.items():
         save(centred_mark(mark, size, SAFE_FRACTION),
              RES / f"mipmap-{density}/ic_launcher_foreground.png")
-        save(silhouette(mark, size, SAFE_FRACTION),
-             RES / f"mipmap-{density}/ic_launcher_monochrome.png")
+        # Themed-icon silhouettes are removed, and stale ones are deleted: see the
+        # note above `main()` for why an alpha silhouette of this mark is unusable.
+        (RES / f"mipmap-{density}/ic_launcher_monochrome.png").unlink(missing_ok=True)
 
     print("Android resource files")
     write_adaptive_xml()

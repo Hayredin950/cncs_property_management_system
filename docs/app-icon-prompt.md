@@ -65,8 +65,17 @@ hairlines, off-centre composition, cropped shapes at the edge, more than three c
    only the middle ~66 % (Android overlays it on the background layer and masks it).
 3. **Adaptive background** — a flat 1024 × 1024 #014166 PNG (or the same navy as a colour
    resource).
-4. **Monochrome / themed** — the mark alone, single colour, transparent, for Android 13+
-   themed icons: the silhouette must stay recognisable without the accent red.
+4. **Monochrome / themed** — *not generated, and the app ships no themed-icon layer.*
+   Android tints that layer with one flat colour, and what it silhouettes is the
+   mark's **alpha** — which for this mark is a solid shape (74% of its bounding box,
+   with no enclosed transparent area), because its design lives in its colour rather
+   than in cut-outs. The result on a phone with themed icons enabled was one flat dark
+   blob where the mark had been: the colour gone, only the edges left to see. Without
+   the layer, launchers keep the real icon.
+
+   If a themed icon is wanted later it has to be **drawn** as a glyph first — a
+   single-colour design of its own, not a silhouette derived from the colour art. That
+   is a new generation, and it goes in this file as variant 1.
 5. **Wordmark (optional)** — a horizontal lockup of the mark plus
    “CNCS Property Management”, dark-on-light, for the About screen and the store listing.
 6. **Splash mark (optional)** — the mark alone on transparent, ≥ 512 px.
@@ -85,3 +94,7 @@ Drop the master (and the variants you generated) anywhere in the repo — for ex
 
 A generator that cannot produce transparent PNGs is fine for step 1 — the adaptive
 foreground can be cut out of a flat background afterwards.
+
+`mobile/tool/generate_app_icons.py` reads the two masters and writes every Android
+layer, the adaptive XML and the web icons; re-run it after replacing either master
+(`python3 mobile/tool/generate_app_icons.py`).

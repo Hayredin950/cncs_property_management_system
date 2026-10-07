@@ -1,6 +1,6 @@
-import QRCode from "qrcode";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { renderStickerPng } from "./tagSticker.js";
 
 const UPLOADS_ROOT = process.env.UPLOADS_DIR ?? path.join(process.cwd(), "uploads");
 const TAGS_DIR = path.join(UPLOADS_ROOT, "tags");
@@ -37,8 +37,14 @@ async function ensureTagsDir(): Promise<void> {
 }
 
 /**
- * Generates a QR PNG for the given tagId, encoding a link to the public item
- * page, and best-effort caches it under `uploads/tags/<tagId>.png`.
+ * Generates the printable tag PNG for the given tagId — a QR code for the
+ * public item page with the Tag ID printed under it — and best-effort caches
+ * it under `uploads/tags/<tagId>.png`.
+ *
+ * The caption is part of the image, not something a client draws beside it: the
+ * file is what gets printed, shared and stuck on equipment, and a sticker whose
+ * only human-readable identifier lives in the app is unreadable the moment it
+ * leaves the app. See `utils/tagSticker.ts`.
  *
  * Called from:
  *  - POST /items                      (Teammate B, on item creation)
@@ -51,12 +57,7 @@ export async function generateTagQR(tagId: string): Promise<GeneratedTag> {
   }
 
   const url = tagUrlFor(tagId);
-  const buffer = await QRCode.toBuffer(url, {
-    type: "png",
-    errorCorrectionLevel: "M",
-    margin: 2,
-    width: 512,
-  });
+  const buffer = renderStickerPng(url, tagId.trim());
 
   const filePath = tagFilePath(tagId);
 

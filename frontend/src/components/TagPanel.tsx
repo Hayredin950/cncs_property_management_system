@@ -89,7 +89,11 @@ export function TagPanel({ itemId, tagId, itemName, refreshKey = 0 }: TagPanelPr
       ) : failed || !imgUrl ? (
         <p className="text-sm text-slate-500">Couldn't load the tag image.</p>
       ) : (
-        <img src={imgUrl} alt={`QR tag for ${tagId}`} className="h-40 w-40" />
+        // `w-auto` rather than a square box: the PNG now carries the Tag ID
+        // printed under the code (see backend `utils/tagSticker.ts`), so forcing
+        // it into a square would squash the caption that makes an already
+        // printed sticker legible.
+        <img src={imgUrl} alt={`QR tag for ${tagId}`} className="h-40 w-auto" />
       )}
 
       <p className="tag-id text-sm text-slate-600">{tagId}</p>

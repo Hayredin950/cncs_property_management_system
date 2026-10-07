@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { stickerMetrics } from "./tagSticker.js";
 
 describe("qrGenerator", () => {
   let tmpDir: string;
@@ -45,6 +46,16 @@ describe("qrGenerator", () => {
   it("URL-encodes a tagId with special characters", async () => {
     const result = await generateTagQR("CNCS 001/A");
     expect(result.url).toBe("http://test.local/item/CNCS%20001%2FA");
+  });
+
+  it("caches a sticker that carries the tag ID under the code, not a bare QR square", async () => {
+    const result = await generateTagQR("CNCS-CAPTION1");
+
+    // IHDR width (byte 16) and height (byte 20) come from the sticker renderer,
+    // whose band is what makes a downloaded or printed tag legible on its own.
+    expect(result.buffer.readUInt32BE(16)).toBe(stickerMetrics.WIDTH);
+    expect(result.buffer.readUInt32BE(20)).toBe(stickerMetrics.HEIGHT);
+    expect(stickerMetrics.HEIGHT).toBeGreaterThan(stickerMetrics.QR_AREA);
   });
 
   it("regenerateTagQR overwrites the file for the same tagId", async () => {

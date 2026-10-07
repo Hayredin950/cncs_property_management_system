@@ -31,6 +31,10 @@ Map<String, Object?> itemJson({
   String status = 'ACTIVE',
   String condition = 'GOOD',
   String? photoUrl,
+  /// Overridable because `/map`'s whole job is grouping by it.
+  String building = 'CNCS Building',
+  String floor = 'Floor 3',
+  String room = 'Room 312',
   bool privileged = true,
   List<Map<String, Object?>> accessories = const [],
 }) =>
@@ -41,9 +45,9 @@ Map<String, Object?> itemJson({
       'categoryId': 'cat-1',
       'category': {'id': 'cat-1', 'name': 'Computer equipment'},
       'department': 'Computer Science',
-      'building': 'CNCS Building',
-      'floor': 'Floor 3',
-      'room': 'Room 312',
+      'building': building,
+      'floor': floor,
+      'room': room,
       'condition': condition,
       'status': status,
       'registeredAt': '2026-09-05T10:15:00.000Z',
@@ -70,8 +74,9 @@ Map<String, Object?> itemJson({
 Map<String, Object?> publicItemJson({
   String tagId = 'CNCS-DEMO-0001',
   String name = 'Dell Latitude 5420',
+  String building = 'CNCS Building',
 }) =>
-    itemJson(tagId: tagId, name: name, privileged: false);
+    itemJson(tagId: tagId, name: name, building: building, privileged: false);
 
 Map<String, Object?> itemsListJson({
   List<Map<String, Object?>>? items,

@@ -6,7 +6,6 @@ import '../../data/providers/core_providers.dart';
 import '../../models/item.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
-import '../../widgets/app_fields.dart';
 import '../../widgets/feedback.dart';
 import '../../widgets/page_scaffold.dart';
 import '../../widgets/states.dart';
@@ -17,8 +16,8 @@ import '../items/widgets/item_card.dart';
 /// §10.12 marks this screen **P1, "cut first"**, and allows it not to exist at all,
 /// on the grounds that "F5.1's text location (present on every item view since
 /// Phase 1) already satisfies the underlying need". This ships the underlying need
-/// and not the picture: a building picker over the register, instead of a campus
-/// illustration with tappable hotspots.
+/// and not the picture: every building the register knows about, one section each,
+/// instead of a campus illustration with tappable hotspots.
 ///
 /// The honest reason is that there is no campus artwork in this repository to put
 /// behind the hotspots, and a placeholder rectangle labelled "map" would be a screen
@@ -27,6 +26,12 @@ import '../items/widgets/item_card.dart';
 /// that is exactly what this does, from the same `GET /items` data the web version
 /// derives its hotspots from. If the licensed image arrives, only the top of this
 /// file changes; the sheet below already takes a building and lists its items.
+///
+/// **Every building is listed, not one selected at a time.** An earlier version put a
+/// building picker at the top and showed one building under it, which made the answer
+/// to "what is in Building 3?" depend on already knowing that the building is called
+/// "Building 3" — the same reason the web version renders a card per building. Long
+/// buildings collapse to a count and a sheet rather than a five-screen scroll.
 ///
 /// Note the derived-data caveat the web version has too: a building only appears
 /// here once an item is registered in it, and the list is built from the **active**
@@ -51,23 +56,21 @@ final buildingItemsProvider = FutureProvider<Map<String, List<Item>>>((ref) asyn
   return grouped;
 });
 
-class MapPage extends ConsumerStatefulWidget {
+/// How many of a building's items the section itself prints. Past this the section
+/// ends in "See all N", which opens the sheet — a building with 200 items would
+/// otherwise be the whole screen and the other buildings unreachable.
+const _sectionPreview = 5;
+
+class MapPage extends ConsumerWidget {
   const MapPage({super.key});
 
   @override
-  ConsumerState<MapPage> createState() => _MapPageState();
-}
-
-class _MapPageState extends ConsumerState<MapPage> {
-  String? _selected;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final buildings = ref.watch(buildingItemsProvider);
 
     return PageScaffold(
       title: 'Buildings',
-      subtitle: 'Where the register says things are',
+      subtitle: 'Grouped by the location on each item\u2019s tag',
       maxWidth: 720,
       onRefresh: () async {
         ref.invalidate(buildingItemsProvider);
@@ -80,13 +83,13 @@ class _MapPageState extends ConsumerState<MapPage> {
             error: error,
             onRetry: () => ref.invalidate(buildingItemsProvider),
           ),
-          data: (grouped) => _body(grouped),
+          data: (grouped) => _body(context, grouped),
         ),
       ],
     );
   }
 
-  Widget _body(Map<String, List<Item>> grouped) {
+  Widget _body(BuildContext context, Map<String, List<Item>> grouped) {
     if (grouped.isEmpty) {
       return const EmptyState(
         icon: Icons.map_outlined,
@@ -95,44 +98,15 @@ class _MapPageState extends ConsumerState<MapPage> {
       );
     }
 
+    // Alphabetical, not most-items-first: the list is a way to find a building you
+    // already have in mind, and an order that shifts as the register grows would make
+    // the same building move around between visits.
     final names = grouped.keys.toList()..sort();
-    final selected = (_selected != null && grouped.containsKey(_selected))
-        ? _selected! 
-        : names.first;
-    final items = grouped[selected] ?? const <Item>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppSelectField<String>(
-          label: 'Building',
-          value: selected,
-          options: names,
-          labelOf: (name) => '$name · ${grouped[name]?.length ?? 0} items',
-          onChanged: (value) => setState(() => _selected = value),
-          helper: 'Derived from the active register — disposed items are not listed here.',
-        ),
-        const SizedBox(height: AppSpace.s6),
-        SectionHeader(
-          title: selected,
-          subtitle: items.length == 1 ? '1 item' : '${items.length} items',
-        ),
-        for (final item in items.take(12)) ...[
-          ItemCard(item: item, onTap: () => context.push('/item/${item.tagId}')),
-          const SizedBox(height: AppSpace.stack),
-        ],
-        if (items.length > 12)
-          AppButton(
-            label: 'See all ${items.length} in $selected',
-            variant: AppButtonVariant.outline,
-            expand: true,
-            icon: Icons.search,
-            onPressed: () => showAppSheet<void>(
-              context,
-              child: _BuildingSheet(name: selected, items: items),
-            ),
-          ),
-        const SizedBox(height: AppSpace.s5),
+        for (final name in names) ..._building(context, name, grouped[name]!),
         AppButton(
           label: 'Search the register instead',
           variant: AppButtonVariant.ghost,
@@ -140,9 +114,44 @@ class _MapPageState extends ConsumerState<MapPage> {
           icon: Icons.search,
           onPressed: () => context.go('/items'),
         ),
+        const Padding(
+          padding: EdgeInsets.only(top: AppSpace.s3),
+          child: Text(
+            'Derived from the active register \u2014 disposed items are not listed here.',
+            style: TextStyle(fontSize: 12.5, color: AppColors.aauGray500, height: 1.45),
+          ),
+        ),
       ],
     );
   }
+
+  /// One building's section: its name, how many items it holds, and the first few of
+  /// them — with the rest one tap away rather than loading a sheet into the page.
+  List<Widget> _building(BuildContext context, String name, List<Item> items) => [
+        SectionHeader(
+          title: name,
+          subtitle: items.length == 1 ? '1 item' : '${items.length} items',
+        ),
+        for (final item in items.take(_sectionPreview)) ...[
+          ItemCard(item: item, onTap: () => context.push('/item/${item.tagId}')),
+          const SizedBox(height: AppSpace.stack),
+        ],
+        if (items.length > _sectionPreview)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpace.stack),
+            child: AppButton(
+              label: 'See all ${items.length} in $name',
+              variant: AppButtonVariant.outline,
+              expand: true,
+              icon: Icons.list_alt_outlined,
+              onPressed: () => showAppSheet<void>(
+                context,
+                child: _BuildingSheet(name: name, items: items),
+              ),
+            ),
+          ),
+        const SizedBox(height: AppSpace.s5),
+      ];
 }
 
 /// The full building list inside a sheet — the phone equivalent of the web's

@@ -107,4 +107,61 @@ void main() {
     // Opening the second one would send the user to an item they did not aim at.
     expect(scanned, ['CNCS-DEMO-0001']);
   });
+
+  testWidgets('no zoom control is offered while the camera is not running',
+      (tester) async {
+    await pumpScanner(tester);
+
+    // In the test environment the camera never starts, which is also the phone's
+    // state before permission is granted and after the camera is paused. A slider
+    // over a stopped camera is a control that cannot do anything, so it must be
+    // absent rather than present and inert.
+    expect(find.byType(ScannerZoomControl), findsNothing);
+  });
+
+  group('ScannerZoomControl', () {
+    Future<List<double>> pumpZoom(
+      WidgetTester tester, {
+      double value = 0.0,
+    }) async {
+      final changes = <double>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ScannerZoomControl(value: value, onChanged: changes.add),
+          ),
+        ),
+      );
+      await pumpFrames(tester);
+      return changes;
+    }
+
+    testWidgets('reads the zoom back as a share of the camera\u2019s own range',
+        (tester) async {
+      await pumpZoom(tester, value: 0.4);
+
+      // A fraction, not a multiplier: `mobile_scanner` moves CameraX's
+      // `linearZoom`, and "2x" would mean a different magnification on the next
+      // phone. The hint says out loud that the page is not zooming.
+      expect(visibleText(tester), contains('40%'));
+      expect(
+        visibleText(tester),
+        contains('Zooms the camera view only. Nothing else on the screen changes size.'),
+      );
+    });
+
+    testWidgets('a drag moves the camera zoom, not the page', (tester) async {
+      final changes = await pumpZoom(tester, value: 0.0);
+
+      await tester.drag(find.byType(Slider), const Offset(80, 0));
+      await pumpFrames(tester);
+
+      expect(changes, isNotEmpty);
+      expect(changes.last, greaterThan(0.0));
+      expect(changes.last, lessThanOrEqualTo(1.0));
+      // The value the widget is given is the value it prints — the control never
+      // claims a zoom the camera did not take.
+      expect(changes.first, greaterThan(0.0));
+    });
+  });
 }

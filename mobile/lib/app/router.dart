@@ -39,10 +39,14 @@ import 'shells.dart';
 ///
 /// Three shells, matching §9's three:
 ///
-///   * [PublicShell] — `/`, `/map`, `/login`.
-///   * [SharedSurface] — `/scan`, `/items`, `/item/:tagId`, plus the two
+///   * [PublicShell] — `/` and `/login`.
+///   * [SharedSurface] — `/map`, `/scan`, `/items`, `/item/:tagId`, plus the two
 ///     404-shaped destinations. Each is a staff destination *and* a public
 ///     surface, so the chrome is chosen from the auth state at navigation time.
+///     `/map` sits here rather than with the anonymous pages because its entry
+///     points are on both sides — the landing page and the public app bar for a
+///     visitor, the More sheet for a staff member, who must not lose the tab bar
+///     by opening it.
 ///   * [WorkbenchShell] — everything else, behind the auth guard.
 ///
 /// **A staff session that deep-links to `/admin/users` gets the app's normal 404**,
@@ -82,7 +86,7 @@ bool _isPublic(String path) => path == '/' || path == '/map' || path == '/login'
 
 /// The shared addresses: public, and also inside the workbench.
 bool _isShared(String path) =>
-    path == '/scan' || path == '/items' || path.startsWith('/item/');
+    path == '/map' || path == '/scan' || path == '/items' || path.startsWith('/item/');
 
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = _AuthRefresh(ref);
@@ -161,7 +165,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             PublicShell(currentPath: state.uri.path, child: child),
         routes: [
           GoRoute(path: '/', builder: (context, state) => const LandingPage()),
-          GoRoute(path: '/map', builder: (context, state) => const MapPage()),
           GoRoute(
             path: '/login',
             builder: (context, state) => LoginPage(
@@ -178,6 +181,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             SharedSurface(currentPath: state.uri.path, child: child),
         routes: [
           GoRoute(path: '/scan', builder: (context, state) => const ScanPage()),
+          GoRoute(path: '/map', builder: (context, state) => const MapPage()),
           GoRoute(path: '/items', builder: (context, state) => const ItemsBrowsePage()),
           GoRoute(
             path: '/item/:tagId',

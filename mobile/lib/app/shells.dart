@@ -126,6 +126,17 @@ class PublicShell extends StatelessWidget {
         titleSpacing: AppSpace.s4,
         title: AauLockup(onTap: () => context.go('/')),
         actions: [
+          // "Browse by building" belongs on the visitor's chrome, not only on the
+          // landing page's body: a visitor who has followed a QR code or is standing
+          // on the scanner is exactly the person asking where the rest of the
+          // building's equipment is. Hidden while already there, so the bar never
+          // offers the page it is showing.
+          if (location != '/login' && location != '/map')
+            AppIconButton(
+              icon: Icons.map_outlined,
+              tooltip: 'Browse by building',
+              onPressed: () => context.push('/map'),
+            ),
           if (location != '/login')
             Padding(
               padding: const EdgeInsets.only(right: AppSpace.s3),
@@ -520,6 +531,17 @@ Future<void> showMoreSheet(BuildContext context, WidgetRef ref) {
             onTap: () {
               Navigator.of(context).pop();
               context.push('/notifications');
+            },
+          ),
+          // Staff-only as far as the sheet goes: `/map` itself is open to everyone,
+          // but a signed-in user reaching it from the workbench is the one who came
+          // here looking for it, since the public shell already carries the link.
+          _MoreRow(
+            icon: Icons.map_outlined,
+            label: 'Browse by building',
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/map');
             },
           ),
           if (auth.isAdmin) ...[

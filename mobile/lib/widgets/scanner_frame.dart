@@ -22,11 +22,11 @@ import 'app_fields.dart';
 ///   * **Both the scan and the typed tag resolve to the same destination.**
 ///     `onTag` receives a normalised tag ID from either path — the parsed one from
 ///     the QR payload, or the uppercased one typed in.
-///   * **No zoom slider.** §10.3 allows one only when the running camera reports a
-///     real zoom range, and most phones expose none; "a missing control is honest
-///     where a dead one is not", so this widget does not ship a control that cannot
-///     do anything. `MobileScannerController.setZoomScale` remains available if a
-///     future build can detect a range.
+///   * **Zoom drives the camera, and only exists while the camera runs.** A sticker
+///     on a shelf above head height is the normal case on a phone, and the web app
+///     has had a zoom control since the scanner shipped there. It is rendered from
+///     the controller's own state (`zoomScale`, reported by the platform), never as
+///     a fixed slider — see [ScannerZoomControl].
 class ScannerFrame extends StatefulWidget {
   const ScannerFrame({
     super.key,
@@ -307,27 +307,124 @@ class ScannerFrameState extends State<ScannerFrame> with SingleTickerProviderSta
 
         return Padding(
           padding: const EdgeInsets.only(top: AppSpace.s3),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Column(
             children: [
-              if (torchAvailable)
-                _ScannerControl(
-                  icon: torchOn ? Icons.flashlight_on_outlined : Icons.flashlight_off_outlined,
-                  label: torchOn ? 'Turn the light off' : 'Turn the light on',
-                  onTap: _controller.toggleTorch,
-                  active: torchOn,
-                ),
-              if (torchAvailable && multiCamera) const SizedBox(width: AppSpace.s4),
-              if (multiCamera)
-                _ScannerControl(
-                  icon: Icons.cameraswitch_outlined,
-                  label: 'Switch camera',
-                  onTap: _controller.switchCamera,
-                ),
+              ScannerZoomControl(
+                value: state.zoomScale,
+                onChanged: _setZoom,
+              ),
+              const SizedBox(height: AppSpace.s3),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (torchAvailable)
+                    _ScannerControl(
+                      icon: torchOn ? Icons.flashlight_on_outlined : Icons.flashlight_off_outlined,
+                      label: torchOn ? 'Turn the light off' : 'Turn the light on',
+                      onTap: _controller.toggleTorch,
+                      active: torchOn,
+                    ),
+                  if (torchAvailable && multiCamera) const SizedBox(width: AppSpace.s4),
+                  if (multiCamera)
+                    _ScannerControl(
+                      icon: Icons.cameraswitch_outlined,
+                      label: 'Switch camera',
+                      onTap: _controller.switchCamera,
+                    ),
+                ],
+              ),
             ],
           ),
         );
       },
+    );
+  }
+
+  /// Applies a zoom, and treats a refusal as nothing to report.
+  ///
+  /// The controller ignores the call unless the camera is running, and a driver is
+  /// allowed to reject a value it accepted a moment ago; either way the slider keeps
+  /// its position from the controller's state stream, so the control cannot claim a
+  /// zoom the camera did not take.
+  void _setZoom(double value) {
+    unawaited(_controller.setZoomScale(value));
+  }
+}
+
+/// The camera's zoom, over the running camera's own range.
+///
+/// `mobile_scanner` moves zoom as a **fraction of the camera's range** — 0 is no zoom,
+/// 1 is as far in as that camera's digital zoom goes (CameraX's `linearZoom`, which
+/// the plugin reads and writes, and which its state stream reports back). So this
+/// control is honest about what the number is: a share of a range whose real limits
+/// the app cannot read, on a device where "2x" would mean a different magnification
+/// than the same slider on another phone.
+///
+/// Only mounted while the camera is running ([ScannerFrame] decides that), because a
+/// slider over a stopped camera is a control that cannot do anything.
+class ScannerZoomControl extends StatelessWidget {
+  const ScannerZoomControl({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  /// 0 = no zoom, 1 = the running camera's maximum.
+  final double value;
+
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final fraction = value.clamp(0.0, 1.0);
+    final percent = (fraction * 100).round();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.zoom_in, size: 20, color: AppColors.aauGray600),
+            Expanded(
+              child: Semantics(
+                label: 'Camera zoom',
+                value: '$percent%',
+                child: Slider(
+                  value: fraction,
+                  onChanged: onChanged,
+                  activeColor: AppColors.brand600,
+                  inactiveColor: AppColors.aauGray300,
+                  // No `divisions`: the platform's own step is finer than any
+                  // tick marks a thumb could land on, and snapping would make the
+                  // readout disagree with what the camera actually took.
+                ),
+              ),
+            ),
+            // Fixed width, so the row does not reflow as the number gains a digit
+            // and push the slider out from under the user's thumb.
+            SizedBox(
+              width: 42,
+              child: Text(
+                '$percent%',
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.aauGray700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: AppSpace.s1),
+          child: Text(
+            'Zooms the camera view only. Nothing else on the screen changes size.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: AppColors.aauGray500),
+          ),
+        ),
+      ],
     );
   }
 }

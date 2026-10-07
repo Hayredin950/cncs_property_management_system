@@ -102,6 +102,51 @@ function endOfDay(date: Date): Date {
   return end;
 }
 
+/**
+ * Human column labels, shared by every report. The CSV deliberately keeps the
+ * machine keys — an importer that matches on `purchaseCost` must not have to
+ * guess at capitalisation or word breaks — while the PDF prints these, so a
+ * printed page says `Purchase cost` instead of `PURCHASECOST`. One map rather
+ * than one per report: the three reports share most of their columns, and a
+ * second copy is how two exports drift into disagreeing about the same field.
+ */
+const COLUMN_LABELS: Record<string, string> = {
+  tagId: "Tag ID",
+  name: "Name",
+  category: "Category",
+  department: "Department",
+  building: "Building",
+  floor: "Floor",
+  room: "Room",
+  ownerName: "Owner",
+  ownerEmail: "Owner email",
+  condition: "Condition",
+  purchaseCost: "Purchase cost",
+  currentValue: "Current value",
+  brand: "Brand",
+  model: "Model",
+  serialNumber: "Serial number",
+  status: "Status",
+  disposalReason: "Disposal reason",
+  disposedAt: "Disposed at",
+  registeredAt: "Registered at",
+  lastAuditedAt: "Last audited",
+  auditSessionId: "Audit session",
+  scopeType: "Scope type",
+  scopeValue: "Scope value",
+  runByName: "Run by",
+  startedAt: "Started at",
+  completedAt: "Completed at",
+  itemName: "Item",
+  result: "Result",
+  scannedAt: "Scanned at",
+  requestedByName: "Requested by",
+  requestedByEmail: "Requester email",
+  reviewedByName: "Reviewed by",
+  reviewedByEmail: "Reviewer email",
+  decidedAt: "Decided at",
+};
+
 function sendCsv(res: Response, filename: string, csv: string): void {
   res
     .status(200)
@@ -111,8 +156,46 @@ function sendCsv(res: Response, filename: string, csv: string): void {
 }
 
 /**
+ * A `dateFrom`/`dateTo` pair as two metadata lines' worth of context. Dates are
+ * cut to the day, matching how the query string was written — the export should
+ * echo what was asked for, not the midnight/end-of-day instants the range
+ * resolved to internally.
+ */
+function rangeLine(query: { dateFrom?: Date | undefined; dateTo?: Date | undefined }): string | null {
+  const day = (date: Date) => date.toISOString().slice(0, 10);
+  if (query.dateFrom && query.dateTo) {
+    return `Date range: ${day(query.dateFrom)} to ${day(query.dateTo)}`;
+  }
+  if (query.dateFrom) return `Date range: from ${day(query.dateFrom)}`;
+  if (query.dateTo) return `Date range: up to ${day(query.dateTo)}`;
+  return null;
+}
+
+/**
+ * `Filters: department Computer Science | status ACTIVE`, or null when the
+ * report was not narrowed at all. ASCII separator on purpose — `utils/pdf.ts`
+ * folds typographic punctuation to ASCII before it reaches a Type1 font, so a
+ * middle dot would print as something else.
+ */
+function filterLine(entries: Array<[string, string | undefined]>): string | null {
+  const active = entries.filter(([, value]) => value !== undefined && value !== "");
+  if (active.length === 0) return null;
+  return `Filters: ${active.map(([key, value]) => `${key} ${value}`).join(" | ")}`;
+}
+
+/** Drops the empty entries of a metadata line list, so no report shows `Filters:` with nothing after it. */
+function metaLines(count: number, ...lines: Array<string | null>): string[] {
+  return [
+    ...lines.filter((line): line is string => Boolean(line)),
+    `${count} record${count === 1 ? "" : "s"}`,
+  ];
+}
+
+/**
  * Same headers/rows as the CSV path, rendered as a table. Kept beside `sendCsv`
  * so a new report only has to build its rows once and pick a format at the end.
+ * The PDF is the human-facing half of F10, so it gets the human column labels
+ * and the scope/filter lines that a machine reading the CSV does not need.
  */
 function sendPdf(
   res: Response,
@@ -120,8 +203,16 @@ function sendPdf(
   title: string,
   headers: string[],
   rows: Array<Record<string, CsvValue>>,
+  meta: string[],
 ): void {
-  const pdf = toPdfTable({ title, subtitle: `Generated ${new Date().toISOString()}`, headers, rows });
+  const pdf = toPdfTable({
+    title,
+    subtitle: `Generated ${new Date().toISOString()}`,
+    headers,
+    rows,
+    columnLabels: COLUMN_LABELS,
+    meta,
+  });
   res
     .status(200)
     .type("application/pdf")
@@ -234,7 +325,22 @@ reportsRouter.get(
       }));
 
       if (query.format === "pdf") {
-        sendPdf(res, `inventory-report-${todayStamp()}.pdf`, "CNCS Property - Inventory report", headers, rows);
+        sendPdf(
+          res,
+          `inventory-report-${todayStamp()}.pdf`,
+          "CNCS Property - Inventory report",
+          headers,
+          rows,
+          metaLines(
+            rows.length,
+            filterLine([
+              ["department", query.department],
+              ["categoryId", query.categoryId],
+              ["status", query.status],
+            ]),
+            rangeLine(query),
+          ),
+        );
         return;
       }
       sendCsv(res, `inventory-report-${todayStamp()}.csv`, toCsv(headers, rows));
@@ -351,6 +457,11 @@ reportsRouter.get(
           })`,
           headers,
           rows,
+          metaLines(
+            rows.length,
+            `Audit session: ${session.scopeType}${session.scopeValue ? ` - ${session.scopeValue}` : ""}`,
+            `Run by: ${session.runBy.fullName}`,
+          ),
         );
         return;
       }
@@ -443,7 +554,14 @@ reportsRouter.get(
       }));
 
       if (query.format === "pdf") {
-        sendPdf(res, `disposals-report-${todayStamp()}.pdf`, "CNCS Property - Disposals report", headers, rows);
+        sendPdf(
+          res,
+          `disposals-report-${todayStamp()}.pdf`,
+          "CNCS Property - Disposals report",
+          headers,
+          rows,
+          metaLines(rows.length, filterLine([["department", query.department]]), rangeLine(query)),
+        );
         return;
       }
       sendCsv(res, `disposals-report-${todayStamp()}.csv`, toCsv(headers, rows));

@@ -88,6 +88,45 @@ describe("Report Endpoints", () => {
       expect(Buffer.from(res.body).toString("latin1")).toContain("%PDF-1.4");
     });
 
+    it("prints human column labels and the applied filters, and counts the records", async () => {
+      vi.mocked(prisma.item.findMany).mockResolvedValueOnce([
+        {
+          tagId: "CNCS-0001",
+          name: "Dell Laptop",
+          category: { name: "Electronics" },
+          department: "Computer Science",
+          building: "CNCS Building",
+          floor: "3",
+          room: "312",
+          owner: { fullName: "Demo Staff", email: "staff@cncs.aau.edu.et" },
+          condition: "GOOD",
+          purchaseCost: { toString: () => "25000" },
+          currentValue: { toString: () => "18000" },
+          brand: "Dell",
+          model: "Latitude 5420",
+          serialNumber: "SN-123",
+          status: "ACTIVE",
+          disposalReason: null,
+          disposedAt: null,
+          registeredAt: new Date("2026-01-10T00:00:00.000Z"),
+          lastAuditedAt: null,
+        },
+      ] as never);
+
+      const res = await request(app)
+        .get("/api/v1/reports/inventory?format=pdf&department=Computer%20Science")
+        .set("Authorization", `Bearer ${staffToken}`);
+
+      expect(res.status).toBe(200);
+      const pdf = Buffer.from(res.body).toString("latin1");
+      // Human labels belong to the PDF; the CSV above keeps `purchaseCost`, so
+      // presentation cannot break an importer.
+      expect(pdf).toContain("(Purchase cost) Tj");
+      expect(pdf).toContain("(Current value) Tj");
+      expect(pdf).toContain("(Filters: department Computer Science) Tj");
+      expect(pdf).toContain("(1 record) Tj");
+    });
+
     it("returns 400 when dateFrom is after dateTo", async () => {
       const res = await request(app)
         .get("/api/v1/reports/inventory?dateFrom=2026-06-01&dateTo=2026-01-01")

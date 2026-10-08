@@ -29,7 +29,10 @@ import '../../widgets/status_badges.dart';
 ///
 /// Resetting a password generates one on the device and shows it once. The server sets
 /// `mustChangePassword`, so the account is forced to replace it at the next sign-in —
-/// which is what makes "read it aloud to the person" an acceptable hand-off.
+/// which is what makes "read it aloud to the person" an acceptable hand-off. Creating an
+/// account is the same hand-off one step earlier: the administrator types an initial
+/// password, and the server flags the new account `mustChangePassword` so the holder
+/// replaces it at the first sign-in rather than keeping a shared secret.
 class AdminUsersPage extends ConsumerStatefulWidget {
   const AdminUsersPage({super.key});
 
@@ -114,7 +117,8 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                 errorText: _fieldErrors['password'],
                 enabled: !_creating,
                 required: true,
-                helper: 'At least 8 characters. The holder can change it once signed in.',
+                helper: 'At least 8 characters. The holder must choose their own the first '
+                    'time they sign in.',
               ),
               const SizedBox(height: AppSpace.stack),
               AppSelectField<Role>(

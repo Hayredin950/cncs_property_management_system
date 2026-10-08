@@ -74,6 +74,14 @@ const loginSchema = z
  * Admin-only route to register a new user (ADMIN or STAFF).
  * Validates payload, verifies uniqueness, hashes password with argon2id,
  * and returns safe user data without exposing password hashes.
+ *
+ * The password here is an **initial, temporary** one an administrator typed and
+ * passes on, so the account is created flagged `mustChangePassword`. Without
+ * that flag the holder signs in with the shared secret and is never asked to
+ * replace it — which is exactly the "forced change on first sign-in" the reset
+ * flow already promises. The client routers redirect on the flag (`RequireAuth`
+ * on the web, the go_router guard on mobile), so setting it here is what makes
+ * a brand-new account behave like a reset one.
  */
 router.post(
   ["/register", "/auth/register"],
@@ -138,6 +146,7 @@ router.post(
           email: effectiveEmail,
           passwordHash,
           role,
+          mustChangePassword: true,
         },
         select: {
           id: true,
@@ -145,6 +154,7 @@ router.post(
           email: true,
           role: true,
           createdAt: true,
+          mustChangePassword: true,
         },
       });
 
@@ -155,6 +165,7 @@ router.post(
         email: newUser.email,
         role: newUser.role,
         createdAt: newUser.createdAt,
+        mustChangePassword: newUser.mustChangePassword,
       };
 
       return res.status(201).json({

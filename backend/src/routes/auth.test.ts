@@ -283,6 +283,7 @@ describe("POST /auth/register", () => {
         email: "abebe@cncs.aau.edu.et",
         role: "STAFF" as const,
         createdAt: new Date("2026-09-02T10:00:00.000Z"),
+        mustChangePassword: true,
       };
 
       vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
@@ -308,6 +309,13 @@ describe("POST /auth/register", () => {
       expect(createCallData?.email).toBe("abebe@cncs.aau.edu.et");
       expect(createCallData?.role).toBe("STAFF");
       expect(createCallData?.passwordHash).toMatch(/^\$argon2id\$/);
+      /*
+        The admin typed this password to hand on, so the account must be forced
+        to replace it at the first sign-in — the same guarantee a reset gives.
+        Without this the login response carries `mustChangePassword: false` and
+        the client routers let the account straight into the app.
+      */
+      expect(createCallData?.mustChangePassword).toBe(true);
       // Plaintext password must never be stored
       expect((createCallData as Record<string, unknown>).password).toBeUndefined();
 
@@ -321,6 +329,9 @@ describe("POST /auth/register", () => {
       expect(res.body.user.password).toBeUndefined();
       expect(res.body.user.passwordHash).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+      // The flag travels back too, so a client can route without a second call.
+      expect(res.body.mustChangePassword).toBe(true);
+      expect(res.body.user.mustChangePassword).toBe(true);
     });
 
     it("accepts id instead of email and assigns it properly", async () => {
@@ -523,6 +534,40 @@ describe("POST /auth/login", () => {
     expect(res.body.token).toBeDefined();
     expect(res.body.id).toBe("STAFF-999");
     expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+  });
+
+  it("surfaces mustChangePassword so a first sign-in is sent to the change screen", async () => {
+    const rawPassword = "Temporary123!";
+    const passwordHash = await argon2.hash(rawPassword, { type: argon2.argon2id });
+
+    // A freshly registered account: the server created it flagged.
+    const mockUser = {
+      id: "new-user-1",
+      fullName: "New Holder",
+      email: "new.holder@cncs.aau.edu.et",
+      passwordHash,
+      role: "STAFF" as const,
+      createdAt: new Date(),
+      tokenVersion: 0,
+      mustChangePassword: true,
+    };
+
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser as never);
+
+    const res = await request(app).post("/auth/login").send({
+      email: "new.holder@cncs.aau.edu.et",
+      password: rawPassword,
+    });
+
+    expect(res.status).toBe(200);
+    /*
+      This is the contract the web `RequireAuth` and the mobile go_router guard
+      branch on: the flag has to survive into the login response (here and in the
+      nested user object) or the "forced" change is silently skipped and the
+      account keeps the administrator-typed password.
+    */
+    expect(res.body.mustChangePassword).toBe(true);
+    expect(res.body.user.mustChangePassword).toBe(true);
   });
 
   it("rejects login with generic error when user is not found", async () => {

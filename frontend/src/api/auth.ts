@@ -37,9 +37,10 @@ export interface RegisterPayload {
 
 /**
  * `POST /auth/register` — creates the account and returns the created user.
- * A duplicate email answers 409. **There is no user list/update/delete
- * endpoint** (gap G2, frontend-plan.md §12) — the screen can create, nothing
- * more, and says so rather than pretending.
+ * A duplicate email answers 409. The server flags the new account
+ * `mustChangePassword`, because the password an admin types here is a temporary
+ * one to pass on: the holder is forced to choose their own at the first sign-in
+ * (`RequireAuth` redirects to `/change-password`).
  */
 export function registerUser(payload: RegisterPayload): Promise<{ user: AuthUser }> {
   return apiClient.post<{ user: AuthUser }>("/auth/register", payload);

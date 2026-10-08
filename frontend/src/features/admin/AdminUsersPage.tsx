@@ -164,7 +164,7 @@ export function AdminUsersPage() {
             label="Temporary password"
             type="password"
             autoComplete="new-password"
-            hint="Share it securely. An administrator can change it later from this page."
+            hint="Share it securely — they will be asked to choose their own the first time they sign in."
             error={errors.password?.message}
             {...register("password")}
             required

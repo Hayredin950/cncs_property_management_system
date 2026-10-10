@@ -1,0 +1,51 @@
+<!doctype html>
+<!--
+  The item fallback card.
+
+  Used as `og:image` when an item *was* found but has no `photoUrl` — a
+  photographed item uses the photo instead (see `api/preview.ts`). Without
+  this the preview would fall back to the generic site card, which is what makes
+  a shared tag look like a broken link rather than a record.
+
+  Same art and layout as `card-default.html`, with copy that says "record"
+  rather than "scan". Rendered to `public/og/item.jpg` at exactly 1200x630.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="card.css" />
+  </head>
+  <body>
+    <div class="card card--art">
+      <div class="crest"><img src="../../public/aau/aau-logo-white.svg" alt="" /></div>
+
+      <div class="headline">
+        <div class="eyebrow">ADDIS ABABA UNIVERSITY</div>
+        <h1>Campus property record</h1>
+      </div>
+
+      <div class="footer">
+        <div class="footer-title">Registered · QR-tagged · Audited</div>
+
+        <div class="qr-badge">
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <g fill="none" stroke="#fff" stroke-width="3">
+              <rect x="3" y="3" width="15" height="15" rx="2.5" />
+              <rect x="30" y="3" width="15" height="15" rx="2.5" />
+              <rect x="3" y="30" width="15" height="15" rx="2.5" />
+            </g>
+            <g fill="#fff">
+              <rect x="8.5" y="8.5" width="4" height="4" />
+              <rect x="35.5" y="8.5" width="4" height="4" />
+              <rect x="8.5" y="35.5" width="4" height="4" />
+              <rect x="30" y="30" width="5" height="5" />
+              <rect x="39" y="30" width="5" height="5" />
+              <rect x="30" y="39" width="5" height="5" />
+              <rect x="39" y="39" width="5" height="5" />
+            </g>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

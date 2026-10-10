@@ -168,6 +168,8 @@ describe("POST /auth/register", () => {
         passwordHash: "somehash",
         role: "STAFF",
         createdAt: new Date(),
+        tokenVersion: 0,
+        mustChangePassword: false,
       });
 
       const res = await request(app)
@@ -194,6 +196,8 @@ describe("POST /auth/register", () => {
         passwordHash: "somehash",
         role: "STAFF",
         createdAt: new Date(),
+        tokenVersion: 0,
+        mustChangePassword: false,
       });
 
       const res = await request(app)
@@ -210,6 +214,42 @@ describe("POST /auth/register", () => {
       expect(res.body.error).toBe("User with this email or ID already exists");
       expect(prisma.user.create).not.toHaveBeenCalled();
       expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+    });
+
+    it("returns 409 for an email that differs only by case from an existing one", async () => {
+      vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+        id: "existing-user-id",
+        fullName: "Existing User",
+        email: "test@example.com",
+        passwordHash: "somehash",
+        role: "STAFF",
+        createdAt: new Date(),
+        tokenVersion: 0,
+        mustChangePassword: false,
+      });
+
+      const res = await request(app)
+        .post("/auth/register")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          name: "New User",
+          email: "Test@Example.com",
+          password: "password123",
+          role: "STAFF",
+        });
+
+      expect(res.status).toBe(409);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+
+      // The stored value is lowercased before it reaches the check, so the two
+      // spellings of one address collide here instead of becoming two accounts.
+      const where = vi.mocked(prisma.user.findFirst).mock.calls[0]?.[0]?.where as {
+        OR: Array<{ email?: { equals: string; mode: string }; id?: string }>;
+      };
+      expect(where.OR[0]?.email).toEqual({
+        equals: "test@example.com",
+        mode: "insensitive",
+      });
     });
 
     it("returns 409 if database unique constraint triggers (P2002)", async () => {
@@ -243,6 +283,7 @@ describe("POST /auth/register", () => {
         email: "abebe@cncs.aau.edu.et",
         role: "STAFF" as const,
         createdAt: new Date("2026-09-02T10:00:00.000Z"),
+        mustChangePassword: true,
       };
 
       vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
@@ -268,6 +309,13 @@ describe("POST /auth/register", () => {
       expect(createCallData?.email).toBe("abebe@cncs.aau.edu.et");
       expect(createCallData?.role).toBe("STAFF");
       expect(createCallData?.passwordHash).toMatch(/^\$argon2id\$/);
+      /*
+        The admin typed this password to hand on, so the account must be forced
+        to replace it at the first sign-in — the same guarantee a reset gives.
+        Without this the login response carries `mustChangePassword: false` and
+        the client routers let the account straight into the app.
+      */
+      expect(createCallData?.mustChangePassword).toBe(true);
       // Plaintext password must never be stored
       expect((createCallData as Record<string, unknown>).password).toBeUndefined();
 
@@ -281,6 +329,9 @@ describe("POST /auth/register", () => {
       expect(res.body.user.password).toBeUndefined();
       expect(res.body.user.passwordHash).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+      // The flag travels back too, so a client can route without a second call.
+      expect(res.body.mustChangePassword).toBe(true);
+      expect(res.body.user.mustChangePassword).toBe(true);
     });
 
     it("accepts id instead of email and assigns it properly", async () => {
@@ -309,6 +360,34 @@ describe("POST /auth/register", () => {
       const createCallData = vi.mocked(prisma.user.create).mock.calls[0]?.[0]?.data;
       expect(createCallData?.id).toBe("STAFF-007");
       expect(createCallData?.email).toBe("STAFF-007");
+      expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+    });
+
+    it("stores a registered email lowercased", async () => {
+      const mockCreatedUser = {
+        id: "new-uuid-2",
+        fullName: "Hanna Tesfaye",
+        email: "hanna@cncs.aau.edu.et",
+        role: "STAFF" as const,
+        createdAt: new Date(),
+      };
+
+      vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+      vi.mocked(prisma.user.create).mockResolvedValueOnce(mockCreatedUser as never);
+
+      const res = await request(app)
+        .post("/auth/register")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          name: "Hanna Tesfaye",
+          email: "Hanna@CNCS.AAU.edu.et",
+          password: "password123",
+          role: "STAFF",
+        });
+
+      expect(res.status).toBe(201);
+      const createCallData = vi.mocked(prisma.user.create).mock.calls[0]?.[0]?.data;
+      expect(createCallData?.email).toBe("hanna@cncs.aau.edu.et");
       expect(JSON.stringify(res.body)).not.toContain("passwordHash");
     });
 
@@ -360,7 +439,7 @@ describe("POST /auth/login", () => {
       createdAt: new Date("2026-09-02T10:00:00.000Z"),
     };
 
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser as never);
 
     const res = await request(app).post("/auth/login").send({
       email: "dawit@cncs.aau.edu.et",
@@ -392,6 +471,45 @@ describe("POST /auth/login", () => {
     expect(JSON.stringify(res.body)).not.toContain(passwordHash);
   });
 
+  it("matches the email without regard to case", async () => {
+    const rawPassword = "ValidPassword123!";
+    const passwordHash = await argon2.hash(rawPassword, { type: argon2.argon2id });
+
+    const mockUser = {
+      id: "user-44",
+      fullName: "Sara Mekonnen",
+      email: "sara@cncs.aau.edu.et",
+      passwordHash,
+      role: "STAFF" as const,
+      createdAt: new Date(),
+    };
+
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser as never);
+
+    const res = await request(app).post("/auth/login").send({
+      email: "Sara@CNCS.AAU.EDU.ET",
+      password: rawPassword,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe("user-44");
+    expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+
+    /**
+     * The address is what a person types, so it is matched as typed but without
+     * regard to case; the `id` arm stays exact, because an id is an identifier
+     * and two ids differing only by case are two ids.
+     */
+    const where = vi.mocked(prisma.user.findFirst).mock.calls[0]?.[0]?.where as {
+      OR: Array<{ email?: { equals: string; mode: string }; id?: string }>;
+    };
+    expect(where.OR[0]?.email).toEqual({
+      equals: "Sara@CNCS.AAU.EDU.ET",
+      mode: "insensitive",
+    });
+    expect(where.OR[1]).toEqual({ id: "Sara@CNCS.AAU.EDU.ET" });
+  });
+
   it("successfully logs in using ID instead of email", async () => {
     const rawPassword = "ValidPassword123!";
     const passwordHash = await argon2.hash(rawPassword, { type: argon2.argon2id });
@@ -405,7 +523,7 @@ describe("POST /auth/login", () => {
       createdAt: new Date(),
     };
 
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser as never);
 
     const res = await request(app).post("/auth/login").send({
       id: "STAFF-999",
@@ -416,6 +534,40 @@ describe("POST /auth/login", () => {
     expect(res.body.token).toBeDefined();
     expect(res.body.id).toBe("STAFF-999");
     expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+  });
+
+  it("surfaces mustChangePassword so a first sign-in is sent to the change screen", async () => {
+    const rawPassword = "Temporary123!";
+    const passwordHash = await argon2.hash(rawPassword, { type: argon2.argon2id });
+
+    // A freshly registered account: the server created it flagged.
+    const mockUser = {
+      id: "new-user-1",
+      fullName: "New Holder",
+      email: "new.holder@cncs.aau.edu.et",
+      passwordHash,
+      role: "STAFF" as const,
+      createdAt: new Date(),
+      tokenVersion: 0,
+      mustChangePassword: true,
+    };
+
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser as never);
+
+    const res = await request(app).post("/auth/login").send({
+      email: "new.holder@cncs.aau.edu.et",
+      password: rawPassword,
+    });
+
+    expect(res.status).toBe(200);
+    /*
+      This is the contract the web `RequireAuth` and the mobile go_router guard
+      branch on: the flag has to survive into the login response (here and in the
+      nested user object) or the "forced" change is silently skipped and the
+      account keeps the administrator-typed password.
+    */
+    expect(res.body.mustChangePassword).toBe(true);
+    expect(res.body.user.mustChangePassword).toBe(true);
   });
 
   it("rejects login with generic error when user is not found", async () => {
@@ -445,7 +597,7 @@ describe("POST /auth/login", () => {
       createdAt: new Date(),
     };
 
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockUser as never);
 
     const res = await request(app).post("/auth/login").send({
       email: "tadesse@cncs.aau.edu.et",

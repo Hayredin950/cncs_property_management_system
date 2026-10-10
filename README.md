@@ -11,7 +11,7 @@ A standalone property/asset management system built as an internship deliverable
 - **Package manager:** pnpm
 - **Containerization:** Docker (from commit one)
 - **CI/CD:** GitHub Actions — lint, build, test, docker build on every push
-- **Frontend (planned):** React + Vite + Tailwind CSS
+- **Frontend:** React 19 + Vite + TypeScript (strict) + Tailwind CSS 4 — all three phases shipped, see [`docs/frontend-handoff.md`](docs/frontend-handoff.md)
 
 ## Getting Started
 
@@ -46,7 +46,156 @@ cd <repo-name>
 docker compose up --build
 ```
 
-The backend will be available at `http://localhost:4000`. Check `/health` to confirm it's running.
+The backend will be available at `http://localhost:4000`, the frontend at
+`http://localhost:5173`. Check `/health` to confirm the backend is running.
+
+### Running the frontend
+
+The frontend runs as the `frontend` service of the same `docker compose up` —
+no second command, no extra steps beyond the root `.env`. To work on it without
+Docker:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev          # http://localhost:5173
+```
+
+Frontend environment variables live in `frontend/.env.example`:
+
+```bash
+VITE_API_BASE_URL=http://localhost:4000   # baked into the browser bundle at dev/build time
+```
+
+The client appends the `/api/v1` prefix itself — set the base URL **without** it.
+
+> **`PUBLIC_BASE_URL` must point at the frontend origin.** The backend encodes
+> `${PUBLIC_BASE_URL}/item/:tagId` inside every printed QR sticker (default
+> `http://localhost:5173`). If the frontend's host ever changes, change
+> `PUBLIC_BASE_URL` with it or every existing sticker scans to a dead page —
+> and nothing in CI catches that, because both sides are behaving correctly.
+
+Frontend checks (CI runs all of these on every PR):
+
+```bash
+cd frontend
+pnpm run lint     # eslint (TS, react-hooks, jsx-a11y)
+pnpm run build    # tsc -b + vite build — type-checks test files too
+pnpm test         # vitest + React Testing Library + MSW
+```
+
+The UI is branded as an Addis Ababa University property: the header, footer and newsletter
+band reproduce the ones on [`aau.edu.et`](https://aau.edu.et/), and the signed-in shell uses
+`portal.aau.edu.et`'s sidebar and page banner, with the university's real crest and its own
+palette. [`docs/frontend-aau-rebrand.md`](docs/frontend-aau-rebrand.md) records where every
+colour, font and asset came from and every deliberate difference from the originals.
+
+### Signing in for testing
+
+The staff/admin screens need an account. There is **no self-signup** — accounts exist only
+because the seed script creates them, or because an admin creates them at `/admin/users`
+(which can create only; see the frontend handoff's G2). Sign in at
+[`http://localhost:5173/login`](http://localhost:5173/login), or via the **Staff Sign In**
+button in the top-right of every public page.
+
+| Role | Email | Password | Use it for |
+| --- | --- | --- | --- |
+| `ADMIN` | `admin@cncs.aau.edu.et` | `Admin123!` | Approving/rejecting requests, `/admin/users`, `/admin/categories` |
+| `STAFF` | `staff@cncs.aau.edu.et` | `Staff123!` | Filing requests, item CRUD, audits, reports |
+
+Those two are defined in `backend/prisma/seed.ts` (`SEED_USERS`), not in configuration —
+change them there, not in `.env`. Both use argon2id hashing like any other account, so the
+stored value is a hash and the password cannot be recovered from the database.
+
+**What differs by role.** Both roles reach `/dashboard`, `/items`, `/requests`,
+`/notifications`, `/audit/*` and `/reports`. Only `ADMIN` sees the Accounts and Categories
+nav entries, and only `ADMIN` can decide a request — a staff account that reaches an
+approve/reject control gets a `403` from the API (approval is ADMIN-only by design; the
+SRS leaves the reviewer role unresolved). Requests are also scoped server-side: staff see
+their own filings, admin sees the whole queue.
+
+#### Create or reset them
+
+The seed is **idempotent** — fixed user emails, item tag IDs and request IDs, all written
+with `upsert` — so re-running it is the supported way to get back to a known state:
+
+```bash
+cd backend
+pnpm prisma:seed
+```
+
+It prints the credentials, the demo item IDs, and what it created. Worth knowing before a
+demo: re-running **resets** the demo transfer request to `PENDING` and the demo laptop and
+charger back to `ACTIVE`, so a half-finished walkthrough (an approved request, a disposed
+item) is repeatable. It does not rewind the `ItemEditLog` history those decisions wrote — that
+trail is append-only on purpose.
+
+It seeds more than users, which is what makes the screens non-empty on a fresh database: four
+items with generated QR tags (`CNCS-DEMO-0001` laptop, `-0002` desk, `-0003` microscope, and
+`-0004` charger linked as the laptop's accessory), one `PENDING` transfer request on the
+laptop filed by the staff account, and one unread notification in the admin's inbox.
+
+> **No seeded item is disposed.** The disposal/410 state is reached by *approving a disposal*
+> through the UI, so the frontend's `CNCS-DEAD0000` tag is a test fixture, not seed data.
+
+#### Signing in without the browser
+
+Useful for poking the API or scripting the walkthrough:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:4000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"staff@cncs.aau.edu.et","password":"Staff123!"}' | jq -r .token)
+
+curl -s http://localhost:4000/api/v1/auth/me -H "Authorization: Bearer $TOKEN"
+```
+
+`POST /auth/login` also accepts `id`, `emailOrId` or `identifier` in place of `email`, but the
+login **form** has a single Email field and sends that one — there is no separate "staff ID"
+field on the UI.
+
+#### Session behaviour when testing
+
+- The token is a **JWT that expires in 1 day** (`expiresIn: "1d"`). A tab left open overnight
+  will land back on `/login?next=…`; just sign in again. There is no refresh token.
+- The token lives in `localStorage` and is rehydrated by `GET /auth/me` on every boot, so a
+  stale token shows the login screen rather than a broken shell.
+- **Sign out is client-side only** — there is no logout endpoint, so it clears the token and
+  navigates; nothing is invalidated server-side.
+- To test anonymous behaviour (the public item page's field visibility), use a private window:
+  signing out is the only way to drop the token, and a second tab keeps the session.
+
+### Frontend routes
+
+Public (no sign-in): `/` (landing + search), `/items` (browse), `/scan`,
+`/item/:tagId` (the QR destination), `/map`, `/login`.
+
+Staff/Admin (behind the auth guard): `/dashboard`, `/items/new`,
+`/items/:id/edit`, `/items/:id`, `/requests`, `/requests/new`, `/requests/:id`,
+`/notifications`, `/audit/new`, `/audit/:id/scan`, `/audit/:id/report`,
+`/reports`, `/admin/users`, `/admin/categories`.
+
+> `/item/:tagId` (singular, public) and `/items/:id` (plural, staff) are different
+> routes on purpose — `qrGenerator.ts` encodes the singular form.
+
+### Demo walkthrough
+
+Anonymous lookup → scan a seeded tag → disposed tag (410) → sign in as staff →
+register an item → link an accessory → file a transfer → approve it as admin →
+audit a department → complete → download the CSV exports → stop the backend and
+watch the footer say "System unreachable". The annotated version is in
+[`docs/frontend-handoff.md`](docs/frontend-handoff.md).
+
+What ships in each frontend phase, and the full screen-by-screen contract, is in
+[`docs/Frontend_Three_Phase_Plan.md`](docs/Frontend_Three_Phase_Plan.md),
+[`docs/frontend-plan.md`](docs/frontend-plan.md), and
+[`docs/frontend-design-system.md`](docs/frontend-design-system.md). The per-phase
+write-ups are [`docs/frontend-phase-1.md`](docs/frontend-phase-1.md),
+[`docs/frontend-phase-2.md`](docs/frontend-phase-2.md) and
+[`docs/frontend-phase-3.md`](docs/frontend-phase-3.md);
+[`docs/frontend-handoff.md`](docs/frontend-handoff.md) is the consolidated
+version, including the rule that **field visibility is server-enforced and the
+frontend never duplicates it**.
 
 ### Running tests
 
@@ -64,6 +213,31 @@ pnpm test
 Schema lives in `backend/prisma/schema.prisma`. Migrations run against Neon via `DIRECT_URL`. If you change the schema, coordinate with the team first — everyone builds on top of the same models.
 
 Phase 2 changed no models, so pulling it needs no migration and no `prisma:generate`.
+
+### Deployment
+
+Both halves are deployed on Vercel, built from this repository, with auto-deploys
+on push to `main`:
+
+| Piece | URL |
+| --- | --- |
+| Frontend | https://cncs-pms-web-hayredins-projects.vercel.app |
+| Backend API | https://cncs-pms-api-hayredins-projects.vercel.app |
+
+The backend runs as a **single serverless function** (`backend/api/index.js`)
+rather than a long-lived process, because Vercel has none. What that changes,
+the three failures it caused, and every environment variable needed are in
+[`docs/deployment.md`](docs/deployment.md) — read that before touching either
+project's settings, and note especially that `PUBLIC_BASE_URL` is baked into
+printed QR stickers.
+
+Links to this app render a real preview card when pasted into WhatsApp,
+Telegram, Slack or Discord: the item's own name, location and photograph for a
+`/item/:tagId` link, and the branded AAU card for everything else. Crawlers do
+not execute JavaScript, so this is impossible to do from the React app —
+`frontend/vercel.json` rewrites their requests to a Vercel Function instead.
+[`docs/social-previews.md`](docs/social-previews.md) covers how it works and the
+one build-time variable it needs.
 
 ## Branching & workflow
 
@@ -187,6 +361,31 @@ item status. Date-range upper bounds include the entire UTC `dateTo` day.
 completion, audit-history listing, and Swagger/OpenAPI are not built. The backend handoff
 also records the remaining audit-report duplicate-scan behavior and the lack of a real test
 database.
+
+### Phase 3 — Frontend (complete)
+
+The frontend's own three phases mirror the backend's: Phase 1 (foundation and the
+public QR lookup), Phase 2 (staff and admin workflows), Phase 3 (audit,
+reporting and wrap-up). All three shipped — see
+[`docs/frontend-handoff.md`](docs/frontend-handoff.md) for the route list,
+decisions, deliberately-cut work and the spec-vs-backend gaps, and
+[`docs/frontend-phase-3.md`](docs/frontend-phase-3.md) for the audit and
+reporting write-up.
+
+- [x] `/` (landing + search), `/items`, `/scan`, `/item/:tagId`, `/map`
+- [x] Auth shell, role-aware nav, route guards
+- [x] Item registration/edit, accessories bundle, tag download/regenerate, edit history
+- [x] Requests queue, file a transfer/disposal, approve/reject, notifications inbox
+- [x] Audit walkthrough (`/audit/new` → `/audit/:id/scan` → `/audit/:id/report`)
+- [x] CSV exports: inventory, disposals, audit session
+- [x] Admin: create accounts, create categories
+- [x] Vitest + React Testing Library + MSW suite, gated in CI alongside lint and build
+
+**Current intentional frontend limits:** CSV only (no PDF), no upload endpoint so
+photos are URLs, `/map` is building grouping rather than a real map, and the audit
+list exists only while a session is in progress (the API has no audit read
+endpoint). Everything in this list is explained in
+[`docs/frontend-handoff.md`](docs/frontend-handoff.md).
 
 ### API and frontend handoff
 

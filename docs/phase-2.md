@@ -480,6 +480,18 @@ before the UI is written, not after.
   `updateMany({ where: { parentItemId } })` by design, so it would move B and silently leave C
   behind claiming a room it is not in. Rejected loudly rather than stripped silently, so the caller
   learns where the field lives.
+- **`PUT /items/:id` refuses `building`, `floor`, `room` and `ownerId`** with a 400 naming the
+  transfer flow. All four are columns a TRANSFER request already carries
+  (`newLocationBuilding` / `newLocationFloor` / `newLocationRoom` / `newOwnerId`, applied by
+  `buildTransferChanges`), so the edit route was a second writer of exactly the fields the approval
+  flow exists to govern: Staff could move an item to another room and save it immediately, and the
+  edit log faithfully recorded a move nobody had approved. Logging a bypass does not make it an
+  approval — the register's answer to "where is it, and whose is it?" was only as trustworthy as the
+  last person to type in the form. The rule is deliberately **not** role-scoped: approval is the
+  requirement, not a restriction on Staff, so an admin is refused too. `POST /items` still accepts
+  all four, because registering an item is not a transfer. Enforced by comparing the body against the
+  stored row, never by rejecting the field's presence — the edit form resubmits the values it loaded,
+  read-only ones included.
 - **`PUT /items/:id` had its own inline diff loop**, which stringified with `String(value)` — so a
   `Decimal` logged as `45000` where the approval path logs `45000.00`, a `null` logged as the
   string `"null"`, and an `ownerId` logged as a bare uuid. Two formats in one table make the
@@ -495,9 +507,10 @@ before the UI is written, not after.
   error. Retried against the unique index rather than pre-checked with a `findUnique`, since
   check-then-create is itself a race. Narrowed to `tagId`, so a collision on any other unique
   column still surfaces.
-- **`PUT /items/:id` 400s a dangling `ownerId` or `categoryId`** instead of letting Prisma's P2003
-  surface as a 500, and reads both names in one query when a foreign key actually changes, for
-  D1's `"<display name> (<id>)"` form.
+- **`PUT /items/:id` 400s a dangling `categoryId`** instead of letting Prisma's P2003 surface as a
+  500, and reads the old and new names in one query when that foreign key actually changes, for D1's
+  `"<display name> (<id>)"` form. `ownerId` needs no equivalent check any more: changing it is refused
+  as a transfer before any lookup happens, and the approval path builds its own labels.
 - **`/categories` and `/items` now hand errors to the central handler.** Both had
   `catch { res.status(500).json({ error: "Failed to ..." }) }`, which dropped the error object
   entirely — a database outage produced a fixed string and no stack trace anywhere.
@@ -599,7 +612,8 @@ a `where` clause that lost its `status` guard. It is verification, not polish.
 
 > **Status: run on 2026-09-04** against the Neon database, from the containers this repo builds.
 > All 18 steps behaved as the table below says, and the full output is posted as a comment on the
-> Phase 2 PR. Two things the run corrected in this document are marked ✎ below.
+> Phase 2 PR. (Step 17 has since been split into 17 and 17b by the transfer-only rule on
+> `PUT /items/:id`; both are marked ✎ and still owe a live run — see the note under the table.) Two things the run corrected in this document are marked ✎ below.
 >
 > Re-run it after any change to the approval transaction — it is still the only place that code meets
 > real Postgres. `pnpm prisma:seed` first: it rewinds `seed-req-0001` to `PENDING` and puts the
@@ -641,12 +655,21 @@ ADMIN=$(login admin@cncs.aau.edu.et 'Admin123!')
 | 14 | `GET /items` with **no** token, after step 6 | The disposed laptop and charger are absent (F7.2); no `purchaseCost`, `brand`, `model`, `serialNumber`, `notes`, `ownerId` or `owner` on any row (SDS 3.2) |
 | 15 | `GET /items?status=DISPOSED` with no token | Still no disposed rows — the query string cannot widen the filter |
 | 16 | `GET /items/CNCS-DEMO-0001` with no token, then as admin | 410 `{"error":"This item is no longer in service"}` and nothing else for the public (F7.3); 200 with the full row including `disposalReason` for the admin (F7.2) |
-| 17 | `PUT /items/<desk-id>` as staff with `{"room":"105"}`, then `GET /items/<desk-id>/history` | 200, then one new row: `fieldChanged: "room"`, `oldValue: "101"`, `newValue: "105"` — and no row for any field you did not send |
+| 17 | `PUT /items/<desk-id>` as staff with `{"room":"105"}`, then `GET /items/<desk-id>/history` | ✎ 400 `{"error":"An item's location and custodian can only change through an approved transfer — file a TRANSFER request instead","fields":["room"]}`, and **no** new history row: the desk stays in room 101 |
+| 17b | Staff files a TRANSFER of the desk with `"newLocationRoom":"105"`, admin approves, then `GET /items/<desk-id>/history` | 200, then one new row: `fieldChanged: "room"`, `oldValue: "101"`, `newValue: "105"` — and no row for any field the request did not name |
 | 18 | `POST /items` as staff with `"parentItemId":"<any-id>"` | 400 pointing at `POST /items/:id/accessories` |
 
 Step 17 uses `CNCS-DEMO-0002` (Office Desk, room 101), not the laptop or the charger — those are
 DISPOSED by step 6, and `PUT` on a disposed item is a 409 on purpose. Its id is not in the seed's
 output; read it from `GET /items?search=Office%20Desk` with a staff token.
+
+> ✎ **Steps 17 and 17b changed after the 2026-09-04 run, and that run needs repeating for them.**
+> `PUT /items/:id` used to answer 200 and write the new room; it now refuses the four transfer-owned
+> columns outright (see the `PUT /items/:id` bullet above). Everything else in the table is
+> unaffected — steps 1–16 and 18 do not touch those columns. Step 17's own 400 is unit-tested
+> (`backend/src/routes/items.test.ts`, "refuses a %s change and points at the transfer flow"), but
+> the *approval* half — 17b, that a transfer is what actually moves the desk — is only real against
+> Postgres, which is why this walkthrough exists.
 
 Steps 3–4 are the ones worth reading carefully: they are the only end-to-end proof that the cascade
 touches the accessory and that both items' history rows land in one decision. Steps 14–17 are the

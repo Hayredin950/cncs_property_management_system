@@ -15,8 +15,15 @@ import jwt from "jsonwebtoken";
 
 export type TestRole = "ADMIN" | "STAFF";
 
-/** Signs a JWT with the same `{ id, role }` payload routes/auth.ts issues. */
-export function createToken(payload: { id: string; role: TestRole }): string {
+/**
+ * Signs a JWT with the same `{ id, role }` payload routes/auth.ts issues.
+ *
+ * `ver` is optional and deliberately omitted by most tests: a token with no
+ * `ver` takes `authenticate`'s legacy signature-only path and costs no database
+ * read, which is what keeps the route suites unchanged. Pass `ver` when the test
+ * is specifically about revocation.
+ */
+export function createToken(payload: { id: string; role: TestRole; ver?: number }): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error("Set process.env.JWT_SECRET at the top of the test file before createToken()");

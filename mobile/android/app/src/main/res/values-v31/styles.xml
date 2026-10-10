@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Android 12+ draws the launch screen itself, and it takes the background from
+      `windowSplashScreenBackground` — falling back to the theme's window background,
+      which is why a dark-mode phone briefly showed a black splash with the app's mark
+      floating on it. Setting it here makes the launch screen white in **every** mode,
+      which is the colour the app's own first frame then continues in.
+
+      The icon is left to the platform (it masks the app's adaptive foreground). The
+      hand-off to `NormalTheme` is Flutter's own `<meta-data
+      android:name="io.flutter.embedding.android.NormalTheme">` in the manifest, not
+      `postSplashScreenTheme` — that attribute belongs to the `core-splashscreen`
+      support library, and naming it under `android:` is a resource-linking error.
+    -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">@android:color/white</item>
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>

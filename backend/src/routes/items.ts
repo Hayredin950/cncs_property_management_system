@@ -10,13 +10,30 @@ import {
   requireRole,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
+import {
+  ALLOWED_PHOTO_TYPES,
+  PHOTO_FIELD_NAME,
+  acceptPhotoUpload,
+} from "../middleware/photoUpload.js";
 import { buildEditLogRows, writeEditLogRows } from "../services/itemEditLog.js";
+import {
+  PhotoUploadError,
+  readPhotoUploadConfig,
+  uploadItemPhoto,
+} from "../services/photoStorage.js";
 import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
 import { isPrivilegedViewer, sanitizeItem } from "../utils/filterItemFields.js";
+import { isPhotoSource } from "../utils/photoSource.js";
 
 export const itemsRouter: Router = Router();
 
 const ConditionEnum = z.enum(["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"]);
+
+/**
+ * The multipart rules (`PHOTO_MAX_BYTES`, the MIME list, `acceptPhotoUpload`)
+ * live in `middleware/photoUpload.ts` because `POST /uploads/photo` accepts the
+ * same files from a different route — see the note there.
+ */
 
 const createItemSchema = z.object({
   name: z.string().trim().min(1, "Item name is required"),
@@ -32,7 +49,16 @@ const createItemSchema = z.object({
   brand: z.string().trim().optional().nullable(),
   model: z.string().trim().optional().nullable(),
   serialNumber: z.string().trim().optional().nullable(),
-  photoUrl: z.string().url().optional().nullable(),
+  /**
+   * `isPhotoSource`, not `z.string().url()`: an absolute URL *or* a
+   * site-relative path. The stricter check looked right and broke a real case —
+   * the seeded demo rows carry `/photos/desk.jpg`, so editing any of them (the
+   * edit form resubmits the value it loaded) failed validation with "Invalid
+   * URL" and the save could never succeed. See `utils/photoSource.ts`.
+   */
+  photoUrl: z.string().trim().refine(isPhotoSource, {
+    message: "Photo must be a full https:// URL or a path beginning with /",
+  }).optional().nullable(),
   notes: z.string().trim().optional().nullable(),
 });
 
@@ -60,6 +86,43 @@ function rejectedBundleField(body: unknown): boolean {
 
 const BUNDLE_FIELD_ERROR =
   "parentItemId cannot be set here — use POST /items/:id/accessories to link an accessory";
+
+/**
+ * The columns that say *where an item is* and *whose it is*, and whose only write
+ * path for an existing item is an approved TRANSFER request (SRS F6, F7).
+ *
+ * All four are part of a transfer's payload — `Request.newLocationBuilding`,
+ * `newLocationFloor`, `newLocationRoom`, `newOwnerId`, applied by
+ * `buildTransferChanges` — which made this endpoint a second, unapproved writer of
+ * exactly the fields the approval flow exists to govern. A Staff member could move
+ * an item to another room and save it immediately; the edit log recorded the
+ * change, but nobody approved it, so the register's answer to "where is it?" was
+ * only as trustworthy as the last person to type in the form. Logging a bypass
+ * does not turn it into an approval.
+ *
+ * `POST /items` still accepts all four — registering an item is not a transfer,
+ * and there is no prior location for an approval to guard. The rule begins with
+ * the row's existence.
+ *
+ * Enforced by comparing against the stored row, not by rejecting on presence: the
+ * edit form resubmits the values it loaded, so only an actual change is a move.
+ * Rejected loudly for the same reason `parentItemId` is — a caller who sends one
+ * should learn where the field really lives, not watch it disappear.
+ */
+const TRANSFER_ONLY_FIELDS = ["building", "floor", "room", "ownerId"] as const;
+
+const TRANSFER_ONLY_ERROR =
+  "An item's location and custodian can only change through an approved transfer — file a TRANSFER request instead";
+
+/** The transfer-only columns this body actually changes; empty means none. */
+function attemptedTransferFields(
+  updates: Partial<Record<string, unknown>>,
+  existing: { building: string; floor: string; room: string; ownerId: string },
+): string[] {
+  return TRANSFER_ONLY_FIELDS.filter(
+    (field) => field in updates && updates[field] !== existing[field],
+  );
+}
 
 function generateTagId(): string {
   const randomHex = crypto.randomBytes(4).toString("hex").toUpperCase();
@@ -187,6 +250,18 @@ itemsRouter.get(
   },
 );
 
+/** Matches a v4-ish uuid. Used to tell `GET /items/:id` from `GET /items/:tagId`. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * `GET /items/:tagId` — the QR destination — **and** `GET /items/:id`.
+ *
+ * Both are single-segment paths, so they would be the same Express route if
+ * declared separately and order alone would decide the winner. Rather than add
+ * a collision, the one handler accepts either key and picks by shape: a uuid is
+ * an `id`, everything else is a `tagId`. That closes the "no `GET /items/:id`"
+ * gap (the staff page had to carry `?tag=` around) without a second route.
+ */
 itemsRouter.get(
   "/:tagId",
   optionalAuthenticate,
@@ -199,7 +274,7 @@ itemsRouter.get(
       }
 
       const item = await prisma.item.findUnique({
-        where: { tagId },
+        where: UUID_PATTERN.test(tagId) ? { id: tagId } : { tagId },
         include: {
           category: true,
           accessories: true,
@@ -273,6 +348,94 @@ itemsRouter.post(
   },
 );
 
+/**
+ * POST /api/v1/items/:id/photo — Staff/Admin. Uploads an item's photograph.
+ *
+ * `multipart/form-data` with the image in a field named `photo`. Staff/Admin
+ * only, matching every other write to an item: the photo is a field of the
+ * record, not a public contribution.
+ */
+itemsRouter.post(
+  "/:id/photo",
+  authenticate,
+  requireRole(["ADMIN", "STAFF"]),
+  acceptPhotoUpload,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Item ID is required" });
+        return;
+      }
+
+      // Configuration first: a deployment without Cloudinary keys should say so
+      // before it has consumed and discarded the caller's upload.
+      if (!readPhotoUploadConfig()) {
+        res.status(503).json({ error: "Photo uploads are not configured on this server" });
+        return;
+      }
+
+      if (!req.file) {
+        res.status(400).json({
+          error: `Attach the image in a form field named \`${PHOTO_FIELD_NAME}\``,
+        });
+        return;
+      }
+
+      if (!ALLOWED_PHOTO_TYPES.has(req.file.mimetype)) {
+        res.status(415).json({
+          error: `Photo must be a JPEG, PNG, WebP or GIF image (received ${req.file.mimetype})`,
+        });
+        return;
+      }
+
+      const existingItem = await prisma.item.findUnique({ where: { id } });
+      if (!existingItem) {
+        res.status(404).json({ error: "Item not found" });
+        return;
+      }
+
+      // Same rule as PUT /items/:id: disposal is terminal, so a disposed row is
+      // read-only (SRS F7.2). 409 rather than 404 — the item exists.
+      if (existingItem.status === "DISPOSED") {
+        res.status(409).json({ error: "Item is already disposed" });
+        return;
+      }
+
+      const photoUrl = await uploadItemPhoto(req.file.buffer, existingItem.tagId);
+
+      // One transaction, so the row and its history entry cannot disagree about
+      // what the photo is — the same guarantee every other item write makes.
+      const updatedItem = await prisma.$transaction(async (tx) => {
+        const updated = await tx.item.update({ where: { id }, data: { photoUrl } });
+
+        const editLogRows = buildEditLogRows({
+          itemId: id,
+          editedById: req.user!.id,
+          editedAt: new Date(),
+          before: { photoUrl: existingItem.photoUrl },
+          after: { photoUrl },
+          labels: { photoUrl: "Photo" },
+        });
+        await writeEditLogRows(tx, editLogRows);
+
+        return updated;
+      });
+
+      res.status(200).json(updatedItem);
+    } catch (err) {
+      // An upload failure is upstream, not a bug in the request: 502 says "the
+      // thing we depend on did not answer", which is what an operator needs to
+      // see to check the Cloudinary account rather than the item.
+      if (err instanceof PhotoUploadError) {
+        next(httpError(502, "The photo could not be uploaded"));
+        return;
+      }
+      next(err);
+    }
+  },
+);
+
 itemsRouter.put(
   "/:id",
   authenticate,
@@ -327,6 +490,18 @@ itemsRouter.put(
       const updates = cleanDefined(parsed.data);
 
       /**
+       * A move or a reassignment is a TRANSFER, and the approval path is its only
+       * writer — see `TRANSFER_ONLY_FIELDS`. Checked before any write, so a body
+       * that mixes a legitimate edit with a location change is refused whole
+       * rather than half-applied.
+       */
+      const transferFields = attemptedTransferFields(updates, existingItem);
+      if (transferFields.length > 0) {
+        res.status(400).json({ error: TRANSFER_ONLY_ERROR, fields: transferFields });
+        return;
+      }
+
+      /**
        * `updateMany({ data: {} })` is not a well-formed UPDATE, and an empty diff
        * has nothing to log, so an empty body short-circuits to the current row.
        */
@@ -339,26 +514,17 @@ itemsRouter.put(
        * Foreign keys are logged as "<display name> (<id>)" (decision D1), which
        * needs the names on both sides of the change — the old value's and the
        * new one's. Fetched only when the column is actually changing, so the
-       * common edit (condition, notes, location) adds no queries.
+       * common edit adds no queries.
        *
-       * Re-verifying the new ids here also turns a dangling reference into a 400
+       * Re-verifying the new id here also turns a dangling reference into a 400
        * instead of a Prisma P2003 surfacing as a 500.
+       *
+       * `ownerId` needs no equivalent: a change to it is refused above as a
+       * transfer, and the approval path builds its own labels
+       * (services/requestWorkflow.ts). `categoryId` is the only foreign key this
+       * endpoint may still change.
        */
       const labels: Record<string, string> = {};
-
-      if (typeof updates.ownerId === "string" && updates.ownerId !== existingItem.ownerId) {
-        const owners = await prisma.user.findMany({
-          where: { id: { in: [existingItem.ownerId, updates.ownerId] } },
-          select: { id: true, fullName: true },
-        });
-        if (!owners.some((owner) => owner.id === updates.ownerId)) {
-          res.status(400).json({ error: "ownerId does not match an existing user" });
-          return;
-        }
-        for (const owner of owners) {
-          labels[owner.id] = owner.fullName;
-        }
-      }
 
       if (
         typeof updates.categoryId === "string" &&

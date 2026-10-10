@@ -1,0 +1,14 @@
+# This directory is deliberately empty.
+#
+# Vercel finishes a build and then refuses to deploy unless a static output
+# directory exists: `No Output Directory named "public" found after the Build
+# completed`. This backend has no static output — it is one serverless function
+# (`api/index.js`) behind a catch-all rewrite — so it needs a directory that
+# exists and contains nothing.
+#
+# Pointing `outputDirectory` at `dist/` instead would satisfy the same check and
+# be worse: `dist/` is the compiled server (plus `.js.map` source maps, which
+# embed the original TypeScript), and Vercel serves static files *before*
+# applying rewrites, so `/routes/items.js` and `/app.js.map` would be publicly
+# downloadable. An empty directory publishes nothing while still passing the
+# check.

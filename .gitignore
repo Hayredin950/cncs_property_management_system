@@ -37,6 +37,11 @@ $RECYCLE.BIN/
 !.env.example
 !.env.template
 !.env.sample
+# Templates for a specific environment, e.g. `.env.production.example`. Same
+# intent as the three lines above: the *template* is tracked so nobody needs to
+# paste real values into a tracked file, while `.env.production` itself stays
+# ignored by the `.env.*` rule above.
+!.env.*.example
 .env.local
 .env.development.local
 .env.test.local

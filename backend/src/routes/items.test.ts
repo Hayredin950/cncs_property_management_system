@@ -370,7 +370,7 @@ function loggedRows(): Array<Record<string, unknown>> {
 
 describe("PUT /items/:id", () => {
   it("requires authentication", async () => {
-    const res = await request(app).put("/items/item-1").send({ room: "101" });
+    const res = await request(app).put("/items/item-1").send({ condition: "FAIR" });
     expect(res.status).toBe(401);
     expect(prisma.item.updateMany).not.toHaveBeenCalled();
   });
@@ -380,7 +380,7 @@ describe("PUT /items/:id", () => {
     const res = await request(app)
       .put("/items/item-ghost")
       .set("Authorization", `Bearer ${staffToken}`)
-      .send({ room: "101" });
+      .send({ condition: "FAIR" });
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: "Item not found" });
@@ -396,7 +396,7 @@ describe("PUT /items/:id", () => {
     const res = await request(app)
       .put("/items/item-1")
       .set("Authorization", `Bearer ${staffToken}`)
-      .send({ room: "101" });
+      .send({ condition: "FAIR" });
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: "Item is already disposed" });
@@ -424,19 +424,19 @@ describe("PUT /items/:id", () => {
     const res = await request(app)
       .put("/items/item-1")
       .set("Authorization", `Bearer ${staffToken}`)
-      .send({ room: "101", condition: "FAIR", name: FULL_ITEM.name });
+      .send({ condition: "FAIR", notes: "Repaired", name: FULL_ITEM.name });
 
     expect(res.status).toBe(200);
     const rows = loggedRows();
-    expect(rows.map((row) => row.fieldChanged).sort()).toEqual(["condition", "room"]);
+    expect(rows.map((row) => row.fieldChanged).sort()).toEqual(["condition", "notes"]);
     expect(rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           itemId: "item-1",
           editedById: "staff-1",
-          fieldChanged: "room",
-          oldValue: "312",
-          newValue: "101",
+          fieldChanged: "notes",
+          oldValue: "Screen replaced in 2025",
+          newValue: "Repaired",
         }),
         expect.objectContaining({ fieldChanged: "condition", oldValue: "GOOD", newValue: "FAIR" }),
       ])
@@ -451,7 +451,7 @@ describe("PUT /items/:id", () => {
     await request(app)
       .put("/items/item-1")
       .set("Authorization", `Bearer ${staffToken}`)
-      .send({ room: "101" });
+      .send({ condition: "FAIR" });
 
     // The findUnique check above can go stale: a DISPOSAL approval committing in
     // between must not be overwritten. `where` carries the guard.
@@ -471,7 +471,7 @@ describe("PUT /items/:id", () => {
     const res = await request(app)
       .put("/items/item-1")
       .set("Authorization", `Bearer ${staffToken}`)
-      .send({ room: "101" });
+      .send({ condition: "FAIR" });
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: "Item is already disposed" });
@@ -493,48 +493,91 @@ describe("PUT /items/:id", () => {
     expect(prisma.itemEditLog.createMany).not.toHaveBeenCalled();
   });
 
-  it("logs an owner change as \"name (id)\" on both sides", async () => {
-    vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "staff-1", fullName: "Demo Staff" },
-      { id: OWNER_UUID, fullName: "Second Custodian" },
-    ] as never);
+  /**
+   * The transfer-only columns. A move or a reassignment is an approved TRANSFER
+   * request (SRS F6), so this endpoint must not be a second writer of the fields
+   * the approval flow exists to govern. The edit log recording the change was never
+   * the objection: logging a bypass does not turn it into an approval, and the
+   * register's answer to "where is it, and whose is it?" was only as trustworthy as
+   * the last person to type in the form.
+   */
+  it.each([
+    ["room", { room: "101" }],
+    ["building", { building: "New Block" }],
+    ["floor", { floor: "1" }],
+    ["ownerId", { ownerId: OWNER_UUID }],
+  ])("refuses a %s change and points at the transfer flow", async (field, body) => {
+    const res = await request(app)
+      .put("/items/item-1")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send(body);
 
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("TRANSFER request");
+    // Named, so a caller editing three fields learns which one is the problem.
+    expect(res.body.fields).toEqual([field]);
+    expect(prisma.item.updateMany).not.toHaveBeenCalled();
+    expect(prisma.itemEditLog.createMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses a move for an admin too — approval is the rule, not the role", async () => {
+    // Deliberately not role-scoped. Staff-only gating would have closed the
+    // reported hole and left the rule itself half-enforced; the requirement is
+    // that the move is approved, not that Staff cannot make it.
     const res = await request(app)
       .put("/items/item-1")
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ ownerId: OWNER_UUID });
+      .send({ room: "101" });
 
-    expect(res.status).toBe(200);
-    // Both halves (D1): a bare uuid is unreadable in a history table, and a bare
-    // name stops matching the moment someone is renamed.
-    expect(loggedRows()[0]).toMatchObject({
-      fieldChanged: "ownerId",
-      oldValue: "Demo Staff (staff-1)",
-      newValue: `Second Custodian (${OWNER_UUID})`,
-    });
-    // Only the two users involved are read, and only their display fields.
-    expect(vi.mocked(prisma.user.findMany).mock.calls[0]?.[0]).toEqual({
-      where: { id: { in: ["staff-1", OWNER_UUID] } },
-      select: { id: true, fullName: true },
-    });
+    expect(res.status).toBe(400);
+    expect(prisma.item.updateMany).not.toHaveBeenCalled();
   });
 
-  it("400s a dangling ownerId or categoryId instead of surfacing a 500", async () => {
-    // `Item.ownerId` and `Item.categoryId` are real foreign keys, so Prisma would
-    // raise P2003 and the caller would read "Internal server error" for what is
-    // plainly a bad request.
-    vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "staff-1", fullName: "Demo Staff" },
-    ] as never);
-    const owner = await request(app)
+  it("accepts the location resubmitted unchanged, which is what the edit form sends", async () => {
+    // The form loads every field and submits them all back, read-only ones
+    // included, so refusing on *presence* would have made the form unsavable.
+    // Only an actual change is a move — this is the case that proves it, and it is
+    // the reason the gate compares against the stored row instead of scanning the
+    // body for the field names.
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({
+      ...FULL_ITEM,
+      ownerId: OWNER_UUID,
+    } as never);
+
+    const res = await request(app)
       .put("/items/item-1")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ ownerId: OWNER_UUID });
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({
+        building: FULL_ITEM.building,
+        floor: FULL_ITEM.floor,
+        room: FULL_ITEM.room,
+        ownerId: OWNER_UUID,
+        condition: "FAIR",
+      });
 
-    expect(owner.status).toBe(400);
-    expect(owner.body).toEqual({ error: "ownerId does not match an existing user" });
+    expect(res.status).toBe(200);
+    expect(loggedRows().map((row) => row.fieldChanged)).toEqual(["condition"]);
+  });
+
+  it("refuses an edit that mixes a legitimate change with a move, writing nothing", async () => {
+    const res = await request(app)
+      .put("/items/item-1")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ condition: "FAIR", room: "101" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.fields).toEqual(["room"]);
+    // Refused whole rather than half-applied: no edit-log row may claim the
+    // condition changed when the save as a whole did not happen.
     expect(prisma.item.updateMany).not.toHaveBeenCalled();
+    expect(prisma.itemEditLog.createMany).not.toHaveBeenCalled();
+  });
 
+  it("400s a dangling categoryId instead of surfacing a 500", async () => {
+    // `Item.categoryId` is a real foreign key, so Prisma would raise P2003 and the
+    // caller would read "Internal server error" for what is plainly a bad request.
+    // (`ownerId` needs no equivalent check any more: changing it is refused above
+    // as a transfer, before any lookup.)
     vi.mocked(prisma.category.findMany).mockResolvedValue([] as never);
     const category = await request(app)
       .put("/items/item-1")
@@ -547,13 +590,21 @@ describe("PUT /items/:id", () => {
   });
 
   it("skips the label lookups when no foreign key is changing", async () => {
-    await request(app)
+    // The stored owner has to be a real uuid, or the request never gets far enough
+    // for "no lookup happened" to mean anything.
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({
+      ...FULL_ITEM,
+      ownerId: OWNER_UUID,
+    } as never);
+
+    const res = await request(app)
       .put("/items/item-1")
       .set("Authorization", `Bearer ${staffToken}`)
-      .send({ room: "101", ownerId: FULL_ITEM.ownerId });
+      .send({ condition: "FAIR", ownerId: OWNER_UUID });
 
-    // `ownerId` is present but unchanged, so there is nothing to expand and the
-    // common edit costs no extra queries.
+    // `ownerId` is present but unchanged, so it is not a transfer and there is
+    // nothing to expand — the common edit costs no extra queries.
+    expect(res.status).toBe(200);
     expect(prisma.user.findMany).not.toHaveBeenCalled();
     expect(prisma.category.findMany).not.toHaveBeenCalled();
   });

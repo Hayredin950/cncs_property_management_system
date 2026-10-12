@@ -13,6 +13,19 @@ export const ROLES = [
 ] as const;
 export type Role = (typeof ROLES)[number];
 
+/**
+ * Account lifecycle (spec 3.1.2). `PENDING_APPROVAL` is the state a self-request
+ * lands in: it cannot sign in, and a SYSTEM_ADMIN decides it from the queue.
+ */
+export const ACCOUNT_STATUSES = [
+  "ACTIVE",
+  "PENDING_EMAIL_VERIFICATION",
+  "PENDING_APPROVAL",
+  "REJECTED",
+  "DEACTIVATED",
+] as const;
+export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
+
 export const CONDITIONS = ["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"] as const;
 export type Condition = (typeof CONDITIONS)[number];
 
@@ -64,6 +77,14 @@ export const AUDIT_RESULT_LABELS: Record<AuditItemResult, string> = {
   FOUND: "Found",
   MISSING: "Missing",
   LOCATION_MISMATCH: "Wrong location",
+};
+
+export const ACCOUNT_STATUS_LABELS: Record<AccountStatus, string> = {
+  ACTIVE: "Active",
+  PENDING_EMAIL_VERIFICATION: "Email not confirmed",
+  PENDING_APPROVAL: "Waiting for approval",
+  REJECTED: "Declined",
+  DEACTIVATED: "Deactivated",
 };
 
 export const ROLE_LABELS: Record<Role, string> = {

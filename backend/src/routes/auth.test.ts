@@ -173,6 +173,9 @@ describe("POST /auth/register", () => {
         role: "STAFF",
         departmentId: null,
         accountStatus: "ACTIVE",
+        reviewedById: null,
+        reviewedAt: null,
+        reviewNote: null,
         createdAt: new Date(),
         tokenVersion: 0,
         mustChangePassword: false,
@@ -203,6 +206,9 @@ describe("POST /auth/register", () => {
         role: "STAFF",
         departmentId: null,
         accountStatus: "ACTIVE",
+        reviewedById: null,
+        reviewedAt: null,
+        reviewNote: null,
         createdAt: new Date(),
         tokenVersion: 0,
         mustChangePassword: false,
@@ -233,6 +239,9 @@ describe("POST /auth/register", () => {
         role: "STAFF",
         departmentId: null,
         accountStatus: "ACTIVE",
+        reviewedById: null,
+        reviewedAt: null,
+        reviewNote: null,
         createdAt: new Date(),
         tokenVersion: 0,
         mustChangePassword: false,
@@ -292,6 +301,7 @@ describe("POST /auth/register", () => {
         fullName: "Abebe Kebede",
         email: "abebe@cncs.aau.edu.et",
         role: "STAFF" as const,
+        accountStatus: "ACTIVE" as const,
         createdAt: new Date("2026-09-02T10:00:00.000Z"),
         mustChangePassword: true,
       };
@@ -350,6 +360,7 @@ describe("POST /auth/register", () => {
         fullName: "Chaltu Desta",
         email: "STAFF-007",
         role: "STAFF" as const,
+        accountStatus: "ACTIVE" as const,
         createdAt: new Date(),
       };
 
@@ -379,6 +390,7 @@ describe("POST /auth/register", () => {
         fullName: "Hanna Tesfaye",
         email: "hanna@cncs.aau.edu.et",
         role: "STAFF" as const,
+        accountStatus: "ACTIVE" as const,
         createdAt: new Date(),
       };
 
@@ -446,6 +458,7 @@ describe("POST /auth/login", () => {
       email: "dawit@cncs.aau.edu.et",
       passwordHash,
       role: "STAFF" as const,
+      accountStatus: "ACTIVE" as const,
       createdAt: new Date("2026-09-02T10:00:00.000Z"),
     };
 
@@ -491,6 +504,7 @@ describe("POST /auth/login", () => {
       email: "sara@cncs.aau.edu.et",
       passwordHash,
       role: "STAFF" as const,
+      accountStatus: "ACTIVE" as const,
       createdAt: new Date(),
     };
 
@@ -530,6 +544,7 @@ describe("POST /auth/login", () => {
       email: "STAFF-999",
       passwordHash,
       role: "STAFF" as const,
+      accountStatus: "ACTIVE" as const,
       createdAt: new Date(),
     };
 
@@ -557,6 +572,7 @@ describe("POST /auth/login", () => {
       email: "new.holder@cncs.aau.edu.et",
       passwordHash,
       role: "STAFF" as const,
+      accountStatus: "ACTIVE" as const,
       createdAt: new Date(),
       tokenVersion: 0,
       mustChangePassword: true,
@@ -604,6 +620,7 @@ describe("POST /auth/login", () => {
       email: "tadesse@cncs.aau.edu.et",
       passwordHash,
       role: "STAFF" as const,
+      accountStatus: "ACTIVE" as const,
       createdAt: new Date(),
     };
 
@@ -702,5 +719,174 @@ describe("GET /auth/me", () => {
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("User not found");
     expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+  });
+});
+
+/**
+ * `POST /auth/account-requests` — the door the supervisor's feedback asked for
+ * (spec 3.1.2).
+ *
+ * The rule under test is one sentence: **nobody self-registers into an active
+ * account.** Knocking on this door creates a `PENDING_APPROVAL` row and no token,
+ * so the next thing the person can do is wait — the decision belongs to
+ * `POST /users/:id/approve`, and to somebody else.
+ */
+describe("POST /auth/account-requests", () => {
+  const REQUEST_BODY = {
+    fullName: "Hanna Tesfaye",
+    email: "Hanna@cncs.aau.edu.et",
+    password: "ChosenByMe123",
+  };
+
+  // This file's earlier suites create rows, and `not.toHaveBeenCalled()` below is a
+  // statement about *this* test — so the counters start clean per case.
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("creates a pending account, normalises the email, and issues no token", async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({
+      id: "pending-1",
+      fullName: REQUEST_BODY.fullName,
+      email: "hanna@cncs.aau.edu.et",
+      accountStatus: "PENDING_APPROVAL",
+      createdAt: new Date("2026-10-12T10:00:00.000Z"),
+    } as never);
+
+    const res = await request(app).post("/auth/account-requests").send(REQUEST_BODY);
+
+    expect(res.status).toBe(201);
+    expect(res.body.request.accountStatus).toBe("PENDING_APPROVAL");
+    // No token, no user object: there is nothing this request may do yet, and a
+    // token would be a session the login gate refuses anyway.
+    expect(res.body.token).toBeUndefined();
+    expect(res.body.user).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+
+    const call = vi.mocked(prisma.user.create).mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(call.data.email).toBe("hanna@cncs.aau.edu.et");
+    expect(call.data.accountStatus).toBe("PENDING_APPROVAL");
+    // A request asks as STAFF and carries no role field at all, so no payload turns
+    // a request into a privileged account.
+    expect(call.data.role).toBe("STAFF");
+    // The person chose this password (spec 3.3.7/12.5), so there is no shared
+    // secret to replace and nothing to force a change of.
+    expect(call.data.mustChangePassword).toBeUndefined();
+  });
+
+  it("does not require a token — asking is public, approving is not", async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({
+      id: "pending-1",
+      fullName: REQUEST_BODY.fullName,
+      email: "hanna@cncs.aau.edu.et",
+      accountStatus: "PENDING_APPROVAL",
+      createdAt: new Date(),
+    } as never);
+
+    const res = await request(app).post("/auth/account-requests").send(REQUEST_BODY);
+
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects a short password and a malformed email", async () => {
+    const shortPassword = await request(app)
+      .post("/auth/account-requests")
+      .send({ ...REQUEST_BODY, password: "short" });
+    expect(shortPassword.status).toBe(400);
+
+    const badEmail = await request(app)
+      .post("/auth/account-requests")
+      .send({ ...REQUEST_BODY, email: "not-an-email" });
+    expect(badEmail.status).toBe(400);
+
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 for an address that already has a row, pending or not", async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({ id: "pending-1" } as never);
+
+    const res = await request(app).post("/auth/account-requests").send(REQUEST_BODY);
+
+    expect(res.status).toBe(409);
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The other end of the same rule: a status that is not `ACTIVE` cannot sign in,
+ * however good the password is.
+ *
+ * 403 with the reason rather than 401 "Invalid credentials" — the credential check
+ * passed, and telling someone their password is wrong when the real answer is
+ * "nobody has approved you yet" is the unhelpful half of the same message.
+ */
+describe("POST /auth/login — account status gate", () => {
+  const RAW_PASSWORD = "CorrectHorseBattery1";
+
+  async function loginAs(accountStatus: string) {
+    const passwordHash = await argon2.hash(RAW_PASSWORD, { type: argon2.argon2id });
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+      id: "user-90",
+      fullName: "Hanna Tesfaye",
+      email: "hanna@cncs.aau.edu.et",
+      passwordHash,
+      role: "STAFF" as const,
+      accountStatus,
+      departmentId: null,
+      createdAt: new Date(),
+      tokenVersion: 0,
+      mustChangePassword: false,
+    } as never);
+
+    return request(app)
+      .post("/auth/login")
+      .send({ email: "hanna@cncs.aau.edu.et", password: RAW_PASSWORD });
+  }
+
+  it("refuses a request nobody has approved yet", async () => {
+    const res = await loginAs("PENDING_APPROVAL");
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/waiting for approval/i);
+    expect(res.body.token).toBeUndefined();
+  });
+
+  it("refuses a rejected account and a deactivated one", async () => {
+    const rejected = await loginAs("REJECTED");
+    expect(rejected.status).toBe(403);
+    expect(rejected.body.error).toMatch(/declined/i);
+
+    const deactivated = await loginAs("DEACTIVATED");
+    expect(deactivated.status).toBe(403);
+    expect(deactivated.body.error).toMatch(/deactivated/i);
+  });
+
+  it("still answers a plain 401 for a wrong password, whatever the status", async () => {
+    // The status gate runs after the password check on purpose: telling an
+    // unauthenticated caller that an address has a pending account would make this
+    // endpoint an account-existence oracle.
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+      id: "user-90",
+      fullName: "Hanna Tesfaye",
+      email: "hanna@cncs.aau.edu.et",
+      passwordHash: await argon2.hash(RAW_PASSWORD, { type: argon2.argon2id }),
+      role: "STAFF" as const,
+      accountStatus: "PENDING_APPROVAL",
+      departmentId: null,
+      createdAt: new Date(),
+      tokenVersion: 0,
+      mustChangePassword: false,
+    } as never);
+
+    const res = await request(app)
+      .post("/auth/login")
+      .send({ email: "hanna@cncs.aau.edu.et", password: "WrongPassword1" });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("Invalid credentials");
   });
 });

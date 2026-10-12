@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_error.dart';
 import '../../data/providers/auth_provider.dart';
@@ -152,6 +153,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   size: AppButtonSize.lg,
                   loading: _submitting,
                   onPressed: _submit,
+                ),
+                const SizedBox(height: AppSpace.s4),
+                const InfoNote(
+                  icon: Icons.info_outline,
+                  message: 'Need access? Request an account — a system administrator '
+                      'must approve before you can sign in.',
+                  tone: InfoTone.neutral,
+                ),
+                const SizedBox(height: AppSpace.s2),
+                TextButton(
+                  onPressed: () => context.push('/request-account'),
+                  child: const Text('Request an account'),
                 ),
               ],
             ),

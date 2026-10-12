@@ -5,7 +5,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
-import { OFFICER_ACCOUNT, STAFF_ACCOUNT, STAFF_USER, SYSTEM_ADMIN_USER } from "./fixtures";
+import {
+  OFFICER_ACCOUNT,
+  PENDING_ACCOUNT,
+  STAFF_ACCOUNT,
+  STAFF_USER,
+  SYSTEM_ADMIN_USER,
+} from "./fixtures";
 
 const API = "http://localhost:4000/api/v1";
 
@@ -159,5 +165,124 @@ describe("/admin/users — the accounts screen", () => {
     renderWithProviders({ initialEntries: ["/admin/users"] });
 
     expect(await screen.findByText("Page not found")).toBeInTheDocument();
+  });
+
+  it("renders the pending approval queue above the create form", async () => {
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/admin/users"] });
+
+    const main = await screen.findByRole("main");
+    expect(await within(main).findByText(/Waiting for approval/)).toBeInTheDocument();
+    expect(within(main).getByText(PENDING_ACCOUNT.fullName)).toBeInTheDocument();
+    expect(within(main).getByText(PENDING_ACCOUNT.email)).toBeInTheDocument();
+    expect(within(main).getByText(/Requested/)).toBeInTheDocument();
+
+    // The queue sits above "Create an account" so waiting people are not buried
+    // under the invite form.
+    const waiting = within(main).getByText(/Waiting for approval/);
+    const create = within(main).getByText("Create an account");
+    expect(
+      waiting.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("approves a pending account with the chosen role in the body", async () => {
+    let body: unknown = null;
+    let approvedId: string | null = null;
+    server.use(
+      http.post(`${API}/users/:id/approve`, async ({ params, request }) => {
+        approvedId = params.id as string;
+        body = await request.json();
+        return HttpResponse.json({
+          ...PENDING_ACCOUNT,
+          accountStatus: "ACTIVE",
+          role: "AUDITOR",
+          reviewedAt: "2026-09-16T12:00:00.000Z",
+        });
+      }),
+    );
+
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/admin/users"] });
+    const user = userEvent.setup();
+
+    const main = await screen.findByRole("main");
+    const row = (await within(main).findByText(PENDING_ACCOUNT.fullName)).closest(
+      "li",
+    ) as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: "Approve" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Role"), "AUDITOR");
+    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(approvedId).toBe(PENDING_ACCOUNT.id));
+    expect(body).toEqual({ role: "AUDITOR" });
+  });
+
+  it("rejects a pending account only with a reason in the body", async () => {
+    let body: unknown = null;
+    let rejectedId: string | null = null;
+    server.use(
+      http.post(`${API}/users/:id/reject`, async ({ params, request }) => {
+        rejectedId = params.id as string;
+        body = await request.json();
+        return HttpResponse.json({
+          ...PENDING_ACCOUNT,
+          accountStatus: "REJECTED",
+          reviewedAt: "2026-09-16T12:00:00.000Z",
+          reviewNote: "Not a campus staff member.",
+        });
+      }),
+    );
+
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/admin/users"] });
+    const user = userEvent.setup();
+
+    const main = await screen.findByRole("main");
+    const row = (await within(main).findByText(PENDING_ACCOUNT.fullName)).closest(
+      "li",
+    ) as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: "Reject" }));
+
+    const dialog = await screen.findByRole("dialog");
+    // Empty reason keeps the confirm disabled — the reason is required.
+    const confirm = within(dialog).getByRole("button", { name: "Reject" });
+    expect(confirm).toBeDisabled();
+
+    await user.type(within(dialog).getByLabelText(/Rejection reason/), "Not a campus staff member.");
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    await waitFor(() => expect(rejectedId).toBe(PENDING_ACCOUNT.id));
+    expect(body).toEqual({ reason: "Not a campus staff member." });
+  });
+
+  it("never offers Approve or Reject on the acting administrator's own pending row", async () => {
+    // The queue can theoretically include the caller's own id; the UI hides the
+    // actions as a courtesy — the server still refuses with assertCanReview.
+    const ownPending = {
+      ...SYSTEM_ADMIN_USER,
+      itemCount: 0,
+      accountStatus: "PENDING_APPROVAL" as const,
+      reviewedAt: null,
+      reviewNote: null,
+    };
+    server.use(http.get(`${API}/users/approvals`, () => HttpResponse.json([ownPending])));
+
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/admin/users"] });
+
+    const main = await screen.findByRole("main");
+
+    // "Abebe Admin" also appears in the Existing accounts list below, so find the
+    // queue row through the message only its own pending row shows — that text
+    // uniquely identifies the queue's own-row card.
+    const row = (
+      await within(main).findByText(/You cannot approve your own account/)
+    ).closest("li") as HTMLElement;
+    expect(within(row).getByText(ownPending.fullName)).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
   });
 });

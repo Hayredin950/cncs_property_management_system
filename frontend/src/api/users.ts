@@ -17,6 +17,39 @@ export interface UpdateUserPayload {
   email?: string;
 }
 
+/**
+ * `GET /users/approvals` — the accounts waiting for a decision, oldest first.
+ *
+ * Requires `ACCOUNT_MANAGE`, which is more than `GET /users` needs: the account list
+ * fills the custodian picker, while the queue is the list of people waiting to join,
+ * and who is waiting is the System Admin's business alone.
+ */
+export function fetchApprovals(signal?: AbortSignal): Promise<UserSummary[]> {
+  return apiClient.get<UserSummary[]>("/users/approvals", undefined, signal);
+}
+
+/**
+ * `POST /users/:id/approve` — let the account sign in.
+ *
+ * `role` is the real role, assigned at approval time: the request itself always asks
+ * as STAFF, because a person must not be able to choose their own privileges. Omit
+ * it to keep the role the request already carries.
+ *
+ * The server refuses an administrator approving **their own** account with 403 — the
+ * rule lives there, not in this client.
+ */
+export function approveUser(id: string, role?: Role): Promise<UserSummary> {
+  return apiClient.post<UserSummary>(`/users/${encodeURIComponent(id)}/approve`, role ? { role } : {});
+}
+
+/**
+ * `POST /users/:id/reject` — decline the request with a reason the person will read.
+ * The reason is required (3–500 characters), same as a request rejection (F6.2).
+ */
+export function rejectUser(id: string, reason: string): Promise<UserSummary> {
+  return apiClient.post<UserSummary>(`/users/${encodeURIComponent(id)}/reject`, { reason });
+}
+
 /** `PATCH /users/:id` — correct a name or email. A taken email answers 409. */
 export function updateUser(id: string, payload: UpdateUserPayload): Promise<UserSummary> {
   return apiClient.patch<UserSummary>(`/users/${encodeURIComponent(id)}`, payload);

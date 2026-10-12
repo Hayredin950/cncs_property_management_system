@@ -10,6 +10,7 @@ import {
 } from "../middleware/auth.js";
 import { createRateLimiter, noRateLimit } from "../middleware/rateLimit.js";
 import { normalizeEmail } from "../utils/email.js";
+import { signInRefusal } from "../services/accountApproval.js";
 
 const router: ExpressRouter = Router();
 
@@ -72,9 +73,15 @@ const loginSchema = z
 
 /**
  * POST /auth/register
- * Admin-only route to register a new user (ADMIN or STAFF).
+ * Admin-only route to register a new user (the five spec roles).
  * Validates payload, verifies uniqueness, hashes password with argon2id,
  * and returns safe user data without exposing password hashes.
+ *
+ * This is an **invite**, not a request: the administrator is the approver, so the
+ * account is created `ACTIVE` and the decision is recorded (`reviewedById`) rather
+ * than left looking unreviewed in the approval queue. People who were not invited
+ * ask for an account through `POST /auth/account-requests` instead, and that one
+ * lands `PENDING_APPROVAL` and cannot sign in until an administrator decides.
  *
  * The password here is an **initial, temporary** one an administrator typed and
  * passes on, so the account is created flagged `mustChangePassword`. Without
@@ -148,6 +155,11 @@ router.post(
           passwordHash,
           role,
           mustChangePassword: true,
+          // An invite is approved by its inviter: the account never sits in the
+          // queue, and the record says who let it in (spec 3.1.2).
+          accountStatus: "ACTIVE",
+          reviewedById: req.user!.id,
+          reviewedAt: new Date(),
         },
         select: {
           id: true,
@@ -193,6 +205,97 @@ router.post(
   }
 );
 
+const accountRequestSchema = z.object({
+  fullName: z.string().trim().min(1, "Full name is required"),
+  email: z.string().trim().email("Enter a valid email"),
+  password: z.string().min(8, "At least 8 characters"),
+});
+
+/**
+ * `POST /auth/account-requests` — ask for an account (spec 3.1.2).
+ *
+ * This is the door the supervisor's feedback asked for. Anyone may knock; nobody
+ * gets in by knocking. The row is created `PENDING_APPROVAL`, which `POST /auth/login`
+ * refuses, and a `SYSTEM_ADMIN` decides it from the queue (`GET /users/approvals`).
+ *
+ * Two deliberate properties:
+ *
+ *   - **The role is always `STAFF`.** A request carries no role field at all, so
+ *     there is no payload that turns a request into a `SYSTEM_ADMIN` account. The
+ *     real role is assigned by the approver, who knows who is asking.
+ *   - **The person chooses their own password** (spec 3.3.7/12.5), which is what
+ *     retires the admin-set-temporary-password flow: nothing here sets
+ *     `mustChangePassword`, because there is no shared secret to replace.
+ *
+ * A duplicate address answers 409 with the same generic message the admin invite
+ * uses — including when the existing row is itself waiting, which tells the person
+ * to stop waiting twice without leaking any other account's state.
+ */
+router.post(
+  ["/account-requests", "/auth/account-requests"],
+  async (req: AuthenticatedRequest, res: Response) => {
+    const parseResult = accountRequestSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      const firstIssue = parseResult.error.issues[0];
+      return res.status(400).json({
+        error: firstIssue?.message ?? "Invalid request payload",
+        details: parseResult.error.issues,
+      });
+    }
+
+    const email = normalizeEmail(parseResult.data.email);
+
+    try {
+      const existing = await prisma.user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (existing) {
+        return res.status(409).json({ error: "User with this email or ID already exists" });
+      }
+
+      const passwordHash = await argon2.hash(parseResult.data.password, {
+        type: argon2.argon2id,
+      });
+
+      const requested = await prisma.user.create({
+        data: {
+          fullName: parseResult.data.fullName,
+          email,
+          passwordHash,
+          role: "STAFF",
+          accountStatus: "PENDING_APPROVAL",
+        },
+        select: { id: true, fullName: true, email: true, accountStatus: true, createdAt: true },
+      });
+
+      // No token. There is nothing this request may do until it is approved —
+      // returning one would be a session for an account the gate above refuses.
+      return res.status(201).json({
+        message: "Request submitted for approval",
+        request: {
+          id: requested.id,
+          fullName: requested.fullName,
+          email: requested.email,
+          accountStatus: requested.accountStatus,
+          requestedAt: requested.createdAt,
+        },
+      });
+    } catch (error: unknown) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "P2002"
+      ) {
+        return res.status(409).json({ error: "User with this email or ID already exists" });
+      }
+
+      return res.status(500).json({ error: "Failed to submit the account request" });
+    }
+  }
+);
+
 /**
  * POST /auth/login
  * Public route to authenticate users.
@@ -203,6 +306,11 @@ router.post(
   ["/login", "/auth/login"],
   loginLimiter,
   async (req: AuthenticatedRequest, res: Response) => {
+    // Note on ordering below: the account-status gate runs *after* the password
+    // check. Telling an unauthenticated caller that a given address has a pending
+    // account would be an account-existence oracle, so a wrong password still
+    // answers the same generic 401 it always did.
+
     const parseResult = loginSchema.safeParse(req.body);
     if (!parseResult.success) {
       const firstIssue = parseResult.error.issues[0];
@@ -238,6 +346,15 @@ router.post(
       const isPasswordValid = await argon2.verify(user.passwordHash, password);
       if (!isPasswordValid) {
         return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      // The supervisor's rule, from the other end: a request that nobody approved
+      // cannot be signed into, and a rejected or deactivated account stays out.
+      // 403 with the reason rather than 401 "Invalid credentials" — the password
+      // was right, so telling the person it was wrong is the unhelpful answer.
+      const refusal = signInRefusal(user.accountStatus);
+      if (refusal) {
+        return res.status(403).json({ error: refusal, accountStatus: user.accountStatus });
       }
 
       const secret = process.env.JWT_SECRET;

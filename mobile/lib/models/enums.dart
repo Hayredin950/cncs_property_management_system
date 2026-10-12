@@ -50,6 +50,31 @@ enum Role {
   ];
 }
 
+/// Account lifecycle (spec 3.1.2). `pendingApproval` is the state a self-request
+/// lands in: it cannot sign in, and a SYSTEM_ADMIN decides it from the queue.
+enum AccountStatus {
+  active('ACTIVE', 'Active'),
+  pendingEmailVerification('PENDING_EMAIL_VERIFICATION', 'Email not confirmed'),
+  pendingApproval('PENDING_APPROVAL', 'Waiting for approval'),
+  rejected('REJECTED', 'Declined'),
+  deactivated('DEACTIVATED', 'Deactivated'),
+  unknown('', 'Unknown');
+
+  const AccountStatus(this.wire, this.label);
+
+  final String wire;
+  final String label;
+
+  static AccountStatus fromJson(Object? value) => switch (value) {
+        'ACTIVE' => AccountStatus.active,
+        'PENDING_EMAIL_VERIFICATION' => AccountStatus.pendingEmailVerification,
+        'PENDING_APPROVAL' => AccountStatus.pendingApproval,
+        'REJECTED' => AccountStatus.rejected,
+        'DEACTIVATED' => AccountStatus.deactivated,
+        _ => AccountStatus.unknown,
+      };
+}
+
 enum Condition {
   newItem('NEW', 'New'),
   good('GOOD', 'Good'),
@@ -190,6 +215,7 @@ String enumLabel(Enum value) {
   if (value is RequestStatus) return value.label;
   if (value is RequestType) return value.label;
   if (value is Role) return value.label;
+  if (value is AccountStatus) return value.label;
   if (value is AuditItemResult) return value.label;
   return value.name;
 }

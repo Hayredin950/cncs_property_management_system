@@ -12,6 +12,7 @@ import '../features/audits/audit_report_page.dart';
 import '../features/audits/audit_scan_page.dart';
 import '../features/auth/change_password_page.dart';
 import '../features/auth/login_page.dart';
+import '../features/auth/request_account_page.dart';
 import '../features/dashboard/dashboard_page.dart';
 import '../features/items/item_form_page.dart';
 import '../features/items/item_staff_page.dart';
@@ -82,7 +83,8 @@ class _AuthRefresh extends ChangeNotifier {
 /// on *while* it checks a stored token, never a destination. Listing it as public
 /// made it a dead end — an anonymous session that settled on the splash matched the
 /// public rule and stayed there for good, showing the logo and a spinner forever.
-bool _isPublic(String path) => path == '/' || path == '/map' || path == '/login';
+bool _isPublic(String path) =>
+    path == '/' || path == '/map' || path == '/login' || path == '/request-account';
 
 /// The shared addresses: public, and also inside the workbench.
 bool _isShared(String path) =>
@@ -134,11 +136,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/change-password';
       }
 
-      // Signed in and sitting on the login screen: forward, don't render. The
-      // `from` the login screen carried is honoured when it is a real in-app path,
-      // which is what makes "sign in and you land back where the 401 interrupted
-      // you" true rather than aspirational.
-      if (path == '/login') {
+      // Signed in and sitting on the login or request-account screen: forward,
+      // don't render. The `from` the login screen carried is honoured when it is a
+      // real in-app path, which is what makes "sign in and you land back where the
+      // 401 interrupted you" true rather than aspirational.
+      if (path == '/login' || path == '/request-account') {
         final from = state.uri.queryParameters['from'];
         if (from != null && from.startsWith('/') && !from.startsWith('/login')) {
           return from;
@@ -175,6 +177,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               // `context.push('/x')` from a failed deep link arrives as `from`.
               from: state.uri.queryParameters['from'],
             ),
+          ),
+          GoRoute(
+            path: '/request-account',
+            builder: (context, state) => const RequestAccountPage(),
           ),
         ],
       ),

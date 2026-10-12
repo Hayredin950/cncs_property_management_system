@@ -2,6 +2,7 @@ import type { Request as ExpressRequest, NextFunction, Response } from "express"
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma.js";
 import { hasCapability, type Capability } from "../services/permissions.js";
+import { canHoldSession } from "../services/accountApproval.js";
 
 /** The five spec roles (2.1, as amended 12 Oct). Kept in sync with `enum Role`. */
 export type UserRole =
@@ -61,6 +62,17 @@ const INVALID_TOKEN = "Invalid or expired token";
  * old signature-only path so the rollout is non-breaking; they age out within
  * the token's 1-day lifetime. A caller cannot strip the claim to dodge the
  * check — that would invalidate the signature.
+ *
+ * ### Account status (spec 3.1.2)
+ *
+ * The same read checks `accountStatus` and refuses anything but `ACTIVE`. Sign-in
+ * already refuses a pending, rejected or deactivated account, so this is the second
+ * half of one rule rather than a duplicate: an account that was **active when the
+ * token was issued** and was refused afterwards (rejected, deactivated) must not
+ * keep working until that token expires. Same 401 "Invalid or expired token" as a
+ * revoked `ver` — for a session that is already dead, the reason is not the
+ * caller's business, and "your account was deactivated" on an API call would be a
+ * stranger's screen telling them about someone else's account.
  */
 export async function authenticate(
   req: AuthenticatedRequest,
@@ -96,9 +108,13 @@ export async function authenticate(
     if (typeof decoded.ver === "number") {
       const user = await prisma.user.findUnique({
         where: { id: decoded.id },
-        select: { role: true, tokenVersion: true, departmentId: true },
+        select: { role: true, tokenVersion: true, departmentId: true, accountStatus: true },
       });
       if (!user || user.tokenVersion !== decoded.ver) {
+        res.status(401).json({ error: INVALID_TOKEN });
+        return;
+      }
+      if (!canHoldSession(user.accountStatus)) {
         res.status(401).json({ error: INVALID_TOKEN });
         return;
       }

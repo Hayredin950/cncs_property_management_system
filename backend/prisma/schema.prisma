@@ -169,7 +169,20 @@ model User {
   departmentId String?
   departmentRef Department? @relation("UserDepartment", fields: [departmentId], references: [id])
 
+  /// Account lifecycle (spec 3.1.2). A self-request lands PENDING_APPROVAL and
+  /// cannot sign in until a SYSTEM_ADMIN approves it — the supervisor's flagged
+  /// rule: nobody self-registers into an active account. `createdAt` is the
+  /// request time, so the queue needs no separate `requestedAt` column.
   accountStatus AccountStatus @default(ACTIVE)
+
+  /// Who decided this account and when (spec 3.1.2). Null for an account an
+  /// administrator created directly — there was nothing to approve — and for
+  /// every row written before the queue existed.
+  reviewedById String?
+  reviewedBy   User?   @relation("AccountReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+  /// The rejection reason, shown to the person who asked for the account.
+  reviewNote   String?
 
   /// Bumped whenever this account's sessions must die (password change, admin
   /// reset, and role change — gap-analysis E10). Carried in the JWT as `ver`;
@@ -192,6 +205,11 @@ model User {
   custodyEvents    CustodyEvent[] @relation("CustodyEvents")
   voidedItems      Item[]         @relation("ItemVoidedBy")
   lastVerifiedItems Item[]        @relation("ItemLastVerifiedBy")
+  /// Accounts this user approved or rejected (spec 3.1.2).
+  accountsReviewed User[]         @relation("AccountReviewedBy")
+
+  /// The approval queue reads by status, oldest first.
+  @@index([accountStatus])
 }
 
 model Category {

@@ -20,6 +20,44 @@ class UsersApi {
     ];
   }
 
+  /// `GET /users/approvals` — the accounts waiting for a decision, oldest first.
+  ///
+  /// Requires `ACCOUNT_MANAGE`, which is more than `GET /users` needs: the account
+  /// list fills the custodian picker, while the queue is the list of people waiting
+  /// to join, and who is waiting is the System Admin's business alone.
+  Future<List<UserSummary>> listApprovals() async {
+    final json = await _client.get<List<dynamic>>('/users/approvals');
+    return [
+      for (final row in json)
+        if (row is Map) UserSummary.fromJson(Map<String, dynamic>.from(row)),
+    ];
+  }
+
+  /// `POST /users/:id/approve` — let the account sign in.
+  ///
+  /// [role] is the real role, assigned at approval time: the request itself always
+  /// asks as STAFF. Omit it to keep the role the request already carries.
+  ///
+  /// The server refuses an administrator approving **their own** account with 403 —
+  /// the rule lives there, not in this client.
+  Future<UserSummary> approve(String id, {String? role}) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/users/${Uri.encodeComponent(id)}/approve',
+      body: {if (role != null && role.isNotEmpty) 'role': role},
+    );
+    return UserSummary.fromJson(json);
+  }
+
+  /// `POST /users/:id/reject` — decline the request with a reason the person will
+  /// read. The reason is required (3–500 characters), same as a request rejection.
+  Future<UserSummary> reject(String id, String reason) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/users/${Uri.encodeComponent(id)}/reject',
+      body: {'reason': reason},
+    );
+    return UserSummary.fromJson(json);
+  }
+
   /// `PATCH /users/:id` — correct a name or email. A taken email answers 409.
   Future<UserSummary> update(String id, {String? fullName, String? email}) async {
     final json = await _client.patch<Map<String, dynamic>>(

@@ -13,6 +13,7 @@ import {
   LOGIN_RESPONSE,
   ME_RESPONSE,
   NOTIFICATIONS_LIST,
+  PENDING_ACCOUNT,
   PENDING_COUNT,
   PRIVILEGED_ITEM,
   PUBLIC_ITEM,
@@ -67,6 +68,31 @@ export const handlers = [
 
   http.get(`${API}/auth/me`, () => (getToken() ? HttpResponse.json(ME_RESPONSE) : unauthorized())),
 
+  /**
+   * `POST /auth/account-requests` — public. No token is returned: the account is
+   * pending and cannot sign in until an administrator decides.
+   */
+  http.post(`${API}/auth/account-requests`, async ({ request }) => {
+    const body = (await request.json()) as {
+      fullName?: string;
+      email?: string;
+      password?: string;
+    };
+    return HttpResponse.json(
+      {
+        message: "Request submitted for approval",
+        request: {
+          id: PENDING_ACCOUNT.id,
+          fullName: body.fullName ?? PENDING_ACCOUNT.fullName,
+          email: body.email ?? PENDING_ACCOUNT.email,
+          accountStatus: "PENDING_APPROVAL",
+          requestedAt: PENDING_ACCOUNT.createdAt,
+        },
+      },
+      { status: 201 },
+    );
+  }),
+
   http.get(`${API}/health`, healthOk),
 
   http.get(`${API}/categories`, () => HttpResponse.json([{ id: "cat-1", name: "Laptops", itemCount: 2 }])),
@@ -84,6 +110,14 @@ export const handlers = [
   /** The admin accounts screen (`GET /users` is Admin-only; a missing token 401s like every other write). */
   http.get(`${API}/users`, () => (getToken() ? HttpResponse.json(ACCOUNTS) : unauthorized())),
 
+  /**
+   * The approval queue. Declared before any `/users/:id` POST so the literal path
+   * wins — same ordering discipline as `/requests/pending-count`.
+   */
+  http.get(`${API}/users/approvals`, () =>
+    getToken() ? HttpResponse.json([PENDING_ACCOUNT]) : unauthorized(),
+  ),
+
   http.patch(`${API}/users/:id`, async ({ params, request }) => {
     if (!getToken()) return unauthorized();
     const body = (await request.json()) as { fullName?: string; email?: string };
@@ -95,6 +129,31 @@ export const handlers = [
     if (!getToken()) return unauthorized();
     const { role } = (await request.json()) as { role: UserSummary["role"] };
     return HttpResponse.json({ ...ACCOUNTS[1], id: params.id, role });
+  }),
+
+  http.post(`${API}/users/:id/approve`, async ({ params, request }) => {
+    if (!getToken()) return unauthorized();
+    const body = (await request.json()) as { role?: UserSummary["role"] };
+    return HttpResponse.json({
+      ...PENDING_ACCOUNT,
+      id: params.id,
+      accountStatus: "ACTIVE",
+      role: body.role ?? PENDING_ACCOUNT.role,
+      reviewedAt: "2026-09-16T12:00:00.000Z",
+      reviewNote: null,
+    });
+  }),
+
+  http.post(`${API}/users/:id/reject`, async ({ params, request }) => {
+    if (!getToken()) return unauthorized();
+    const body = (await request.json()) as { reason?: string };
+    return HttpResponse.json({
+      ...PENDING_ACCOUNT,
+      id: params.id,
+      accountStatus: "REJECTED",
+      reviewedAt: "2026-09-16T12:00:00.000Z",
+      reviewNote: body.reason ?? null,
+    });
   }),
 
   http.post(`${API}/users/:id/password`, ({ params }) =>

@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { KeyRound, Pencil, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { Check, KeyRound, Pencil, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -13,16 +13,19 @@ import { Input } from "../../components/Input";
 import { Modal } from "../../components/Modal";
 import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
+import { Textarea } from "../../components/Textarea";
 import { RoleBadge } from "../../components/StatusBadges";
 import { ROLE_LABELS, ROLES, type Role } from "../../types/enums";
 import {
+  useApproveUser,
   useDeleteUser,
   usePromoteUser,
   useRegisterUser,
+  useRejectUser,
   useResetUserPassword,
   useUpdateUser,
 } from "../../hooks/useAuthMutations";
-import { useUsers } from "../../hooks/useUsers";
+import { useApprovals, useUsers } from "../../hooks/useUsers";
 import { formatDateUTC } from "../../lib/formatters";
 import { ApiError } from "../../types/api";
 import type { UserSummary } from "../../types/user";
@@ -69,11 +72,14 @@ const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role
 export function AdminUsersPage() {
   const { user: currentUser } = useAuth();
   const usersQuery = useUsers();
+  const approvalsQuery = useApprovals();
   const registerMutation = useRegisterUser();
   const updateMutation = useUpdateUser();
   const promoteMutation = usePromoteUser();
   const passwordMutation = useResetUserPassword();
   const deleteMutation = useDeleteUser();
+  const approveMutation = useApproveUser();
+  const rejectMutation = useRejectUser();
 
   const [createError, setCreateError] = useState<string | null>(null);
   const [editing, setEditing] = useState<UserSummary | null>(null);
@@ -87,6 +93,11 @@ export function AdminUsersPage() {
   const [nextRole, setNextRole] = useState<Role>("STAFF");
   const [confirmingRole, setConfirmingRole] = useState<UserSummary | null>(null);
   const [deleting, setDeleting] = useState<UserSummary | null>(null);
+  const [approving, setApproving] = useState<UserSummary | null>(null);
+  const [approveRole, setApproveRole] = useState<Role>("STAFF");
+  const [rejecting, setRejecting] = useState<UserSummary | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectError, setRejectError] = useState<string | null>(null);
 
   const {
     register,
@@ -154,6 +165,40 @@ export function AdminUsersPage() {
   }
 
   const accounts = usersQuery.data ?? [];
+  const pending = approvalsQuery.data ?? [];
+  const rejectTrimmed = rejectReason.trim();
+  const rejectValid = rejectTrimmed.length >= 3 && rejectTrimmed.length <= 500;
+
+  async function onApprove() {
+    if (!approving) return;
+    try {
+      await approveMutation.mutateAsync({ id: approving.id, role: approveRole });
+      setApproving(null);
+    } catch {
+      // Toast is already raised by the mutation.
+    }
+  }
+
+  async function onReject() {
+    if (!rejecting || !rejectValid) {
+      setRejectError(
+        rejectTrimmed.length === 0
+          ? "A reason is required"
+          : rejectTrimmed.length < 3
+            ? "At least 3 characters"
+            : "At most 500 characters",
+      );
+      return;
+    }
+    setRejectError(null);
+    try {
+      await rejectMutation.mutateAsync({ id: rejecting.id, reason: rejectTrimmed });
+      setRejecting(null);
+      setRejectReason("");
+    } catch {
+      // Toast is already raised by the mutation.
+    }
+  }
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -163,6 +208,83 @@ export function AdminUsersPage() {
           Every account in the system, and what it owns. Only administrators can see this page.
         </p>
       </div>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Waiting for approval{pending.length > 0 ? ` (${pending.length})` : ""}
+        </h2>
+
+        {approvalsQuery.isPending ? (
+          <div className="flex flex-col gap-2" role="status" aria-label="Loading approval queue">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <Skeleton key={index} className="h-16 w-full" />
+            ))}
+          </div>
+        ) : approvalsQuery.isError ? (
+          <ErrorState
+            heading="Couldn't load the approval queue"
+            body={approvalsQuery.error instanceof Error ? approvalsQuery.error.message : undefined}
+            action={
+              <Button size="sm" onClick={() => approvalsQuery.refetch()}>
+                Try again
+              </Button>
+            }
+          />
+        ) : pending.length === 0 ? (
+          <Card className="text-sm text-slate-500">No account requests waiting.</Card>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {pending.map((account) => {
+              const isSelf = account.id === currentUser?.id;
+              return (
+                <li key={account.id}>
+                  <Card className="flex flex-wrap items-start justify-between gap-3 py-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-900">{account.fullName}</span>
+                        {isSelf && <span className="text-xs text-slate-500">(you)</span>}
+                      </div>
+                      <p className="mt-0.5 truncate text-sm text-slate-600">{account.email}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Requested {formatDateUTC(account.createdAt) ?? "—"}
+                      </p>
+                    </div>
+
+                    {isSelf ? (
+                      <p className="text-xs text-slate-500">You cannot approve your own account</p>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          leftIcon={<Check className="h-4 w-4" />}
+                          onClick={() => {
+                            setApproving(account);
+                            setApproveRole("STAFF");
+                          }}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          leftIcon={<X className="h-4 w-4" />}
+                          onClick={() => {
+                            setRejecting(account);
+                            setRejectReason("");
+                            setRejectError(null);
+                          }}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <Card>
         <form onSubmit={handleSubmit(onCreate)} noValidate className="flex flex-col gap-4">
@@ -472,6 +594,99 @@ export function AdminUsersPage() {
           </>
         }
       />
+
+      <Modal
+        open={approving !== null}
+        onClose={() => setApproving(null)}
+        title={approving ? `Approve ${approving.fullName}?` : "Approve account"}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onApprove();
+          }}
+          className="flex flex-col gap-4"
+        >
+          <p className="text-sm text-slate-600">
+            <strong>{approving?.fullName}</strong> ({approving?.email}) will be able to sign in. Assign the role
+            they should hold — the request itself always asks as Staff.
+          </p>
+          <Select
+            label="Role"
+            options={ROLE_OPTIONS}
+            value={approveRole}
+            onChange={(event) => setApproveRole(event.target.value as Role)}
+            hint="It decides what they can do, not just what they see — the matrix is in spec 2.2."
+            required
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setApproving(null)}
+              disabled={approveMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" loading={approveMutation.isPending}>
+              Approve
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={rejecting !== null}
+        onClose={() => setRejecting(null)}
+        title={rejecting ? `Reject ${rejecting.fullName}?` : "Reject account"}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onReject();
+          }}
+          className="flex flex-col gap-4"
+        >
+          <p className="text-sm text-slate-600">
+            <strong>{rejecting?.fullName}</strong> will not be able to sign in. Give a reason — they need to know
+            why, and the same address cannot ask again into a void.
+          </p>
+          <Textarea
+            label="Rejection reason (required)"
+            hint="3–500 characters."
+            value={rejectReason}
+            onChange={(event) => {
+              setRejectReason(event.target.value);
+              setRejectError(null);
+            }}
+            error={
+              rejectError ??
+              (rejectTrimmed.length > 0 && rejectTrimmed.length < 3
+                ? "At least 3 characters."
+                : undefined)
+            }
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRejecting(null)}
+              disabled={rejectMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive"
+              size="sm"
+              disabled={!rejectValid}
+              loading={rejectMutation.isPending}
+            >
+              Reject
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -2,8 +2,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { registerUser, type RegisterPayload } from "../api/auth";
 import { createCategory, deleteCategory, updateCategory } from "../api/categories";
 import {
+  approveUser,
   deleteUser,
   promoteUser,
+  rejectUser,
   resetUserPassword,
   updateUser,
   type UpdateUserPayload,
@@ -73,6 +75,41 @@ export function useUpdateUser() {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't update the account"),
+  });
+}
+
+/**
+ * `POST /users/:id/approve` — let a requested account sign in, optionally as the
+ * role the approver assigns. Both lists the queue lives on are invalidated: the
+ * account leaves the pending queue and its row changes in the accounts list.
+ */
+export function useApproveUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, role }: { id: string; role?: Role }) =>
+      role ? approveUser(id, role) : approveUser(id),
+    onSuccess: (user) => {
+      toast.success(`${user.fullName} can now sign in.`);
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({ queryKey: ["users", "approvals"] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Couldn't approve the account"),
+  });
+}
+
+/** `POST /users/:id/reject` — decline the request. The row stays, as `REJECTED`. */
+export function useRejectUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => rejectUser(id, reason),
+    onSuccess: (user) => {
+      toast.success(`${user.fullName}'s request was declined.`);
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({ queryKey: ["users", "approvals"] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Couldn't decline the account"),
   });
 }
 

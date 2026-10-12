@@ -9,6 +9,12 @@ import {
   type UserRole,
 } from "../middleware/auth.js";
 import { normalizeEmail } from "../utils/email.js";
+import {
+  assertCanReview,
+  ERROR_APPROVE_NOT_FOUND,
+  ERROR_REJECTION_REASON,
+  type AccountStatusValue,
+} from "../services/accountApproval.js";
 
 export const usersRouter: Router = Router();
 
@@ -25,6 +31,27 @@ const passwordSchema = z.object({
   password: z.string().min(8, "At least 8 characters"),
 });
 
+/**
+ * `role` is optional on approval: the request itself always asks as `STAFF` (a
+ * person must not be able to choose their own privileges), and this is where an
+ * administrator assigns the real one.
+ */
+const approveSchema = z.object({
+  role: z
+    .enum(["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], {
+      message: "Role must be one of the five system roles",
+    })
+    .optional(),
+});
+
+const rejectSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(3, ERROR_REJECTION_REASON)
+    .max(500, ERROR_REJECTION_REASON),
+});
+
 /** The account fields an administrator sees. Never the password hash. */
 const userListSelect = {
   id: true,
@@ -32,6 +59,9 @@ const userListSelect = {
   email: true,
   role: true,
   createdAt: true,
+  accountStatus: true,
+  reviewedAt: true,
+  reviewNote: true,
   _count: { select: { ownedItems: true } },
 } as const;
 
@@ -41,6 +71,9 @@ function toAdminUser(user: {
   email: string;
   role: UserRole;
   createdAt: Date;
+  accountStatus: AccountStatusValue;
+  reviewedAt: Date | null;
+  reviewNote: string | null;
   _count: { ownedItems: number };
 }) {
   return {
@@ -50,6 +83,10 @@ function toAdminUser(user: {
     role: user.role,
     createdAt: user.createdAt,
     itemCount: user._count.ownedItems,
+    /** The queue reads these; so does the accounts list, to show who is not yet active. */
+    accountStatus: user.accountStatus,
+    reviewedAt: user.reviewedAt,
+    reviewNote: user.reviewNote,
   };
 }
 
@@ -65,7 +102,169 @@ function toAdminUser(user: {
  * demote silently strips someone's access to every screen they were using, which
  * is the kind of change that should not be one mis-click away, so there is no
  * endpoint for it.
+ *
+ * ── The approval queue (spec 3.1.2) ────────────────────────────────────────
+ * A person asks for an account through `POST /auth/account-requests`, which leaves
+ * a `PENDING_APPROVAL` row that cannot sign in. The three routes below are the
+ * administrator's side of that: see the queue, approve (optionally assigning the
+ * role the request never chose), or reject with a reason.
+ *
+ * **Nobody approves their own account.** `assertCanReview` enforces it here, on the
+ * server, and the queue screen omitting the buttons on your own row is only a
+ * courtesy on top of that — the rule is what an API caller without the UI hits.
  */
+/**
+ * `GET /users/approvals` — the accounts waiting for a decision, oldest first.
+ *
+ * Declared before any `/users/:id`-shaped **GET**, and it needs `ACCOUNT_MANAGE`
+ * rather than `USER_READ`: the queue is a decision list, not a lookup. The property
+ * officer can read the account list (it fills the custodian picker) but has no
+ * business seeing, let alone deciding, who is waiting to join.
+ *
+ * Oldest first, because the queue is worked from the tail: the person who has been
+ * waiting longest is the one whose approval is overdue.
+ */
+usersRouter.get(
+  "/approvals",
+  authenticate,
+  requireCapability("ACCOUNT_MANAGE"),
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const pending = await prisma.user.findMany({
+        where: { accountStatus: "PENDING_APPROVAL" },
+        orderBy: { createdAt: "asc" },
+        select: userListSelect,
+      });
+
+      res.status(200).json(pending.map(toAdminUser));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * `POST /users/:id/approve` — let the account sign in.
+ *
+ * The role is optional and defaults to the one the request already carries (`STAFF`,
+ * assigned by `POST /auth/account-requests`). It is here because approving is the
+ * moment an administrator knows who this person is: a request from a lecturer who
+ * will run audits should become an `AUDITOR` now, not through a second step.
+ * Changing the role also bumps `tokenVersion`, the same way `promote` does —
+ * consistent, and free, even though a pending account has no sessions to revoke.
+ */
+usersRouter.post(
+  "/:id/approve",
+  authenticate,
+  requireCapability("ACCOUNT_MANAGE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Account ID is required" });
+        return;
+      }
+
+      const parsed = approveSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({
+          error: parsed.error.issues[0]?.message ?? "Validation failed",
+          details: parsed.error.issues,
+        });
+        return;
+      }
+
+      const existing = await prisma.user.findUnique({ where: { id } });
+      if (!existing) {
+        res.status(404).json({ error: ERROR_APPROVE_NOT_FOUND });
+        return;
+      }
+
+      // The supervisor's rule, on the server: an administrator cannot approve
+      // their own request, whoever they are.
+      assertCanReview({
+        targetId: existing.id,
+        targetStatus: existing.accountStatus,
+        reviewerId: req.user!.id,
+      });
+
+      const approved = await prisma.user.update({
+        where: { id },
+        data: {
+          accountStatus: "ACTIVE",
+          reviewedById: req.user!.id,
+          reviewedAt: new Date(),
+          reviewNote: null,
+          ...(parsed.data.role ? { role: parsed.data.role } : {}),
+          ...(parsed.data.role ? { tokenVersion: { increment: 1 } } : {}),
+        },
+        select: userListSelect,
+      });
+
+      res.status(200).json(toAdminUser(approved));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * `POST /users/:id/reject` — decline the request, with a reason.
+ *
+ * The reason is required and length-checked for the same reason a request rejection
+ * is (F6.2): the person is told why, and "no" with no explanation is the answer that
+ * sends them to the property office anyway. The row survives as `REJECTED` rather
+ * than being deleted, so the same person cannot ask again into a void and an
+ * administrator can see that this request was already declined once.
+ */
+usersRouter.post(
+  "/:id/reject",
+  authenticate,
+  requireCapability("ACCOUNT_MANAGE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Account ID is required" });
+        return;
+      }
+
+      const parsed = rejectSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: ERROR_REJECTION_REASON });
+        return;
+      }
+
+      const existing = await prisma.user.findUnique({ where: { id } });
+      if (!existing) {
+        res.status(404).json({ error: ERROR_APPROVE_NOT_FOUND });
+        return;
+      }
+
+      assertCanReview({
+        targetId: existing.id,
+        targetStatus: existing.accountStatus,
+        reviewerId: req.user!.id,
+      });
+
+      const rejected = await prisma.user.update({
+        where: { id },
+        data: {
+          accountStatus: "REJECTED",
+          reviewedById: req.user!.id,
+          reviewedAt: new Date(),
+          reviewNote: parsed.data.reason,
+        },
+        select: userListSelect,
+      });
+
+      res.status(200).json(toAdminUser(rejected));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 usersRouter.get(
   "/",
   authenticate,

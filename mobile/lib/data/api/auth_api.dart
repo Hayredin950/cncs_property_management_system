@@ -56,4 +56,22 @@ class AuthApi {
     );
     return AuthUser.fromJson(asMap(json['user']));
   }
+
+  /// `POST /auth/account-requests` — public: anyone may ask, and nobody gets in by
+  /// asking. The response carries no token, because the account is
+  /// `PENDING_APPROVAL` and cannot sign in until a SYSTEM_ADMIN decides it.
+  ///
+  /// There is no `role` field on purpose: the request always lands as STAFF, and the
+  /// approver assigns the real role.
+  Future<AccountRequestResponse> requestAccount({
+    required String fullName,
+    required String email,
+    required String password,
+  }) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/auth/account-requests',
+      body: {'fullName': fullName, 'email': email, 'password': password},
+    );
+    return AccountRequestResponse.fromJson(json);
+  }
 }

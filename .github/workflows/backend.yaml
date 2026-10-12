@@ -20,8 +20,23 @@ jobs:
       run:
         working-directory: backend
     env:
-      DIRECT_URL: ${{ secrets.DIRECT_URL }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Placeholders, not credentials.
+      #
+      # Nothing in this job talks to a database: the suite mocks Prisma, `lint` and
+      # `tsc` only read source, and the docker step only builds an image. What the
+      # job *does* need is for `prisma.config.ts` to load, and it resolves
+      # `env("DIRECT_URL")` eagerly while the config is being read — so an unset
+      # variable throws `PrismaConfigEnvError: Cannot resolve environment variable:
+      # DIRECT_URL` and kills the job in ~25s, before a single test runs. That is
+      # what happened here: this repo has no `DIRECT_URL` secret, so the workflow
+      # mapped it to an empty string and failed every run since it was written.
+      #
+      # `backend/Dockerfile` already solves this the same way for the image build,
+      # for the same reason — see the comment above its `prisma generate`. A real URL
+      # (or a real secret) still wins when one is configured, so a future job that
+      # does want the database can set the secret and get it.
+      DIRECT_URL: ${{ secrets.DIRECT_URL || 'postgresql://ci_placeholder:ci_placeholder@localhost:5432/ci_placeholder' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci_placeholder:ci_placeholder@localhost:5432/ci_placeholder' }}
       JWT_SECRET: ci_test_secret
     steps:
       - name: Checkout repository

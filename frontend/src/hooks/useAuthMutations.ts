@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { registerUser, type RegisterPayload } from "../api/auth";
+import { claimItem, refuseClaim } from "../api/items";
 import { createCategory, deleteCategory, updateCategory } from "../api/categories";
 import {
   approveUser,
@@ -151,5 +152,33 @@ export function useDeleteUser() {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't delete the account"),
+  });
+}
+
+/** `POST /items/:id/claim` — claim a PENDING_CLAIM item. */
+export function useClaimItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => claimItem(id),
+    onSuccess: (item) => {
+      toast.success(`${item.name} claimed and now active.`);
+      void queryClient.invalidateQueries({ queryKey: ["item"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't claim the item"),
+  });
+}
+
+/** `POST /items/:id/refuse-claim` — refuse a PENDING_CLAIM item, reverting to college pool. */
+export function useRefuseClaim() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => refuseClaim(id, reason),
+    onSuccess: (item) => {
+      toast.success(`${item.name} refused and returned to the college pool.`);
+      void queryClient.invalidateQueries({ queryKey: ["item"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't refuse the claim"),
   });
 }

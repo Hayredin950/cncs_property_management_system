@@ -164,4 +164,23 @@ class ItemsApi {
   /// workflow as the alternative.
   Future<Map<String, dynamic>> delete(String id) =>
       _client.delete<Map<String, dynamic>>('/items/${Uri.encodeComponent(id)}');
+
+  /// `POST /items/:id/claim` — claim a PENDING_CLAIM item. Returns the updated item.
+  Future<Item> claim(String id) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/items/${Uri.encodeComponent(id)}/claim',
+      body: {},
+    );
+    return Item.fromJson(json);
+  }
+
+  /// `POST /items/:id/refuse-claim` — refuse a PENDING_CLAIM item, reverting to
+  /// college pool. Requires a reason (3–500 characters).
+  Future<Item> refuseClaim(String id, String reason) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/items/${Uri.encodeComponent(id)}/refuse-claim',
+      body: {'reason': reason},
+    );
+    return Item.fromJson(json);
+  }
 }

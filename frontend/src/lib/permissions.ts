@@ -13,6 +13,7 @@ export type Capability =
   | "ITEM_CREATE"
   | "ITEM_EDIT_IDENTITY"
   | "ITEM_EDIT_CUSTODY"
+  | "ITEM_CLAIM"
   | "ITEM_VOID"
   | "ITEM_READ_ALL"
   | "BUILDING_MANAGE"
@@ -32,6 +33,7 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "ITEM_CREATE",
     "ITEM_EDIT_IDENTITY",
     "ITEM_EDIT_CUSTODY",
+    "ITEM_CLAIM",
     "ITEM_VOID",
     "ITEM_READ_ALL",
     "BUILDING_MANAGE",
@@ -43,8 +45,8 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "AUDIT_VIEW",
     "USER_READ",
   ],
-  DEPARTMENT_HEAD: ["ITEM_EDIT_CUSTODY", "REQUEST_DECIDE"],
-  STAFF: ["ITEM_EDIT_CUSTODY"],
+  DEPARTMENT_HEAD: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM", "REQUEST_DECIDE"],
+  STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM"],
   AUDITOR: ["ITEM_READ_ALL", "AUDIT_RUN", "AUDIT_VIEW", "REPORT_VIEW_ALL"],
 };
 

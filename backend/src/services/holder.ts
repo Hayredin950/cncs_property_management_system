@@ -41,7 +41,11 @@ export type CustodyEventTypeValue =
   | "CREATED"
   | "TRANSFERRED"
   | "DISPOSED"
-  | "LOCATION_CHANGED";
+  | "LOCATION_CHANGED"
+  | "CLAIMED"
+  | "CLAIM_REFUSED"
+  | "CLAIM_EXPIRED"
+  | "REVERTED";
 
 /** A holder as a pair. `COLLEGE` is the one type that has no id. */
 export interface HolderRef {
@@ -85,7 +89,7 @@ export function holderFields(holder: HolderRef): { holderType: HolderTypeValue |
   return { holderType: holder.holderType, holderId: holder.holderId };
 }
 
-/** The holder columns an item read must have selected for `currentHolder`. */
+/** The item fields an item read must have selected for `currentHolder`. */
 export interface ItemCustodyColumns {
   holderType?: string | null;
   holderId?: string | null;
@@ -242,4 +246,217 @@ export async function writeCustodyChange(
   });
 
   return recordCustodyEvent(tx, input);
+}
+
+/**
+ * Claim an item — move from PENDING_CLAIM to ACTIVE, holder becomes the claimant.
+ *
+ * Preconditions:
+ * - item.status === "PENDING_CLAIM"
+ * - the claimant is the current holder (staff) or department head of the holder department
+ * - claimDueAt not passed
+ */
+export async function claimItem(
+  tx: DbClient,
+  input: {
+    itemId: string;
+    claimant: HolderRef;
+    actingUserId: string;
+  },
+): Promise<{ success: boolean; reason?: string }> {
+  const item = await tx.item.findUnique({
+    where: { id: input.itemId },
+    select: { status: true, holderType: true, holderId: true, claimDueAt: true, departmentId: true },
+  });
+
+  if (!item) {
+    return { success: false, reason: "Item not found" };
+  }
+
+  if (item.status !== "PENDING_CLAIM") {
+    return { success: false, reason: "Item is not pending claim" };
+  }
+
+  if (item.claimDueAt && new Date(item.claimDueAt) < new Date()) {
+    return { success: false, reason: "Claim period has expired" };
+  }
+
+  // The holder must match the claimant (staff holds it, or department head claims on behalf)
+  const current = currentHolder(item as ItemCustodyColumns);
+  if (!sameHolder(current, input.claimant)) {
+    // Allow department head to claim on behalf of department
+    if (input.claimant.holderType === "DEPARTMENT" && current.holderType === "STAFF") {
+      // The department head can claim for their department if the item is assigned to someone in their dept
+      // This is handled at the route level by checking department head's departmentId
+    } else {
+      return { success: false, reason: "Not the current holder" };
+    }
+  }
+
+  await tx.item.update({
+    where: { id: input.itemId },
+    data: {
+      status: "ACTIVE",
+      claimedAt: new Date(),
+      claimDueAt: null,
+      holderType: input.claimant.holderType,
+      holderId: input.claimant.holderId,
+    },
+  });
+
+  await recordCustodyEvent(tx, {
+    itemId: input.itemId,
+    from: current,
+    to: input.claimant,
+    eventType: "CLAIMED",
+    actingUserId: input.actingUserId,
+    reason: input.claimant.holderType === "DEPARTMENT" ? "Department head claimed on behalf of department" : null,
+  });
+
+  return { success: true };
+}
+
+/**
+ * Refuse a claim — item reverts to COLLEGE pool, status PENDING_CLAIM.
+ */
+export async function refuseClaim(
+  tx: DbClient,
+  input: {
+    itemId: string;
+    claimant: HolderRef;
+    actingUserId: string;
+    reason: string;
+  },
+): Promise<{ success: boolean; reason?: string }> {
+  const item = await tx.item.findUnique({
+    where: { id: input.itemId },
+    select: { status: true, holderType: true, holderId: true, claimDueAt: true },
+  });
+
+  if (!item) {
+    return { success: false, reason: "Item not found" };
+  }
+
+  if (item.status !== "PENDING_CLAIM") {
+    return { success: false, reason: "Item is not pending claim" };
+  }
+
+  const current = currentHolder(item as ItemCustodyColumns);
+  if (!sameHolder(current, input.claimant)) {
+    return { success: false, reason: "Not the current holder" };
+  }
+
+  await tx.item.update({
+    where: { id: input.itemId },
+    data: {
+      holderType: "COLLEGE",
+      holderId: null,
+      claimDueAt: null,
+    },
+  });
+
+  await recordCustodyEvent(tx, {
+    itemId: input.itemId,
+    from: current,
+    to: COLLEGE_HOLDER,
+    eventType: "CLAIM_REFUSED",
+    actingUserId: input.actingUserId,
+    reason: input.reason,
+  });
+
+  return { success: true };
+}
+
+/**
+ * Expire a claim — called by a job/scheduler when claimDueAt passes.
+ * Reverts item to COLLEGE pool, status PENDING_CLAIM.
+ */
+export async function expireClaim(
+  tx: DbClient,
+  input: {
+    itemId: string;
+    actingUserId: string;
+  },
+): Promise<{ success: boolean; reason?: string }> {
+  const item = await tx.item.findUnique({
+    where: { id: input.itemId },
+    select: { status: true, holderType: true, holderId: true, claimDueAt: true },
+  });
+
+  if (!item) {
+    return { success: false, reason: "Item not found" };
+  }
+
+  if (item.status !== "PENDING_CLAIM") {
+    return { success: false, reason: "Item is not pending claim" };
+  }
+
+  if (!item.claimDueAt || new Date(item.claimDueAt) >= new Date()) {
+    return { success: false, reason: "Claim period has not expired" };
+  }
+
+  const current = currentHolder(item as ItemCustodyColumns);
+
+  await tx.item.update({
+    where: { id: input.itemId },
+    data: {
+      holderType: "COLLEGE",
+      holderId: null,
+      claimDueAt: null,
+    },
+  });
+
+  await recordCustodyEvent(tx, {
+    itemId: input.itemId,
+    from: current,
+    to: COLLEGE_HOLDER,
+    eventType: "CLAIM_EXPIRED",
+    actingUserId: input.actingUserId,
+    reason: "Claim period expired without action",
+  });
+
+  return { success: true };
+}
+
+/**
+ * Revert an item when its holder is deactivated — status becomes REVERTED_UNVERIFIED,
+ * holder becomes COLLEGE.
+ */
+export async function revertItem(
+  tx: DbClient,
+  input: {
+    itemId: string;
+    actingUserId: string;
+  },
+): Promise<{ success: boolean; reason?: string }> {
+  const item = await tx.item.findUnique({
+    where: { id: input.itemId },
+    select: { status: true, holderType: true, holderId: true },
+  });
+
+  if (!item) {
+    return { success: false, reason: "Item not found" };
+  }
+
+  const current = currentHolder(item as ItemCustodyColumns);
+
+  await tx.item.update({
+    where: { id: input.itemId },
+    data: {
+      status: "REVERTED_UNVERIFIED",
+      holderType: "COLLEGE",
+      holderId: null,
+    },
+  });
+
+  await recordCustodyEvent(tx, {
+    itemId: input.itemId,
+    from: current,
+    to: COLLEGE_HOLDER,
+    eventType: "REVERTED",
+    actingUserId: input.actingUserId,
+    reason: "Holder deactivated",
+  });
+
+  return { success: true };
 }

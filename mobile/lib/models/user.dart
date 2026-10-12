@@ -10,6 +10,7 @@ class AuthUser {
     required this.role,
     required this.createdAt,
     this.mustChangePassword = false,
+    this.departmentId,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
@@ -19,6 +20,7 @@ class AuthUser {
         role: Role.fromJson(json['role']),
         createdAt: asString(json['createdAt']),
         mustChangePassword: asBool(json['mustChangePassword']),
+        departmentId: asStringOrNull(json['departmentId']),
       );
 
   final String id;
@@ -26,6 +28,7 @@ class AuthUser {
   final String email;
   final Role role;
   final String createdAt;
+  final String? departmentId;
 
   /// Set when an administrator reset this account's password. The shell forces
   /// the change on the next sign-in, exactly like `RequireAuth` does on the web.

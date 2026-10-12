@@ -226,6 +226,21 @@ class ItemActions {
   /// `DELETE /uploads/photo` — best-effort cleanup when a photo was uploaded for a
   /// form and then replaced or removed before the form was saved.
   Future<bool> deletePhoto(String url) => _ref.read(uploadsApiProvider).deletePhoto(url);
+
+  /// `POST /items/:id/claim` — claim a PENDING_CLAIM item.
+  Future<Item> claim(String id) async {
+    final item = await _ref.read(itemsApiProvider).claim(id);
+    _ref.invalidateItemData(itemId: id);
+    return item;
+  }
+
+  /// `POST /items/:id/refuse-claim` — refuse a PENDING_CLAIM item, reverting to
+  /// college pool. Requires a reason (3–500 characters).
+  Future<Item> refuseClaim(String id, String reason) async {
+    final item = await _ref.read(itemsApiProvider).refuseClaim(id, reason);
+    _ref.invalidateItemData(itemId: id);
+    return item;
+  }
 }
 
 final itemActionsProvider = Provider<ItemActions>(ItemActions.new);

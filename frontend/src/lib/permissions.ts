@@ -22,6 +22,9 @@ export type Capability =
   | "AUDIT_RUN"
   | "AUDIT_VIEW"
   | "REQUEST_DECIDE"
+  | "TRANSFER_APPROVE_STAGE1"
+  | "TRANSFER_APPROVE_STAGE2"
+  | "DISPOSAL_APPROVE"
   | "REQUEST_READ_ALL"
   | "REPORT_VIEW_ALL"
   | "ACCOUNT_MANAGE"
@@ -41,12 +44,22 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "TAG_MANAGE",
     "CATEGORY_MANAGE",
     "REQUEST_DECIDE",
+    "TRANSFER_APPROVE_STAGE1",
+    "TRANSFER_APPROVE_STAGE2",
+    "DISPOSAL_APPROVE",
     "REQUEST_READ_ALL",
     "REPORT_VIEW_ALL",
     "AUDIT_VIEW",
     "USER_READ",
   ],
-  DEPARTMENT_HEAD: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM", "REQUEST_DECIDE", "ACCOUNT_MANAGE"],
+  DEPARTMENT_HEAD: [
+    "ITEM_EDIT_CUSTODY",
+    "ITEM_CLAIM",
+    "REQUEST_DECIDE",
+    "ACCOUNT_MANAGE",
+    "TRANSFER_APPROVE_STAGE1",
+    "TRANSFER_APPROVE_STAGE2",
+  ],
   STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM"],
   AUDITOR: ["ITEM_READ_ALL", "AUDIT_RUN", "AUDIT_VIEW", "REPORT_VIEW_ALL"],
 };
@@ -75,3 +88,12 @@ export const canManageAccounts = (role: Role | undefined | null) =>
 export const canReadUsers = (role: Role | undefined | null) => hasCapability(role, "USER_READ");
 /** See every item's detail, whichever role holds it. */
 export const seesAllItems = (role: Role | undefined | null) => hasCapability(role, "ITEM_READ_ALL");
+/** Approve first stage of a transfer (releasing head / property officer). */
+export const canApproveTransferStage1 = (role: Role | undefined | null) =>
+  hasCapability(role, "TRANSFER_APPROVE_STAGE1");
+/** Approve second stage of a transfer (receiving head / property officer). */
+export const canApproveTransferStage2 = (role: Role | undefined | null) =>
+  hasCapability(role, "TRANSFER_APPROVE_STAGE2");
+/** Approve a disposal request (property officer only). */
+export const canApproveDisposal = (role: Role | undefined | null) =>
+  hasCapability(role, "DISPOSAL_APPROVE");

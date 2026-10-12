@@ -21,6 +21,9 @@ enum Capability {
   auditRun,
   auditView,
   requestDecide,
+  transferApproveStage1,
+  transferApproveStage2,
+  disposalApprove,
   requestReadAll,
   reportViewAll,
   accountManage,
@@ -41,12 +44,15 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.tagManage,
     Capability.categoryManage,
     Capability.requestDecide,
+    Capability.transferApproveStage1,
+    Capability.transferApproveStage2,
+    Capability.disposalApprove,
     Capability.requestReadAll,
     Capability.reportViewAll,
     Capability.auditView,
     Capability.userRead,
   },
-  Role.departmentHead: {Capability.itemEditCustody, Capability.itemClaim, Capability.requestDecide, Capability.accountManage},
+  Role.departmentHead: {Capability.itemEditCustody, Capability.itemClaim, Capability.requestDecide, Capability.accountManage, Capability.transferApproveStage1, Capability.transferApproveStage2},
   Role.staff: {Capability.itemEditCustody, Capability.itemClaim},
   Role.auditor: {
     Capability.itemReadAll,
@@ -90,3 +96,12 @@ bool canManageCategories(Role? role) => hasCapability(role, Capability.categoryM
 
 /// See every item's staff detail, whichever role holds it.
 bool seesAllItems(Role? role) => hasCapability(role, Capability.itemReadAll);
+
+/// Approve first stage of a transfer (releasing head / property officer).
+bool canApproveTransferStage1(Role? role) => hasCapability(role, Capability.transferApproveStage1);
+
+/// Approve second stage of a transfer (receiving head / property officer).
+bool canApproveTransferStage2(Role? role) => hasCapability(role, Capability.transferApproveStage2);
+
+/// Approve a disposal request (property officer only).
+bool canApproveDisposal(Role? role) => hasCapability(role, Capability.disposalApprove);

@@ -40,6 +40,12 @@ export type Capability =
   | "AUDIT_VIEW"
   /** Decide a transfer/disposal request (spec 5.1/5.2). */
   | "REQUEST_DECIDE"
+  /** First-stage approval for a transfer (releasing head / property officer). */
+  | "TRANSFER_APPROVE_STAGE1"
+  /** Second-stage approval for a transfer (receiving head / property officer). */
+  | "TRANSFER_APPROVE_STAGE2"
+  /** Approve a disposal request (property officer only). */
+  | "DISPOSAL_APPROVE"
   /** Read every request, not only your own (spec 5.1.7). */
   | "REQUEST_READ_ALL"
   /** Read college-wide reports. */
@@ -74,6 +80,9 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "TAG_MANAGE",
     "CATEGORY_MANAGE",
     "REQUEST_DECIDE",
+    "TRANSFER_APPROVE_STAGE1",
+    "TRANSFER_APPROVE_STAGE2",
+    "DISPOSAL_APPROVE",
     "REQUEST_READ_ALL",
     "REPORT_VIEW_ALL",
     "AUDIT_VIEW",
@@ -82,7 +91,15 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
   // Scoped to one department. Approves transfers for their department and can
   // hold, claim and edit condition/notes of items like any custodian.
   // Approves staff registrations in their department. (spec 2.1.3)
-  DEPARTMENT_HEAD: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM", "REQUEST_DECIDE", "ACCOUNT_MANAGE"],
+  // First-stage approval for outgoing transfers, second-stage for incoming.
+  DEPARTMENT_HEAD: [
+    "ITEM_EDIT_CUSTODY",
+    "ITEM_CLAIM",
+    "REQUEST_DECIDE",
+    "ACCOUNT_MANAGE",
+    "TRANSFER_APPROVE_STAGE1",
+    "TRANSFER_APPROVE_STAGE2",
+  ],
   // Scoped to one department. Holds and claims items, files requests, edits
   // condition and notes of what they hold — nothing else.
   STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM"],

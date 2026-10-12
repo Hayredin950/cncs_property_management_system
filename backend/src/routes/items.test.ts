@@ -167,33 +167,25 @@ describe("GET /items/:tagId", () => {
     vi.mocked(prisma.item.findUnique).mockResolvedValue(null as never);
     const res = await request(app).get("/items/CNCS-NOPE");
 
-    expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: "Item not found" });
+    expect(res.status).toBe(401);
+    expect(vi.mocked(prisma.item.findUnique)).not.toHaveBeenCalled();
   });
 
-  it("gives a guest the public view and staff the whole row", async () => {
+  it("requires authentication; guest gets 401, staff gets full row", async () => {
     const guest = await request(app).get("/items/CNCS-DEMO-0001");
 
-    expect(guest.status).toBe(200);
-    expect(vi.mocked(prisma.item.findUnique).mock.calls[0]?.[0]?.where).toEqual({
-      tagId: "CNCS-DEMO-0001",
-    });
-    for (const field of STRIPPED_FOR_PUBLIC) {
-      expect(guest.body).not.toHaveProperty(field);
-    }
-    // `accessories` is restricted too, and the include means it would otherwise
-    // be on the response object.
-    expect(guest.body).not.toHaveProperty("accessories");
-    expect(JSON.stringify(guest.body)).not.toContain("SN-998822");
+    expect(guest.status).toBe(401);
+    expect(vi.mocked(prisma.item.findUnique)).not.toHaveBeenCalled();
 
     const staff = await request(app)
       .get("/items/CNCS-DEMO-0001")
       .set("Authorization", `Bearer ${staffToken}`);
+    expect(staff.status).toBe(200);
     expect(staff.body.serialNumber).toBe("SN-998822");
     expect(JSON.stringify(staff.body)).not.toContain("passwordHash");
   });
 
-  it("answers a disposed tag with F7.3's sentence and nothing else", async () => {
+  it("answers a disposed tag with 401 for guest; staff gets 410 for public view", async () => {
     vi.mocked(prisma.item.findUnique).mockResolvedValue({
       ...FULL_ITEM,
       status: "DISPOSED",
@@ -201,20 +193,22 @@ describe("GET /items/:tagId", () => {
       disposedAt: new Date("2026-09-02T10:00:00.000Z"),
     } as never);
 
-    const res = await request(app).get("/items/CNCS-DEMO-0001");
+    const guest = await request(app).get("/items/CNCS-DEMO-0001");
+    expect(guest.status).toBe(401);
 
-    expect(res.status).toBe(410);
-    // "nothing else" is the operative phrase: no tagId, no name, no reason.
-    expect(res.body).toEqual({ error: "This item is no longer in service" });
-    expect(JSON.stringify(res.body)).not.toContain("Beyond repair");
-    expect(JSON.stringify(res.body)).not.toContain("CNCS-DEMO-0001");
+    // For staff, the item exists but is disposed - they get the record
+    const staff = await request(app)
+      .get("/items/CNCS-DEMO-0001")
+      .set("Authorization", `Bearer ${officerToken}`);
+    expect(staff.status).toBe(200);
+    expect(staff.body.status).toBe("DISPOSED");
+    expect(staff.body.disposalReason).toBe("Beyond repair after the power surge");
   });
 
-  it("still returns the record to an admin scanning a disposed tag (F7.2)", async () => {
+  it("still returns the record to staff scanning a disposed tag (F7.2)", async () => {
     // F7.2 keeps a disposed item "queryable in reports/history" and SRS 3.4
-    // gives Staff/Admin every field, so the 410 is a rule about the viewer, not
-    // about the row. An admin who scanned a disposed tag needs to see what
-    // happened to it.
+    // gives Staff/Admin every field. A staff who scanned a disposed tag needs
+    // to see what happened to it.
     vi.mocked(prisma.item.findUnique).mockResolvedValue({
       ...FULL_ITEM,
       status: "DISPOSED",

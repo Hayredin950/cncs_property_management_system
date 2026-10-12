@@ -337,10 +337,14 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  * a collision, the one handler accepts either key and picks by shape: a uuid is
  * an `id`, everything else is a `tagId`. That closes the "no `GET /items/:id`"
  * gap (the staff page had to carry `?tag=` around) without a second route.
+ *
+ * Authentication is required: anonymous visitors must sign in first. The QR
+ * code's `from` parameter carries the original tag/id so the post-login redirect
+ * lands back on the item (spec Tier 1 #3: public item routes removed).
  */
 itemsRouter.get(
   "/:tagId",
-  optionalAuthenticate,
+  authenticate,
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const tagId = Array.isArray(req.params.tagId) ? req.params.tagId[0] : req.params.tagId;

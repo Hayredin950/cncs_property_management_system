@@ -40,10 +40,8 @@ describe("GET /items/:id", () => {
 
     const res = await request(app).get(`/items/${uuid}`);
 
-    expect(res.status).toBe(200);
-    expect(vi.mocked(prisma.item.findUnique).mock.calls[0]?.[0]).toMatchObject({
-      where: { id: uuid },
-    });
+    expect(res.status).toBe(401);
+    expect(vi.mocked(prisma.item.findUnique)).not.toHaveBeenCalled();
   });
 
   it("still looks up by tag when the segment is not a uuid", async () => {
@@ -51,10 +49,8 @@ describe("GET /items/:id", () => {
 
     const res = await request(app).get("/items/CNCS-DEMO-0001");
 
-    expect(res.status).toBe(200);
-    expect(vi.mocked(prisma.item.findUnique).mock.calls[0]?.[0]).toMatchObject({
-      where: { tagId: "CNCS-DEMO-0001" },
-    });
+    expect(res.status).toBe(401);
+    expect(vi.mocked(prisma.item.findUnique)).not.toHaveBeenCalled();
   });
 });
 

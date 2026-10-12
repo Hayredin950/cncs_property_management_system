@@ -10,6 +10,7 @@ import { RoleBadge } from "../components/StatusBadges";
 import { useUnreadNotificationCount } from "../hooks/useNotifications";
 import { usePendingCount } from "../hooks/useRequests";
 import { cn } from "../lib/cn";
+import { canDecideRequests } from "../lib/permissions";
 import { getSidebarCollapsed, setSidebarCollapsed } from "../lib/storage";
 import { staffNav } from "./aauNav";
 import { AppErrorBoundary } from "./AppErrorBoundary";
@@ -93,7 +94,7 @@ export function AppLayout() {
   // the header's home button. Called unconditionally (hooks can't be conditional)
   // but only *shown* to an admin, who is the person the queue belongs to.
   const pendingQuery = usePendingCount();
-  const pendingCount = user?.role === "ADMIN" ? (pendingQuery.data?.pendingCount ?? 0) : 0;
+  const pendingCount = canDecideRequests(user?.role) ? (pendingQuery.data?.pendingCount ?? 0) : 0;
 
   /*
     The inbox badge. Unlike the queue's, this one is not role-gated — a
@@ -123,7 +124,7 @@ export function AppLayout() {
    * attention), and only the label says which.
    */
   function badgeFor(item: NavItem): { count: number; label: string } | null {
-    if (item.badge === "pending-count" && user?.role === "ADMIN" && pendingCount > 0) {
+    if (item.badge === "pending-count" && canDecideRequests(user?.role) && pendingCount > 0) {
       return { count: pendingCount, label: `${pendingCount} pending requests` };
     }
     if (item.badge === "unread-notifications" && unreadNotifications > 0) {

@@ -28,12 +28,15 @@ vi.mock("../lib/prisma.js", () => {
   };
 });
 
-function createToken(payload: { id: string; role: "ADMIN" | "STAFF" }) {
+function createToken(payload: {
+  id: string;
+  role: "SYSTEM_ADMIN" | "PROPERTY_OFFICER" | "DEPARTMENT_HEAD" | "STAFF" | "AUDITOR";
+}) {
   return jwt.sign(payload, process.env.JWT_SECRET!);
 }
 
 describe("Audit Flow (POST /audits & POST /audits/:id/scan)", () => {
-  const staffToken = createToken({ id: "staff-user-001", role: "STAFF" });
+  const staffToken = createToken({ id: "staff-user-001", role: "AUDITOR" });
   const mockItemId = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
   const mockSessionId = "audit-session-999";
 

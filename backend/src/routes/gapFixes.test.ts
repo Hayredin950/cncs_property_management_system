@@ -15,7 +15,7 @@ vi.mock("../lib/prisma.js", () => {
   return { prisma: client };
 });
 
-const adminToken = createToken({ id: "admin-1", role: "ADMIN" });
+const auditorToken = createToken({ id: "auditor-1", role: "AUDITOR" });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -77,7 +77,7 @@ describe("GET /audits/:id", () => {
 
     const res = await request(app)
       .get("/audits/audit-1")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${auditorToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.completed).toBe(true);
@@ -90,7 +90,7 @@ describe("GET /audits/:id", () => {
 
     const res = await request(app)
       .get("/audits/missing")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${auditorToken}`);
 
     expect(res.status).toBe(404);
   });

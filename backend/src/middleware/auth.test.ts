@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   authenticate,
   optionalAuthenticate,
-  requireRole,
+  requireCapability,
   type AuthenticatedRequest,
 } from "./auth.js";
 
@@ -40,7 +40,7 @@ describe("authenticate", () => {
 
     authenticate(req, res, next);
 
-    expect(req.user).toEqual({ id: "user-1", role: "STAFF" });
+    expect(req.user).toEqual({ id: "user-1", role: "STAFF", departmentId: null });
     expect(next).toHaveBeenCalled();
   });
 
@@ -56,24 +56,26 @@ describe("authenticate", () => {
   });
 });
 
-describe("requireRole", () => {
-  it("blocks a role not in the allowed list", () => {
+describe("requireCapability", () => {
+  it("blocks a role that does not hold the capability", () => {
     const req = { user: { id: "u1", role: "STAFF" } } as unknown as AuthenticatedRequest;
     const res = mockRes();
     const next = vi.fn();
 
-    requireRole(["ADMIN"])(req, res, next);
+    requireCapability("ITEM_CREATE")(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("allows a role in the allowed list", () => {
-    const req = { user: { id: "u1", role: "ADMIN" } } as unknown as AuthenticatedRequest;
+  it("allows a role that holds the capability", () => {
+    const req = {
+      user: { id: "u1", role: "PROPERTY_OFFICER" },
+    } as unknown as AuthenticatedRequest;
     const res = mockRes();
     const next = vi.fn();
 
-    requireRole(["ADMIN"])(req, res, next);
+    requireCapability("ITEM_CREATE")(req, res, next);
 
     expect(next).toHaveBeenCalled();
   });
@@ -101,7 +103,7 @@ describe("optionalAuthenticate", () => {
 
     optionalAuthenticate(req, res, next);
 
-    expect(req.user).toEqual({ id: "user-1", role: "STAFF" });
+    expect(req.user).toEqual({ id: "user-1", role: "STAFF", departmentId: null });
     expect(next).toHaveBeenCalled();
   });
 

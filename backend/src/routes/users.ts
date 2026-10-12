@@ -4,8 +4,9 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
-  requireRole,
+  requireCapability,
   type AuthenticatedRequest,
+  type UserRole,
 } from "../middleware/auth.js";
 import { normalizeEmail } from "../utils/email.js";
 
@@ -38,7 +39,7 @@ function toAdminUser(user: {
   id: string;
   fullName: string;
   email: string;
-  role: "ADMIN" | "STAFF";
+  role: UserRole;
   createdAt: Date;
   _count: { ownedItems: number };
 }) {
@@ -68,7 +69,7 @@ function toAdminUser(user: {
 usersRouter.get(
   "/",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("USER_READ"),
   async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const users = await prisma.user.findMany({
@@ -87,7 +88,7 @@ usersRouter.get(
 usersRouter.patch(
   "/:id",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("ACCOUNT_MANAGE"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -151,16 +152,35 @@ usersRouter.patch(
   }
 );
 
-/** `POST /users/:id/promote` — STAFF → ADMIN. There is no demote. */
+const promoteSchema = z.object({
+  role: z.enum(["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"]),
+});
+
+/**
+ * `POST /users/:id/promote` — set an account's role. There is no separate demote:
+ * a role change is one operation, and every change bumps `tokenVersion` so the
+ * account's old sessions — which carry the old role — die immediately. Without
+ * that bump a demoted user would keep their previous privileges until their token
+ * expired (gap-analysis E10).
+ */
 usersRouter.post(
   "/:id/promote",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("ACCOUNT_MANAGE"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
         res.status(400).json({ error: "Account ID is required" });
+        return;
+      }
+
+      const parsed = promoteSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: "Role must be one of SYSTEM_ADMIN, PROPERTY_OFFICER, DEPARTMENT_HEAD, STAFF, AUDITOR",
+          details: parsed.error.issues,
+        });
         return;
       }
 
@@ -170,14 +190,14 @@ usersRouter.post(
         return;
       }
 
-      if (existing.role === "ADMIN") {
-        res.status(409).json({ error: "This account is already an administrator" });
+      if (existing.role === parsed.data.role) {
+        res.status(409).json({ error: `This account is already ${parsed.data.role}` });
         return;
       }
 
       const updated = await prisma.user.update({
         where: { id },
-        data: { role: "ADMIN" },
+        data: { role: parsed.data.role, tokenVersion: { increment: 1 } },
         select: userListSelect,
       });
 
@@ -192,7 +212,7 @@ usersRouter.post(
 usersRouter.post(
   "/:id/password",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("ACCOUNT_MANAGE"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -260,7 +280,7 @@ usersRouter.post(
 usersRouter.delete(
   "/:id",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("ACCOUNT_MANAGE"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

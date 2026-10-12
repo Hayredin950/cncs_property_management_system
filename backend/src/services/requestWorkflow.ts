@@ -1,5 +1,6 @@
 import type { DbClient } from "../lib/dbClient.js";
 import { httpError } from "../lib/httpError.js";
+import { hasCapability } from "./permissions.js";
 import {
   buildEditLogRows,
   writeEditLogRows,
@@ -20,8 +21,22 @@ import {
  * ordering is documented step by step where it is defined.
  */
 
-export type RequestStatusValue = "PENDING" | "APPROVED" | "REJECTED";
-export type ItemStatusValue = "ACTIVE" | "DISPOSED";
+export type RequestStatusValue = "PENDING" | "APPROVED" | "REJECTED" | "WAITLISTED";
+
+/**
+ * Mirrors the Prisma `ItemStatus` enum (spec 4.2, plus LOANED). The states added
+ * beyond ACTIVE and DISPOSED are not reachable from today's transfer/disposal paths,
+ * and `assertDecidable` rejects them explicitly instead of falling through — a
+ * PENDING_CLAIM or LOST item must never be transferred by accident.
+ */
+export type ItemStatusValue =
+  | "PENDING_CLAIM"
+  | "ACTIVE"
+  | "REVERTED_UNVERIFIED"
+  | "LOANED"
+  | "LOST"
+  | "DISPOSED"
+  | "VOIDED";
 
 /**
  * Error strings are exported constants, not literals at the throw site: routes
@@ -216,7 +231,7 @@ export async function applyDecision(
   if (!reviewer) {
     throw httpError(401, "Not authenticated");
   }
-  if (reviewer.role !== "ADMIN") {
+  if (!hasCapability(reviewer.role, "REQUEST_DECIDE")) {
     throw httpError(403, "Insufficient permissions");
   }
 

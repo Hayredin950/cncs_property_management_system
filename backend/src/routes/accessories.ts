@@ -8,7 +8,7 @@ import { z } from "zod";
 import { httpError } from "../lib/httpError.js";
 import type { DbClient } from "../lib/dbClient.js";
 import { prisma } from "../lib/prisma.js";
-import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import { validateBody, validatedBody } from "../middleware/validate.js";
 import { buildEditLogRows, writeEditLogRows, type EditLogRow } from "../services/itemEditLog.js";
 import { ERROR_ITEM_DISPOSED, ERROR_ITEM_NOT_FOUND } from "../services/requestWorkflow.js";
@@ -102,7 +102,7 @@ async function ancestorIdsOf(client: DbClient, firstAncestorId: string | null): 
 accessoriesRouter.post(
   "/:id/accessories",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("ITEM_EDIT_IDENTITY"),
   validateBody(linkAccessoriesSchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
@@ -245,7 +245,7 @@ accessoriesRouter.post(
 accessoriesRouter.delete(
   "/:id/accessories/:accessoryId",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("ITEM_EDIT_IDENTITY"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {

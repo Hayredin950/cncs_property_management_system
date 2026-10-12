@@ -12,6 +12,7 @@ import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBad
 import { Textarea } from "../../components/Textarea";
 import { fetchRequestById } from "../../api/requests";
 import { useDecideRequest } from "../../hooks/useRequestMutations";
+import { canDecideRequests } from "../../lib/permissions";
 import { formatDateTimeUTC, formatRelativeTime } from "../../lib/formatters";
 import { ApiError, NetworkError } from "../../types/api";
 import { REQUEST_STATUS_LABELS } from "../../types/enums";
@@ -26,7 +27,7 @@ import { REQUEST_STATUS_LABELS } from "../../types/enums";
 export function RequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";
+  const canDecide = canDecideRequests(user?.role);
 
   const requestQuery = useQuery({
     queryKey: ["requests", "detail", id],
@@ -126,11 +127,11 @@ export function RequestDetailPage() {
         )}
       </Card>
 
-      {isAdmin && !decided && <DecisionPanel requestId={request.id} itemLabel={`${request.item.name} (${request.item.tagId})`} />}
+      {canDecide && !decided && <DecisionPanel requestId={request.id} itemLabel={`${request.item.name} (${request.item.tagId})`} />}
 
-      {!isAdmin && !decided && (
+      {!canDecide && !decided && (
         <p className="text-sm text-slate-500">
-          Waiting for an admin's review. You'll get an in-app notification when it's decided.
+          Waiting for review. You'll get an in-app notification when it's decided.
         </p>
       )}
       {decided && (

@@ -1,5 +1,6 @@
 import 'package:cncs_pms_mobile/core/api/api_error.dart';
 import 'package:cncs_pms_mobile/data/providers/auth_provider.dart';
+import 'package:cncs_pms_mobile/models/enums.dart';
 import 'package:cncs_pms_mobile/data/providers/core_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,7 +55,11 @@ void main() {
     final state = container.read(authProvider);
     expect(state.status, AuthStatus.authenticated);
     expect(state.user?.fullName, 'Selam Bekele');
-    expect(state.isAdmin, isFalse);
+    // A Staff session: no account administration, and no review queue either.
+    expect(state.role, Role.staff);
+    expect(state.canManageAccounts, isFalse);
+    expect(state.canDecideRequests, isFalse);
+    expect(state.canCreateItems, isFalse);
   });
 
   test('a rejected token is discarded and the user is signed out', () async {

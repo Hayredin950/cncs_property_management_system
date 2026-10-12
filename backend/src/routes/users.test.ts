@@ -26,7 +26,7 @@ vi.mock("../lib/prisma.js", () => {
   return { prisma: client };
 });
 
-const adminToken = createToken({ id: "admin-1", role: "ADMIN" });
+const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
 
 /** A row in the shape `userListSelect` returns, `_count` included. */
@@ -59,10 +59,22 @@ describe("GET /users", () => {
     expect(res.status).toBe(403);
   });
 
+  it("lets a PROPERTY_OFFICER read the list, to choose a holder when registering", async () => {
+    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([adminUserRow()] as never);
+    const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
+
+    const res = await request(app)
+      .get("/users")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+  });
+
   it("returns every account with an item count and no password hash", async () => {
     vi.mocked(prisma.user.findMany).mockResolvedValueOnce([
       adminUserRow(),
-      adminUserRow({ id: "user-2", role: "ADMIN", _count: { ownedItems: 0 } }),
+      adminUserRow({ id: "user-2", role: "SYSTEM_ADMIN", _count: { ownedItems: 0 } }),
     ] as never);
 
     const res = await request(app)
@@ -72,7 +84,7 @@ describe("GET /users", () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(2);
     expect(res.body[0]).toMatchObject({ id: "user-1", role: "STAFF", itemCount: 2 });
-    expect(res.body[1]).toMatchObject({ id: "user-2", role: "ADMIN", itemCount: 0 });
+    expect(res.body[1]).toMatchObject({ id: "user-2", role: "SYSTEM_ADMIN", itemCount: 0 });
     expect(res.body[0].passwordHash).toBeUndefined();
     expect(res.body[0]._count).toBeUndefined();
   });
@@ -201,44 +213,66 @@ describe("POST /users/:id/promote", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 400 when the target role is missing or unknown", async () => {
+    const missing = await request(app)
+      .post("/users/user-1/promote")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+    expect(missing.status).toBe(400);
+
+    const unknown = await request(app)
+      .post("/users/user-1/promote")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ role: "SUPERUSER" });
+    expect(unknown.status).toBe(400);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
   it("returns 404 for an unknown account", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
 
     const res = await request(app)
       .post("/users/missing/promote")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ role: "PROPERTY_OFFICER" });
 
     expect(res.status).toBe(404);
   });
 
-  it("returns 409 when the account is already an admin (no demote exists)", async () => {
+  it("returns 409 when the account already holds the target role", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
       id: "user-2",
-      role: "ADMIN",
+      role: "PROPERTY_OFFICER",
     } as never);
 
     const res = await request(app)
       .post("/users/user-2/promote")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ role: "PROPERTY_OFFICER" });
 
     expect(res.status).toBe(409);
   });
 
-  it("returns 200 and promotes a staff account", async () => {
+  it("sets the role and bumps tokenVersion so old sessions die", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
       id: "user-1",
       role: "STAFF",
     } as never);
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
-      adminUserRow({ role: "ADMIN" }) as never,
+      adminUserRow({ role: "PROPERTY_OFFICER" }) as never,
     );
 
     const res = await request(app)
       .post("/users/user-1/promote")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ role: "PROPERTY_OFFICER" });
 
     expect(res.status).toBe(200);
-    expect(res.body.role).toBe("ADMIN");
+    expect(res.body.role).toBe("PROPERTY_OFFICER");
+    expect(vi.mocked(prisma.user.update).mock.calls[0]?.[0]?.data).toMatchObject({
+      role: "PROPERTY_OFFICER",
+      tokenVersion: { increment: 1 },
+    });
   });
 });
 

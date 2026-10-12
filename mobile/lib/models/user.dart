@@ -66,8 +66,6 @@ class UserSummary {
   final Role role;
   final String createdAt;
   final int itemCount;
-
-  bool get isAdmin => role == Role.admin;
 }
 
 /// `POST /auth/login` / `POST /auth/change-password`. The endpoint also flattens

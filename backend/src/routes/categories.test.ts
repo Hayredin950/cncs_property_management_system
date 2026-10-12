@@ -20,12 +20,15 @@ vi.mock('../lib/prisma.js', () => {
   };
 });
 
-function createToken(payload: { id: string; role: 'ADMIN' | 'STAFF' }) {
+function createToken(payload: {
+  id: string;
+  role: 'SYSTEM_ADMIN' | 'PROPERTY_OFFICER' | 'DEPARTMENT_HEAD' | 'STAFF' | 'AUDITOR';
+}) {
   return jwt.sign(payload, process.env.JWT_SECRET!);
 }
 
 describe('Category Endpoints', () => {
-  const adminToken = createToken({ id: 'admin-1', role: 'ADMIN' });
+  const adminToken = createToken({ id: 'admin-1', role: 'PROPERTY_OFFICER' });
   const staffToken = createToken({ id: 'staff-1', role: 'STAFF' });
 
   beforeEach(() => {

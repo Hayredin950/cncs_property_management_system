@@ -2,8 +2,9 @@ import '../../core/api/api_client.dart';
 import '../../models/json.dart';
 import '../../models/user.dart';
 
-/// `frontend/src/api/users.ts`. Every call is **Admin only**; the server enforces
-/// the role, so a staff-side render would be a UI bug, not a way in.
+/// `frontend/src/api/users.ts`. `list()` needs `USER_READ` (spec 2.1.1) and the
+/// writes need `ACCOUNT_MANAGE`; the server enforces both, so a render by an
+/// account without them would be a UI bug, not a way in.
 class UsersApi {
   const UsersApi(this._client);
 
@@ -31,14 +32,17 @@ class UsersApi {
     return UserSummary.fromJson(json);
   }
 
-  /// `POST /users/:id/promote` — STAFF → ADMIN.
+  /// `POST /users/:id/promote` — set the account's role, any of the five spec
+  /// roles (2.1). The endpoint is still named `promote` for the direction that was
+  /// originally the only one.
   ///
-  /// There is deliberately **no demote counterpart**: a promote grants access, a
-  /// demote silently strips it, and the API only offers the safe direction.
-  Future<UserSummary> promote(String id) async {
+  /// The server bumps the account's `tokenVersion`, so the role change takes effect
+  /// on its next request instead of whenever the old token happened to expire
+  /// (gap-analysis E10).
+  Future<UserSummary> promote(String id, String role) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/users/${Uri.encodeComponent(id)}/promote',
-      body: const <String, dynamic>{},
+      body: {'role': role},
     );
     return UserSummary.fromJson(json);
   }

@@ -11,6 +11,7 @@ import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBad
 import { StatCard } from "../../components/StatCard";
 import { usePendingCount, useRequests } from "../../hooks/useRequests";
 import { formatRelativeTime } from "../../lib/formatters";
+import { canDecideRequests } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
 
 /**
@@ -30,7 +31,7 @@ import { NetworkError } from "../../types/api";
  */
 export function DashboardPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";
+  const canDecide = canDecideRequests(user?.role);
 
   const pendingQuery = usePendingCount();
   const requestsQuery = useRequests({ limit: 5 });
@@ -44,7 +45,7 @@ export function DashboardPage() {
         description={`Welcome back${user ? `, ${user.fullName.split(" ")[0]}` : ""} — here's where things stand.`}
         actions={
           <StatCard
-            label={isAdmin ? "Pending review" : "Pending requests"}
+            label={canDecide ? "Pending review" : "Pending requests"}
             value={pendingQuery.data?.pendingCount ?? "—"}
             icon={<ClipboardList className="h-5 w-5" />}
             tone="warning"
@@ -74,7 +75,7 @@ export function DashboardPage() {
       <Card className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-slate-900">
-            {isAdmin ? "Needs your review" : "Your recent requests"}
+            {canDecide ? "Needs your review" : "Your recent requests"}
           </h2>
           <Link
             to="/requests"
@@ -105,9 +106,9 @@ export function DashboardPage() {
         ) : requestsQuery.data.requests.length === 0 ? (
           <EmptyState
             icon={<ClipboardList className="h-8 w-8" />}
-            heading={isAdmin ? "No requests yet" : "You haven't filed any requests yet"}
+            heading={canDecide ? "No requests yet" : "You haven't filed any requests yet"}
             body={
-              isAdmin
+              canDecide
                 ? "Transfer and disposal requests will appear here for review."
                 : "Requests you file will appear here with their review status."
             }

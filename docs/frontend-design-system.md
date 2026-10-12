@@ -179,10 +179,17 @@ not simply a worse or better version of it:
 
 **Role** (`Role` enum — remember: **Public is not a role**, it's the absence of a JWT):
 
+Five members since 12 Oct (the Account Admin merged into `SYSTEM_ADMIN`). Every role keeps a
+**distinct** colour and icon: the badge is how an accounts list is scanned, and two roles
+sharing a look would be the one mistake this widget exists to prevent.
+
 | Value | Badge colour | Icon | Text |
 | --- | --- | --- | --- |
-| `ADMIN` | `violet` | `ShieldCheck` | "Admin" |
+| `SYSTEM_ADMIN` | `violet` | `ShieldCheck` | "System Admin" |
+| `PROPERTY_OFFICER` | `info` | `Briefcase` | "Property Officer" |
+| `DEPARTMENT_HEAD` | `accent` | `Users` | "Department Head" |
 | `STAFF` | `brand` | `IdCard` | "Staff" |
+| `AUDITOR` | `warning` | `ClipboardCheck` | "Auditor" |
 | *(anonymous)* | `neutral`, no badge | — | "Guest" (never shown as a role pill) |
 
 **Notification code** (`NOTIFICATION_CODES`, `services/notifications.ts` — a `null` code is a

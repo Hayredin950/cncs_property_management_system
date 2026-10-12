@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { renderWithProviders } from "./utils";
 import { clearToken, getToken, setToken } from "../lib/storage";
 import { server } from "./msw/server";
-import { ADMIN_USER } from "./fixtures";
+import { OFFICER_USER } from "./fixtures";
 
 const API = "http://localhost:4000/api/v1";
 
@@ -39,7 +39,7 @@ describe("LoginPage", () => {
     // `next` defaults to /dashboard (LoginPage). The dashboard's h1 is the
     // unambiguous landmark; nav links + headings share the word elsewhere.
     expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
-    expect(within(sidebar()).getByText("Abebe Admin")).toBeInTheDocument();
+    expect(within(sidebar()).getByText(OFFICER_USER.fullName)).toBeInTheDocument();
   });
 
   it("shows the server's 401 message verbatim on bad credentials", async () => {
@@ -96,7 +96,7 @@ describe("401 handling", () => {
     // and land on /login?next=/dashboard.
     localStorage.setItem("cncs.auth.token", "expired-token");
     server.use(
-      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: ADMIN_USER })),
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: OFFICER_USER })),
       http.get(`${API}/requests/pending-count`, () =>
         HttpResponse.json({ error: "Token expired" }, { status: 401 }),
       ),

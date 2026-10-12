@@ -21,11 +21,18 @@ import '../../widgets/status_badges.dart';
 ///
 /// The design system's guidance for this screen was written when there was no
 /// list/update/delete endpoint for users (gap G2) and said to state the limitation on
-/// the page. The endpoints exist now, so this screen is the full management view — and
-/// the one limitation that *is* still true gets stated: **there is no demote.** An
-/// account can be promoted from STAFF to ADMIN and never back, because the endpoint
-/// does not exist. A "remove admin rights" control would imply a capability the API
-/// does not have, so it is absent and the copy says why.
+/// the page. The endpoints exist now, so this screen is the full management view.
+///
+/// A role change is its own action, never part of the name/email form: the five
+/// roles (spec 2.1) differ in what they may do, so picking one is a permission
+/// change and it goes through a sheet that picks the role and a confirmation that
+/// names it. The confirmation also says the account's sessions end, because the
+/// server bumps its `tokenVersion` — a permission the change removed must not
+/// outlive it (gap-analysis E10).
+///
+/// An administrator cannot change **their own** role from here, for the same reason
+/// they cannot remove themselves: one mis-tap would lock them out of this screen
+/// with no way back in.
 ///
 /// Resetting a password generates one on the device and shows it once. The server sets
 /// `mustChangePassword`, so the account is forced to replace it at the next sign-in —
@@ -124,12 +131,14 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
               AppSelectField<Role>(
                 label: 'Role',
                 value: _role,
-                options: const [Role.staff, Role.admin],
+                options: Role.selectable,
                 labelOf: (value) => value.label,
                 enabled: !_creating,
                 onChanged: (value) => setState(() => _role = value ?? Role.staff),
-                helper: 'Staff manage items and file requests. Admin also review requests and '
-                    'manage accounts.',
+                helper: 'It decides what they can do, not just what they see. System Admin '
+                    'runs accounts; Property Officer registers items, decides requests and '
+                    'manages categories; Department Head and Staff hold and transfer items; '
+                    'Auditor runs audit sessions.',
               ),
               if (_formError != null) ...[
                 const SizedBox(height: AppSpace.stack),
@@ -168,7 +177,9 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                   isSelf: account.id == currentUserId,
                   busy: _busyUserId == account.id,
                   onEdit: () => _edit(account),
-                  onPromote: account.isAdmin ? null : () => _promote(account),
+                  // Every account but your own can be given a different role — a
+                  // change to your own is a self-lockout, so it is not offered.
+                  onSetRole: account.id == currentUserId ? null : () => _changeRole(account),
                   onReset: () => _resetPassword(account),
                   onRemove: account.id == currentUserId ? null : () => _remove(account),
                 ),
@@ -177,9 +188,9 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
               const SizedBox(height: AppSpace.s4),
               const InfoNote(
                 icon: Icons.info_outline,
-                message: 'Promotion is one-way: an account can be raised to Admin, but not '
-                    'lowered again. An account that owns items cannot be removed either '
-                    '\u2014 transfer or dispose of its items first.',
+                message: 'A role change signs the account out of every device it is signed '
+                    'in on, so the old permissions stop with it. An account that owns items '
+                    'cannot be removed \u2014 transfer or dispose of its items first.',
                 tone: InfoTone.neutral,
               ),
             ],
@@ -268,29 +279,80 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
     });
   }
 
-  Future<void> _promote(UserSummary account) async {
+  /// Pick a role, then confirm it.
+  ///
+  /// Two steps on purpose, and in this order: the sheet is where a role is chosen,
+  /// so the confirmation that follows can name the role rather than asking "are you
+  /// sure?" about an unnamed change.
+  Future<void> _changeRole(UserSummary account) async {
+    final role = await _pickRole(account);
+    if (role == null || !mounted) return;
+
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Make this account an Admin?',
-      body: '${account.fullName} will be able to review and decide every transfer and '
-          'disposal request, and manage accounts and categories. This cannot be undone '
-          'from here \u2014 there is no demote.',
-      confirmLabel: 'Promote',
+      title: 'Make this account ${role.label}?',
+      body: '${account.fullName} becomes ${role.label}. '
+          '${role == Role.systemAdmin ? 'That is full administrator access \u2014 every account, the approval queue, and this screen. ' : ''}'
+          'The change takes effect immediately: every session the account is signed into '
+          'ends, so nothing it could do a moment ago is left running under the old role.',
+      confirmLabel: 'Set role to ${role.label}',
       icon: Icons.verified_user_outlined,
     );
     if (!confirmed || !mounted) return;
 
     await _guard(account, () async {
-      await ref.read(userActionsProvider).promote(account.id);
+      await ref.read(userActionsProvider).promote(account.id, role.wire);
       if (mounted) {
         showAppToast(
           context,
-          message: '${account.fullName} is now an Admin.',
+          message: '${account.fullName} is now ${role.label}.',
           tone: ToastTone.success,
         );
       }
     });
   }
+
+  /// The role picker. A sheet rather than a dialog because five labelled rows are a
+  /// list, and a list is what a sheet is for.
+  Future<Role?> _pickRole(UserSummary account) => showAppSheet<Role>(
+        context,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.s4,
+                AppSpace.s4,
+                AppSpace.s4,
+                AppSpace.s2,
+              ),
+              child: Text(
+                'Role for ${account.fullName}',
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.aauGray900,
+                ),
+              ),
+            ),
+            for (final role in Role.selectable)
+              ListTile(
+                title: Text(role.label),
+                subtitle: Text(_roleDescription(role)),
+                // The current role is shown but not selectable: choosing it again is
+                // the 409 the server answers, and a control that can only fail is
+                // worse than one that is visibly unavailable.
+                enabled: role != account.role,
+                trailing: role == account.role
+                    ? const Icon(Icons.check, size: 18, color: AppColors.aauGray400)
+                    : null,
+                onTap: () => Navigator.of(context).pop(role),
+              ),
+            const SizedBox(height: AppSpace.s2),
+          ],
+        ),
+      );
 
   Future<void> _resetPassword(UserSummary account) async {
     final confirmed = await showConfirmDialog(
@@ -360,13 +422,24 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
   }
 }
 
+/// One line per role, in the same words the create form's helper uses. A picker
+/// that only shows five names invites the reader to guess what changed.
+String _roleDescription(Role role) => switch (role) {
+      Role.systemAdmin => 'Runs accounts: invites, roles, resets, removals.',
+      Role.propertyOfficer => 'Registers items, decides requests, manages categories.',
+      Role.departmentHead => 'Holds items for a department and decides requests.',
+      Role.staff => 'Holds items and files transfer requests.',
+      Role.auditor => 'Runs audit sessions and reads reports.',
+      _ => 'Unrecognised role.',
+    };
+
 class _AccountRow extends StatelessWidget {
   const _AccountRow({
     required this.account,
     required this.isSelf,
     required this.busy,
     required this.onEdit,
-    required this.onPromote,
+    required this.onSetRole,
     required this.onReset,
     required this.onRemove,
   });
@@ -375,7 +448,7 @@ class _AccountRow extends StatelessWidget {
   final bool isSelf;
   final bool busy;
   final VoidCallback onEdit;
-  final VoidCallback? onPromote;
+  final VoidCallback? onSetRole;
   final VoidCallback onReset;
   final VoidCallback? onRemove;
 
@@ -453,15 +526,15 @@ class _AccountRow extends StatelessWidget {
                   icon: const Icon(Icons.more_vert, size: 20, color: AppColors.aauGray500),
                   onSelected: (value) => switch (value) {
                     'edit' => onEdit(),
-                    'promote' => onPromote?.call(),
+                    'role' => onSetRole?.call(),
                     'reset' => onReset(),
                     'remove' => onRemove?.call(),
                     _ => null,
                   },
                   itemBuilder: (context) => [
                     const PopupMenuItem(value: 'edit', child: Text('Correct name or email')),
-                    if (onPromote != null)
-                      const PopupMenuItem(value: 'promote', child: Text('Make an Admin')),
+                    if (onSetRole != null)
+                      const PopupMenuItem(value: 'role', child: Text('Change role')),
                     const PopupMenuItem(value: 'reset', child: Text('Reset password')),
                     if (onRemove != null)
                       const PopupMenuItem(

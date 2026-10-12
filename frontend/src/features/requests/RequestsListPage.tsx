@@ -1,6 +1,7 @@
 import { ClipboardList } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
+import { canDecideRequests } from "../../lib/permissions";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
@@ -18,9 +19,9 @@ const STATUS_OPTIONS = REQUEST_STATUSES.map((status) => ({
 }));
 
 /**
- * `/requests` — Shell B/C, Staff/Admin (SRS F6/F7, frontend-design-system.md
- * §10.7). Staff see their own filings, admins see the review queue — the split
- * comes from the API, not from a client-side branch.
+ * `/requests` — Shell B/C (SRS F6/F7, frontend-design-system.md
+ * §10.7). Staff see their own filings, the reviewing roles see the queue — the
+ * split comes from the API, not from a client-side branch.
  *
  * **Phase 2, first slice.** This ships the list + `status` filter. The
  * `ResponsiveList` component and the `/requests/new`, `/requests/:id` routes
@@ -31,7 +32,10 @@ const STATUS_OPTIONS = REQUEST_STATUSES.map((status) => ({
  */
 export function RequestsListPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";
+  // Decision rights, not a role name: the Property Officer and the Department
+  // Head both review requests (spec 2.2), while the System Admin — the role that
+  // used to be "ADMIN" — sees no asset data at all.
+  const canDecide = canDecideRequests(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawStatus = searchParams.get("status") ?? "";
@@ -56,7 +60,7 @@ export function RequestsListPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Requests</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {isAdmin
+            {canDecide
               ? "Transfer and disposal requests awaiting review."
               : "Transfers and disposals you've filed."}
           </p>
@@ -92,7 +96,7 @@ export function RequestsListPage() {
       ) : requestsQuery.data.requests.length === 0 ? (
         <EmptyState
           icon={<ClipboardList className="h-8 w-8" />}
-          heading={status || isAdmin ? "No requests match this filter" : "You haven't filed any requests yet"}
+          heading={status || canDecide ? "No requests match this filter" : "You haven't filed any requests yet"}
           body={
             status
               ? "Try a different status."

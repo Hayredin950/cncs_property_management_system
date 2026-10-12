@@ -6,6 +6,14 @@ import {
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
+import {
+  canCreateItems,
+  canManageAccounts,
+  canRunAudits,
+  canViewAudits,
+  canViewReports,
+  hasCapability,
+} from "../lib/permissions";
 import type { Role } from "../types/enums";
 
 /**
@@ -120,57 +128,11 @@ export const PUBLIC_NAV: AauNavEntry[] = [
  * open for them.
  */
 export function staffNav(role: Role): AauNavEntry[] {
-  const entries: AauNavEntry[] = [
-    {
-      label: "Work",
-      icon: Briefcase,
-      sections: [
-        {
-          heading: "Assets",
-          links: [
-            { label: "All items", to: "/items" },
-            { label: "Register new item", to: "/items/new" },
-          ],
-        },
-        {
-          heading: "Requests",
-          links: [
-            { label: "All requests", to: "/requests" },
-            { label: "File a request", to: "/requests/new" },
-          ],
-        },
-        {
-          heading: "Notifications",
-          links: [{ label: "Inbox", to: "/notifications" }],
-        },
-      ],
-    },
-    {
-      label: "Audit",
-      icon: ClipboardCheck,
-      sections: [
-        {
-          heading: "Counting",
-          links: [
-            { label: "Start an audit", to: "/audit/new" },
-            { label: "Scan an audit", to: "/scan" },
-          ],
-        },
-        {
-          heading: "Reporting",
-          links: [
-            // The history sits beside the reports because they answer the same
-            // question — "what did we find last time?" — and neither is reachable
-            // from the other without knowing a session id.
-            { label: "Past audits", to: "/audits" },
-            { label: "Reports & exports", to: "/reports" },
-          ],
-        },
-      ],
-    },
-  ];
+  const entries: AauNavEntry[] = [];
 
-  if (role === "ADMIN") {
+  // A SYSTEM_ADMIN runs accounts, not assets (spec 2.1.1), so it gets the inbox
+  // and the admin menu and nothing else.
+  if (canManageAccounts(role)) {
     entries.push({
       label: "Admin",
       icon: ShieldCheck,
@@ -180,9 +142,71 @@ export function staffNav(role: Role): AauNavEntry[] {
           links: [{ label: "Accounts", to: "/admin/users" }],
         },
         {
-          heading: "Catalogue",
-          links: [{ label: "Categories", to: "/admin/categories" }],
+          heading: "Notifications",
+          links: [{ label: "Inbox", to: "/notifications" }],
         },
+      ],
+    });
+    return entries;
+  }
+
+  const assetLinks: AauNavLink[] = [{ label: "All items", to: "/items" }];
+  if (canCreateItems(role)) {
+    assetLinks.push({ label: "Register new item", to: "/items/new" });
+  }
+
+  entries.push({
+    label: "Work",
+    icon: Briefcase,
+    sections: [
+      { heading: "Assets", links: assetLinks },
+      {
+        heading: "Requests",
+        links: [
+          { label: "All requests", to: "/requests" },
+          { label: "File a request", to: "/requests/new" },
+        ],
+      },
+      {
+        heading: "Notifications",
+        links: [{ label: "Inbox", to: "/notifications" }],
+      },
+    ],
+  });
+
+  const auditSections: AauNavMenuSection[] = [];
+  if (canRunAudits(role)) {
+    auditSections.push({
+      heading: "Counting",
+      links: [
+        { label: "Start an audit", to: "/audit/new" },
+        { label: "Scan an audit", to: "/scan" },
+      ],
+    });
+  }
+  if (canViewAudits(role) || canViewReports(role)) {
+    const reportingLinks: AauNavLink[] = [];
+    if (canViewAudits(role)) {
+      // The history sits beside the reports because they answer the same
+      // question — "what did we find last time?" — and neither is reachable
+      // from the other without knowing a session id.
+      reportingLinks.push({ label: "Past audits", to: "/audits" });
+    }
+    if (canViewReports(role)) {
+      reportingLinks.push({ label: "Reports & exports", to: "/reports" });
+    }
+    auditSections.push({ heading: "Reporting", links: reportingLinks });
+  }
+  if (auditSections.length > 0) {
+    entries.push({ label: "Audit", icon: ClipboardCheck, sections: auditSections });
+  }
+
+  if (hasCapability(role, "CATEGORY_MANAGE")) {
+    entries.push({
+      label: "Catalogue",
+      icon: Package,
+      sections: [
+        { heading: "Categories", links: [{ label: "Categories", to: "/admin/categories" }] },
       ],
     });
   }

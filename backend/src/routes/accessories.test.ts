@@ -28,7 +28,9 @@ vi.mock("../lib/prisma.js", () => {
   return { prisma: client };
 });
 
-const staffToken = createToken({ id: "staff-1", role: "STAFF" });
+// The id stays "staff-1" so every existing `editedById` assertion is unchanged;
+// the role is the one that may actually link accessories (ITEM_EDIT_IDENTITY).
+const staffToken = createToken({ id: "staff-1", role: "PROPERTY_OFFICER" });
 
 /** An accessory row as the router selects it. */
 function accessory(overrides: Partial<{ id: string; tagId: string; status: string; parentItemId: string | null }> = {}) {

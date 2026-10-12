@@ -1,45 +1,65 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
-import { ADMIN_ACCOUNT, STAFF_ACCOUNT, STAFF_USER } from "./fixtures";
+import { OFFICER_ACCOUNT, STAFF_ACCOUNT, STAFF_USER, SYSTEM_ADMIN_USER } from "./fixtures";
 
 const API = "http://localhost:4000/api/v1";
 
 /**
  * `/admin/users` — the accounts screen (F1.3).
  *
- * Two things are under test beyond "it renders": the role boundary (a staff
- * account must not reach the page at all, and hiding the nav link is not a
- * boundary), and the one-directional promote — asserted through the wire, since
- * "an admin exists" is only a claim about pixels until the request says so.
+ * Two things are under test beyond "it renders": the role boundary (the screen
+ * belongs to the System Admin — spec 2.1.1 — and hiding the nav link is not a
+ * boundary), and the role change, which is asserted **through the wire**: the
+ * request's `{ role }` body is the only evidence that the confirmation the
+ * administrator read is the change that was actually sent.
  */
 describe("/admin/users — the accounts screen", () => {
-  it("lists every account with its item count for an admin", async () => {
+  // Every case below starts as the System Admin, because that is the only role
+  // that can reach this screen at all. The token alone decides nothing — the app
+  // resolves the session through `GET /auth/me`.
+  beforeEach(() => {
+    server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: SYSTEM_ADMIN_USER })),
+    );
+  });
+
+  it("lists every account with its item count", async () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
 
     expect(await screen.findByRole("heading", { name: "Accounts" })).toBeInTheDocument();
-    // Scoped to the page body: the signed-in admin's own name also appears in
-    // the navigation panel, so a document-wide text query would match twice.
+    // Scoped to the page body: the signed-in administrator's own name also appears
+    // in the navigation panel, so a document-wide text query would match twice.
     const main = await screen.findByRole("main");
-    expect(await within(main).findByText(ADMIN_ACCOUNT.fullName)).toBeInTheDocument();
+    expect(await within(main).findByText(OFFICER_ACCOUNT.fullName)).toBeInTheDocument();
     expect(within(main).getByText(STAFF_ACCOUNT.fullName)).toBeInTheDocument();
-    // The count is the column that tells an admin whether an account is part of
-    // the record before they try to remove it.
+    // The count is the column that tells an administrator whether an account is
+    // part of the record before they try to remove it.
     expect(within(main).getByText(/3 items/)).toBeInTheDocument();
-    expect(within(main).getByText(/No items/)).toBeInTheDocument();
+    // Two accounts own nothing — the officer's row is the one with a count.
+    expect(within(main).getAllByText(/No items/).length).toBeGreaterThan(1);
+    // Role is shown per row, by name — the five roles differ in what they may do,
+    // so "Property Officer" and "Staff" have to be legible in the list. Scoped to
+    // the row: the create form's role picker carries the same two words.
+    const officerRow = within(main).getByText(OFFICER_ACCOUNT.fullName).closest("li") as HTMLElement;
+    expect(within(officerRow).getByText("Property Officer")).toBeInTheDocument();
+    const staffRow = within(main).getByText(STAFF_ACCOUNT.fullName).closest("li") as HTMLElement;
+    expect(within(staffRow).getByText("Staff")).toBeInTheDocument();
   });
 
-  it("promotes a staff account only after a confirmation that names the access", async () => {
-    let promotedId: string | null = null;
+  it("changes a role only after picking it and confirming the access it grants", async () => {
+    let body: unknown = null;
+    let changedId: string | null = null;
     server.use(
-      http.post(`${API}/users/:id/promote`, ({ params }) => {
-        promotedId = params.id as string;
-        return HttpResponse.json({ ...STAFF_ACCOUNT, role: "ADMIN" });
+      http.post(`${API}/users/:id/promote`, async ({ params, request }) => {
+        changedId = params.id as string;
+        body = await request.json();
+        return HttpResponse.json({ ...STAFF_ACCOUNT, role: "PROPERTY_OFFICER" });
       }),
     );
 
@@ -47,14 +67,48 @@ describe("/admin/users — the accounts screen", () => {
     renderWithProviders({ initialEntries: ["/admin/users"] });
     const user = userEvent.setup();
 
-    // The only Promote on the page belongs to the staff account — an admin is
-    // not offered the action at all, because there is no demote to pair with it.
-    await user.click(await screen.findByRole("button", { name: "Promote" }));
+    // The picker is a deliberate second step: it is opened explicitly, so a role
+    // change is never one mis-click in a profile form.
+    await user.click(
+      await screen.findByRole("button", { name: `Change role for ${STAFF_USER.fullName}` }),
+    );
+    await user.selectOptions(await screen.findByLabelText("New role"), "PROPERTY_OFFICER");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
 
+    // Nothing has been sent yet — the confirmation is what sends it.
+    expect(body).toBeNull();
+    expect(await screen.findByText(/becomes/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Set role to Property Officer" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Set role to Property Officer" }));
+
+    await waitFor(() => expect(changedId).toBe(STAFF_USER.id));
+    expect(body).toEqual({ role: "PROPERTY_OFFICER" });
+  });
+
+  it("warns about the sessions a role change ends before it is sent", async () => {
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/admin/users"] });
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: `Change role for ${STAFF_USER.fullName}` }),
+    );
+    await user.selectOptions(await screen.findByLabelText("New role"), "SYSTEM_ADMIN");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    // Naming the consequence instead of "Are you sure?" (§11 copy bank): the new
+    // role, that it is administrator access, and that old sessions end with it.
     expect(await screen.findByText(/full administrator access/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Promote to admin" }));
+    expect(screen.getByText(/every session this account is signed into ends/)).toBeInTheDocument();
+  });
 
-    await waitFor(() => expect(promotedId).toBe(STAFF_USER.id));
+  it("never offers the acting administrator a way to change their own role", async () => {
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/admin/users"] });
+
+    const own = await screen.findByRole("button", { name: /you cannot change your own role/i });
+    expect(own).toBeDisabled();
   });
 
   it("never offers the acting administrator a way to delete themselves", async () => {
@@ -95,5 +149,15 @@ describe("/admin/users — the accounts screen", () => {
     // The same 404 an unknown path renders — there is no "forbidden" page.
     expect(await screen.findByText("Page not found")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Accounts" })).not.toBeInTheDocument();
+  });
+
+  it("is not reachable by a Property Officer either, even though it may read accounts", async () => {
+    // `USER_READ` is not `ACCOUNT_MANAGE` (spec 2.1.1): the officer sees the
+    // account list where a picker needs it, and no administration screen.
+    server.use(http.get(`${API}/auth/me`, () => HttpResponse.json({ user: OFFICER_ACCOUNT })));
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/admin/users"] });
+
+    expect(await screen.findByText("Page not found")).toBeInTheDocument();
   });
 });

@@ -43,7 +43,10 @@ import { generateTagQR, regenerateTagQR, readTagFile } from "../utils/qrGenerato
 const STORED_BYTES = Buffer.from("<stored-png>");
 const RE_RENDERED_BYTES = Buffer.from("<re-rendered-png>");
 
-function createToken(payload: { id: string; role: "ADMIN" | "STAFF" }) {
+function createToken(payload: {
+  id: string;
+  role: "SYSTEM_ADMIN" | "PROPERTY_OFFICER" | "DEPARTMENT_HEAD" | "STAFF" | "AUDITOR";
+}) {
   return jwt.sign(payload, process.env.JWT_SECRET!);
 }
 
@@ -58,8 +61,8 @@ function bufferPng(res: request.Response, callback: (err: Error | null, body: Bu
 }
 
 describe("Tag Endpoints", () => {
-  const adminToken = createToken({ id: "admin-1", role: "ADMIN" });
-  const staffToken = createToken({ id: "staff-1", role: "STAFF" });
+  const adminToken = createToken({ id: "admin-1", role: "PROPERTY_OFFICER" });
+  const staffToken = createToken({ id: "staff-1", role: "PROPERTY_OFFICER" });
 
   beforeEach(() => {
     vi.clearAllMocks();

@@ -1,4 +1,5 @@
 import { apiClient } from "../lib/apiClient";
+import type { Role } from "../types/enums";
 import type { LoginRequest, LoginResponse, MeResponse, AuthUser } from "../types/user";
 
 /** `POST /auth/login` — public. See types/user.ts for why only `.user` is read back out. */
@@ -27,12 +28,12 @@ export function changePassword(payload: ChangePasswordPayload): Promise<LoginRes
   return apiClient.post<LoginResponse>("/auth/change-password", payload);
 }
 
-/** Body of `POST /auth/register` — Admin-only account creation (F1.3). */
+/** Body of `POST /auth/register` — System Admin-only account creation (F1.3). */
 export interface RegisterPayload {
   fullName: string;
   email: string;
   password: string;
-  role: "ADMIN" | "STAFF";
+  role: Role;
 }
 
 /**

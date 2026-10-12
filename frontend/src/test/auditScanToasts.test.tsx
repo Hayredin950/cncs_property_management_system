@@ -1,12 +1,12 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
 import { saveWalkthrough } from "../lib/auditWalkthrough";
-import { AUDIT_READBACK, AUDIT_SESSION, AUDIT_STORED_ROWS } from "./fixtures";
+import { AUDITOR_USER, AUDIT_READBACK, AUDIT_SESSION, AUDIT_STORED_ROWS } from "./fixtures";
 
 const API = "http://localhost:4000/api/v1";
 
@@ -34,6 +34,12 @@ function toastText(): string {
  * That is what these assertions are: not "no toast", but never more than one.
  */
 describe("audit scan feedback", () => {
+  // Scanning into a session is the Auditor's (spec 8.1); the Property Officer
+  // reads the history and runs nothing.
+  beforeEach(() => {
+    server.use(http.get(`${API}/auth/me`, () => HttpResponse.json({ user: AUDITOR_USER })));
+  });
+
   it("replaces the previous scan message instead of stacking a new one", async () => {
     server.use(
       http.get(`${API}/audits/:id`, () =>

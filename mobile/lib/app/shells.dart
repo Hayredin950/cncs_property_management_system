@@ -275,10 +275,11 @@ class AppTabBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pending = ref.watch(pendingCountForTabBar);
-    // The tab bar's Requests badge is the review queue, which is an admin's to act
-    // on. A staff member's own pending requests are not a queue anyone is waiting on,
-    // so badging them would be a permanent unactionable number.
-    final isAdmin = ref.watch(isAdminProvider);
+    // The tab bar's Requests badge is the review queue, which belongs to whoever
+    // decides requests (spec 2.2). A staff member's own pending requests are not a
+    // queue anyone is waiting on, so badging them would be a permanent
+    // unactionable number.
+    final decidesRequests = ref.watch(canDecideRequestsProvider);
 
     return Container(
       decoration: const BoxDecoration(
@@ -318,7 +319,7 @@ class AppTabBar extends ConsumerWidget {
                 activeIcon: Icons.assignment,
                 label: 'Requests',
                 active: currentPath.startsWith('/requests'),
-                badgeCount: isAdmin ? pending : null,
+                badgeCount: decidesRequests ? pending : null,
                 onTap: () => context.go('/requests'),
               ),
               _TabSlot(
@@ -337,10 +338,10 @@ class AppTabBar extends ConsumerWidget {
 }
 
 /// The pending count, and — the point of this provider existing — **not fetched at
-/// all for a staff session**. An admin's badge is a real queue; a staff member's
-/// would be a number with nothing behind it, so the request is not made.
+/// all for a role that cannot decide**. A reviewer's badge is a real queue; anyone
+/// else's would be a number with nothing behind it, so the request is not made.
 final pendingCountForTabBar = Provider<int>((ref) {
-  if (!ref.watch(isAdminProvider)) return 0;
+  if (!ref.watch(canDecideRequestsProvider)) return 0;
   return ref.watch(pendingRequestCountProvider).value ?? 0;
 });
 
@@ -500,30 +501,37 @@ Future<void> showMoreSheet(BuildContext context, WidgetRef ref) {
           ],
           const SizedBox(height: AppSpace.s4),
           const Divider(height: 1),
-          _MoreRow(
-            icon: Icons.play_circle_outline,
-            label: 'Start an audit',
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/audit/new');
-            },
-          ),
-          _MoreRow(
-            icon: Icons.history,
-            label: 'Audit history',
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/audits');
-            },
-          ),
-          _MoreRow(
-            icon: Icons.bar_chart_outlined,
-            label: 'Reports',
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/reports');
-            },
-          ),
+          // Running a session and reading one are different rights (spec 2.2): the
+          // Auditor starts them, the Property Officer reads the findings and acts.
+          // Offering "Start an audit" to a reader would advertise a door that
+          // answers 403 — so it is not offered.
+          if (auth.canRunAudits)
+            _MoreRow(
+              icon: Icons.play_circle_outline,
+              label: 'Start an audit',
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/audit/new');
+              },
+            ),
+          if (auth.canViewAudits)
+            _MoreRow(
+              icon: Icons.history,
+              label: 'Audit history',
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/audits');
+              },
+            ),
+          if (auth.canViewReports)
+            _MoreRow(
+              icon: Icons.bar_chart_outlined,
+              label: 'Reports',
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/reports');
+              },
+            ),
           _MoreRow(
             icon: Icons.notifications_outlined,
             label: 'Notifications',
@@ -544,25 +552,31 @@ Future<void> showMoreSheet(BuildContext context, WidgetRef ref) {
               context.push('/map');
             },
           ),
-          if (auth.isAdmin) ...[
+          // Two separate capabilities, and the point of the split: accounts are the
+          // System Admin's (spec 2.1.1) while the catalogue is the Property
+          // Officer's. The old single "admin" gate showed both to one role and
+          // neither to the other four.
+          if (auth.canManageAccounts || auth.canManageCategories) ...[
             const Divider(height: 1),
             const _MoreSectionLabel('Administration'),
-            _MoreRow(
-              icon: Icons.verified_user_outlined,
-              label: 'Accounts',
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/admin/users');
-              },
-            ),
-            _MoreRow(
-              icon: Icons.sell_outlined,
-              label: 'Categories',
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/admin/categories');
-              },
-            ),
+            if (auth.canManageAccounts)
+              _MoreRow(
+                icon: Icons.verified_user_outlined,
+                label: 'Accounts',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/admin/users');
+                },
+              ),
+            if (auth.canManageCategories)
+              _MoreRow(
+                icon: Icons.sell_outlined,
+                label: 'Categories',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/admin/categories');
+                },
+              ),
           ],
           const Divider(height: 1),
           _MoreRow(

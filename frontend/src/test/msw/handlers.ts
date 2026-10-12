@@ -21,6 +21,7 @@ import {
   REQUESTS_LIST,
 } from "../fixtures";
 import { getToken } from "../../lib/storage";
+import type { UserSummary } from "../../types/user";
 
 const API = "http://localhost:4000/api/v1";
 
@@ -89,11 +90,12 @@ export const handlers = [
     return HttpResponse.json({ ...ACCOUNTS[0], id: params.id, ...body });
   }),
 
-  http.post(`${API}/users/:id/promote`, ({ params }) =>
-    getToken()
-      ? HttpResponse.json({ ...ACCOUNTS[1], id: params.id, role: "ADMIN" })
-      : unauthorized(),
-  ),
+  /** The role change echoes the role it was asked for, the way the server does. */
+  http.post(`${API}/users/:id/promote`, async ({ params, request }) => {
+    if (!getToken()) return unauthorized();
+    const { role } = (await request.json()) as { role: UserSummary["role"] };
+    return HttpResponse.json({ ...ACCOUNTS[1], id: params.id, role });
+  }),
 
   http.post(`${API}/users/:id/password`, ({ params }) =>
     getToken() ? HttpResponse.json({ id: params.id, passwordChanged: true }) : unauthorized(),

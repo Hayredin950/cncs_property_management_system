@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_error.dart';
+import '../../models/enums.dart';
+import '../../models/permissions.dart' as permissions;
 import '../../models/user.dart';
 import 'core_providers.dart';
 
@@ -25,11 +27,28 @@ class AuthState {
 
   bool get isAuthenticated => status == AuthStatus.authenticated;
 
-  /// A staff/admin viewer — the two roles the whole authed shell is open to.
+  /// A signed-in viewer — every role gets the workbench shell. What differs
+  /// between them is which destinations it offers, and that is the capability
+  /// getters below rather than a boolean named after one of the old two roles.
   bool get canUseWorkbench => isAuthenticated;
 
-  /// Admin-only screens.
-  bool get isAdmin => user?.role.isAdmin ?? false;
+  /// The signed-in role, or null before `/auth/me` has answered. Passed to the
+  /// `can*` helpers in `models/permissions.dart`.
+  Role? get role => isAuthenticated ? user?.role : null;
+
+  /// What this session may do, one getter per branch the UI actually makes. Named
+  /// after the capability, not after a role: "can decide requests" is the question
+  /// the queue badge and the decide panel are asking, and it stays the right
+  /// question when a role is added or the matrix moves.
+  bool get canManageAccounts => permissions.canManageAccounts(role);
+  bool get canReadUsers => permissions.canReadUsers(role);
+  bool get canDecideRequests => permissions.canDecideRequests(role);
+  bool get canRunAudits => permissions.canRunAudits(role);
+  bool get canViewAudits => permissions.canViewAudits(role);
+  bool get canViewReports => permissions.canViewReports(role);
+  bool get canCreateItems => permissions.canCreateItems(role);
+  bool get canManageCategories => permissions.canManageCategories(role);
+  bool get seesAllItems => permissions.seesAllItems(role);
 
   /// A password an administrator reset must be changed before anything else.
   bool get mustChangePassword => user?.mustChangePassword ?? false;
@@ -139,4 +158,14 @@ final authProvider = NotifierProvider<AuthController, AuthState>(AuthController.
 /// Convenience selectors, so a widget can watch just the piece it needs and not
 /// rebuild on an unrelated auth change.
 final currentUserProvider = Provider<AuthUser?>((ref) => ref.watch(authProvider).user);
-final isAdminProvider = Provider<bool>((ref) => ref.watch(authProvider).isAdmin);
+
+/// Convenience selectors, so a widget can watch just the piece it needs and not
+/// rebuild on an unrelated auth change.
+final canManageAccountsProvider = Provider<bool>(
+  (ref) => ref.watch(authProvider).canManageAccounts,
+);
+final canReadUsersProvider = Provider<bool>((ref) => ref.watch(authProvider).canReadUsers);
+final canDecideRequestsProvider = Provider<bool>(
+  (ref) => ref.watch(authProvider).canDecideRequests,
+);
+final canRunAuditsProvider = Provider<bool>((ref) => ref.watch(authProvider).canRunAudits);

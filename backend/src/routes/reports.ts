@@ -2,7 +2,7 @@ import { Router, type NextFunction, type Response, type Router as ExpressRouter 
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { httpError } from "../lib/httpError.js";
-import { authenticate, requireRole } from "../middleware/auth.js";
+import { authenticate, requireCapability } from "../middleware/auth.js";
 import { validateQuery, validatedQuery, type ValidatedRequest } from "../middleware/validate.js";
 import { collapseAuditRows } from "../services/auditCompletion.js";
 import { allItemsWhere } from "../services/itemVisibility.js";
@@ -233,7 +233,7 @@ function todayStamp(): string {
 reportsRouter.get(
   "/inventory",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("REPORT_VIEW_ALL"),
   validateQuery(inventoryQuerySchema),
   async (req: ValidatedRequest, res: Response, next: NextFunction) => {
     try {
@@ -362,7 +362,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/audit/:auditId",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("REPORT_VIEW_ALL"),
   validateQuery(auditReportQuerySchema),
   async (req: ValidatedRequest, res: Response, next: NextFunction) => {
     try {
@@ -483,7 +483,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/disposals",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("REPORT_VIEW_ALL"),
   validateQuery(disposalsQuerySchema),
   async (req: ValidatedRequest, res: Response, next: NextFunction) => {
     try {

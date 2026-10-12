@@ -155,13 +155,14 @@ describe("emailSubjectFor", () => {
 });
 
 describe("reviewerRecipientsWhere", () => {
-  it("targets admins and excludes the requester (D2)", () => {
+  it("targets the deciding roles and excludes the requester (D2)", () => {
     // `Request.reviewedById` is null at submit time, so there is nobody specific
-    // to notify — fan out to everyone allowed to decide it. An admin who filed the
-    // request already knows, and assertDecidable() bars them from deciding it.
-    expect(reviewerRecipientsWhere("admin-1")).toEqual({
-      role: "ADMIN",
-      id: { not: "admin-1" },
+    // to notify — fan out to everyone allowed to decide it (officer and head).
+    // Whoever filed the request already knows, and assertDecidable() bars them
+    // from deciding it anyway.
+    expect(reviewerRecipientsWhere("officer-1")).toEqual({
+      role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] },
+      id: { not: "officer-1" },
     });
   });
 });
@@ -190,7 +191,7 @@ describe("notifyReviewersOfNewRequest", () => {
     );
 
     expect(findMany).toHaveBeenCalledWith({
-      where: { role: "ADMIN", id: { not: "staff-1" } },
+      where: { role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] }, id: { not: "staff-1" } },
       select: { id: true, email: true, fullName: true },
     });
     expect(createMany).toHaveBeenCalledTimes(1);

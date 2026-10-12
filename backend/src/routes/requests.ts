@@ -6,7 +6,13 @@ import {
 } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import {
+  authenticate,
+  requireCapability,
+  type AuthenticatedRequest,
+  type UserRole,
+} from "../middleware/auth.js";
+import { hasCapability } from "../services/permissions.js";
 import { validateBody, validateQuery, validatedBody, validatedQuery } from "../middleware/validate.js";
 import { httpError } from "../lib/httpError.js";
 import { sendNotificationEmail, type EmailDeliveryResult } from "../services/email.js";
@@ -166,12 +172,12 @@ const REQUEST_DETAIL_SELECT = {
  * Applied as part of the `where` (not as a post-fetch check) so a staff lookup
  * of someone else's request is a 404, never a 403 that confirms it exists.
  */
-function scopeToViewer(user: { id: string; role: "ADMIN" | "STAFF" }): { requestedById?: string } {
-  return user.role === "ADMIN" ? {} : { requestedById: user.id };
+function scopeToViewer(user: { id: string; role: UserRole }): { requestedById?: string } {
+  return hasCapability(user.role, "REQUEST_READ_ALL") ? {} : { requestedById: user.id };
 }
 
 /** Every handler below has already run `authenticate`, so this is a wiring guard. */
-function requireUser(req: AuthenticatedRequest): { id: string; role: "ADMIN" | "STAFF" } {
+function requireUser(req: AuthenticatedRequest): { id: string; role: UserRole } {
   if (!req.user) {
     throw httpError(401, "Not authenticated");
   }
@@ -220,7 +226,6 @@ async function emailEveryone(
 requestsRouter.post(
   "/",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
   validateBody(createRequestSchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
@@ -341,7 +346,6 @@ requestsRouter.post(
 requestsRouter.get(
   "/",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
   validateQuery(listQuerySchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
@@ -382,7 +386,6 @@ requestsRouter.get(
 requestsRouter.get(
   "/pending-count",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const user = requireUser(req);
@@ -405,7 +408,6 @@ requestsRouter.get(
 requestsRouter.get(
   "/:id",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const user = requireUser(req);
@@ -434,7 +436,7 @@ requestsRouter.get(
  * is one interactive transaction (services/requestWorkflow.ts documents the step
  * order); the email side-channel runs after it commits.
  *
- * `requireRole(["ADMIN"])` has already checked the JWT's role, and
+ * `requireCapability("REQUEST_DECIDE")` has already checked the JWT's role, and
  * `applyDecision` re-reads the reviewer's row and checks it again — a token
  * issued before a demotion still claims ADMIN, so the database has the last word.
  */
@@ -497,7 +499,7 @@ async function decide(
 requestsRouter.post(
   "/:id/approve",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("REQUEST_DECIDE"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       await decide(req, res, "APPROVED");
@@ -515,7 +517,7 @@ requestsRouter.post(
 requestsRouter.post(
   "/:id/reject",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("REQUEST_DECIDE"),
   validateBody(rejectSchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {

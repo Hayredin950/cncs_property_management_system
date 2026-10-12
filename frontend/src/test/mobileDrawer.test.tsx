@@ -1,9 +1,13 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
+import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
-import { ADMIN_USER } from "./fixtures";
+import { OFFICER_USER, SYSTEM_ADMIN_USER } from "./fixtures";
+
+const API = "http://localhost:4000/api/v1";
 
 /**
  * The hamburger drawer's visual language.
@@ -38,7 +42,7 @@ function drawerNav(): HTMLElement {
  * the same anchor the `headerAccount` suite uses for the identity card.
  */
 function accountSection(): HTMLElement {
-  return screen.getByText(ADMIN_USER.email).closest("section") as HTMLElement;
+  return screen.getByText(OFFICER_USER.email).closest("section") as HTMLElement;
 }
 
 describe("mobile drawer", () => {
@@ -53,9 +57,29 @@ describe("mobile drawer", () => {
     // list of bare text rows.
     const nav = drawerNav();
     expect(within(nav).getByRole("link", { name: "Home" }).querySelector("svg")).not.toBeNull();
-    for (const label of ["Work", "Audit", "Admin"]) {
+    // The Property Officer's three groups (spec 2.2): assets and requests, audit
+    // history, and the catalogue. "Admin" belongs to the System Admin alone and
+    // is asserted in the role-boundary test below.
+    for (const label of ["Work", "Audit", "Catalogue"]) {
       expect(within(nav).getByRole("button", { name: label }).querySelector("svg")).not.toBeNull();
     }
+  });
+
+  it("gives a System Admin the account menu and no asset destinations at all", async () => {
+    server.use(http.get(`${API}/auth/me`, () => HttpResponse.json({ user: SYSTEM_ADMIN_USER })));
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/dashboard"] });
+
+    const user = await openDrawer();
+    const nav = drawerNav();
+
+    // Accounts, not assets (spec 2.1.1). The menu is the boundary made visible:
+    // a System Admin deep-linking /items gets the shared 404, so offering the
+    // link would advertise a door that does not open.
+    await user.click(within(nav).getByRole("button", { name: "Admin" }));
+    expect(within(nav).getByRole("link", { name: "Accounts" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("button", { name: "Work" })).not.toBeInTheDocument();
+    expect(within(nav).queryByRole("button", { name: "Audit" })).not.toBeInTheDocument();
   });
 
   it("opens an accordion in place and gives its links the same row shape", async () => {
@@ -94,7 +118,7 @@ describe("mobile drawer", () => {
 
     // The identity card, via its one email: `Card`'s recipe — `radius-md`, white,
     // `e1` — not the flat grey box it used to be.
-    const identity = screen.getByText(ADMIN_USER.email).closest("div") as HTMLElement;
+    const identity = screen.getByText(OFFICER_USER.email).closest("div") as HTMLElement;
     expect(identity).toHaveClass("bg-white", "shadow-sm", "rounded-md");
 
     const dashboard = within(account).getByRole("button", { name: "Dashboard" });

@@ -481,15 +481,21 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
 
   /// The custodian control (F2.1) — the one place an item's owner is decided.
   ///
-  /// `GET /users` is **Admin-only**, so a Staff registrar cannot enumerate accounts;
-  /// the request is not sent at all rather than sent-and-403'd. A Staff member sees
-  /// exactly one option (themselves) **with a hint that explains why**, because a
-  /// one-option picker with no explanation reads as a broken control rather than a
-  /// deliberate restriction.
+  /// `GET /users` needs `USER_READ` (spec 2.1.1), so a registrar without it cannot
+  /// enumerate accounts; the request is not sent at all rather than sent-and-403'd.
+  /// Such a registrar sees exactly one option (themselves) **with a hint that
+  /// explains why**, because a one-option picker with no explanation reads as a
+  /// broken control rather than a deliberate restriction.
+  ///
+  /// Under the five roles only the Property Officer reaches this form, and it holds
+  /// `USER_READ` — so the one-option branch is a guard for the day the matrix
+  /// widens rather than a screen anyone currently sees.
   Widget _ownerField({required bool disposed, required Item? existing}) {
     final user = ref.watch(currentUserProvider);
-    final isAdmin = ref.watch(isAdminProvider);
-    final users = isAdmin ? (ref.watch(usersProvider).value ?? const <UserSummary>[]) : const <UserSummary>[];
+    final canListAccounts = ref.watch(canReadUsersProvider);
+    final users = canListAccounts
+        ? (ref.watch(usersProvider).value ?? const <UserSummary>[])
+        : const <UserSummary>[];
 
     if (_isEdit) {
       return AppTextField(
@@ -527,7 +533,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
       required: true,
       errorText: _fieldErrors['ownerId'],
       onChanged: (value) => setState(() => _ownerId = value),
-      helper: isAdmin
+      helper: canListAccounts
           ? 'Who will hold this item. Changing it later goes through an approved transfer.'
           : 'Ownership is limited to your own account here \u2014 reassigning to someone '
               'else goes through an approved transfer request.',

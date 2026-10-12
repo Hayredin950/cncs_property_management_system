@@ -30,7 +30,7 @@ vi.mock("../lib/prisma.js", () => {
 });
 
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
-const adminToken = createToken({ id: "admin-1", role: "ADMIN" });
+const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -89,16 +89,16 @@ describe("GET /notifications", () => {
     });
   });
 
-  it("scopes every read to the caller, admin included", async () => {
-    await request(app).get("/notifications").set("Authorization", `Bearer ${adminToken}`);
+  it("scopes every read to the caller, whatever the role", async () => {
+    await request(app).get("/notifications").set("Authorization", `Bearer ${officerToken}`);
 
     const args = vi.mocked(prisma.notification.findMany).mock.calls[0]?.[0];
-    expect(args?.where).toEqual({ userId: "admin-1" });
+    expect(args?.where).toEqual({ userId: "officer-1" });
     expect(args?.orderBy).toEqual({ createdAt: "desc" });
     expect(args?.take).toBe(20);
     // There is no "read someone else's inbox" capability for any role.
     expect(vi.mocked(prisma.notification.count).mock.calls[0]?.[0]?.where).toEqual({
-      userId: "admin-1",
+      userId: "officer-1",
       isRead: false,
     });
   });
@@ -185,7 +185,7 @@ describe("POST /notifications/:id/read", () => {
 
     const res = await request(app)
       .post("/notifications/notif-ghost/read")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     // Same 404 as "not yours": the response never confirms an id exists.
     expect(res.status).toBe(404);
@@ -318,12 +318,12 @@ describe("DELETE /notifications", () => {
 
     const res = await request(app)
       .delete("/notifications")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ deleted: 4 });
     // Nothing but the userId — no parameter reaches this `where`.
-    expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { userId: "admin-1" } });
+    expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { userId: "officer-1" } });
   });
 
   it("is idempotent on an already-empty inbox", async () => {

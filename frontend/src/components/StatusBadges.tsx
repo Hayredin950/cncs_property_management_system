@@ -3,7 +3,9 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   Ban,
+  Briefcase,
   Circle,
+  ClipboardCheck,
   Clock,
   CheckCircle2,
   IdCard,
@@ -11,6 +13,7 @@ import {
   Sparkles,
   ThumbsUp,
   Trash2,
+  Users,
   Wrench,
   XCircle,
 } from "lucide-react";
@@ -76,13 +79,19 @@ export function ItemStatusBadge({ status, className }: { status: ItemStatus; cla
 }
 
 const ROLE_TONE: Record<Role, BadgeTone> = {
-  ADMIN: "violet",
+  SYSTEM_ADMIN: "violet",
+  PROPERTY_OFFICER: "info",
+  DEPARTMENT_HEAD: "accent",
   STAFF: "brand",
+  AUDITOR: "warning",
 };
 
 const ROLE_ICON: Record<Role, ReactNode> = {
-  ADMIN: <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />,
+  SYSTEM_ADMIN: <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />,
+  PROPERTY_OFFICER: <Briefcase className="h-3.5 w-3.5" aria-hidden="true" />,
+  DEPARTMENT_HEAD: <Users className="h-3.5 w-3.5" aria-hidden="true" />,
   STAFF: <IdCard className="h-3.5 w-3.5" aria-hidden="true" />,
+  AUDITOR: <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />,
 };
 
 export function RoleBadge({ role, className }: { role: Role; className?: string }) {

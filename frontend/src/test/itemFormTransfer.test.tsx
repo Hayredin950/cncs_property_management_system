@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
-import { ADMIN_USER, PRIVILEGED_ITEM, STAFF_USER } from "./fixtures";
+import { OFFICER_USER, PRIVILEGED_ITEM, STAFF_USER } from "./fixtures";
 
 const API = "http://localhost:4000/api/v1";
 
@@ -108,7 +108,7 @@ describe("item edit form — transfer-owned columns", () => {
       ownerId: PRIVILEGED_ITEM.ownerId,
       condition: "FAIR",
     });
-    expect(body).not.toMatchObject({ ownerId: ADMIN_USER.id });
+    expect(body).not.toMatchObject({ ownerId: OFFICER_USER.id });
     expect(PRIVILEGED_ITEM.ownerId).toBe(STAFF_USER.id);
     // The location rides along unchanged, which is what the server compares.
     expect(body).toMatchObject({

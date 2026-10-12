@@ -7,7 +7,7 @@ import {
 import { z } from "zod";
 import { httpError } from "../lib/httpError.js";
 import { prisma } from "../lib/prisma.js";
-import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
 import { allItemsWhere } from "../services/itemVisibility.js";
 import { ERROR_ITEM_NOT_FOUND } from "../services/requestWorkflow.js";
@@ -45,7 +45,7 @@ type HistoryQuery = z.infer<typeof historyQuerySchema>;
 itemHistoryRouter.get(
   "/:id/history",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("ITEM_READ_ALL"),
   validateQuery(historyQuerySchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {

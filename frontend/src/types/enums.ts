@@ -4,7 +4,13 @@
  * (frontend-plan.md §13: "No OpenAPI spec... types drift silently").
  */
 
-export const ROLES = ["ADMIN", "STAFF"] as const;
+export const ROLES = [
+  "SYSTEM_ADMIN",
+  "PROPERTY_OFFICER",
+  "DEPARTMENT_HEAD",
+  "STAFF",
+  "AUDITOR",
+] as const;
 export type Role = (typeof ROLES)[number];
 
 export const CONDITIONS = ["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"] as const;
@@ -61,6 +67,9 @@ export const AUDIT_RESULT_LABELS: Record<AuditItemResult, string> = {
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
-  ADMIN: "Admin",
+  SYSTEM_ADMIN: "System Admin",
+  PROPERTY_OFFICER: "Property Officer",
+  DEPARTMENT_HEAD: "Department Head",
   STAFF: "Staff",
+  AUDITOR: "Auditor",
 };

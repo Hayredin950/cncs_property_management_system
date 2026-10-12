@@ -28,7 +28,7 @@ import {
  * ordering is documented step by step where it is defined.
  */
 
-export type RequestStatusValue = "PENDING" | "APPROVED" | "REJECTED" | "WAITLISTED";
+export type RequestStatusValue = "PENDING" | "PENDING_STAGE1" | "PENDING_STAGE2" | "APPROVED" | "REJECTED" | "WAITLISTED";
 
 /**
  * Mirrors the Prisma `ItemStatus` enum (spec 4.2, plus LOANED). The states added
@@ -78,7 +78,7 @@ export function assertDecidable(input: DecidabilityInput): void {
   if (input.requestedById === input.reviewerId) {
     throw httpError(403, ERROR_SELF_DECISION);
   }
-  if (input.requestStatus !== "PENDING") {
+  if (!["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"].includes(input.requestStatus)) {
     throw httpError(409, ERROR_ALREADY_DECIDED);
   }
   if (input.itemStatus === "DISPOSED") {
@@ -213,6 +213,8 @@ export interface ApplyDecisionInput {
    */
   decidedAt: Date;
   rejectionReason?: string | undefined;
+  /** For two-stage approval: true if this is the final approval (stage 2 for transfers, single for disposal). */
+  isFinalApproval?: boolean;
 }
 
 export interface DecisionParty {

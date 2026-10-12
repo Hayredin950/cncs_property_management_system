@@ -95,6 +95,8 @@ enum RequestType {
 
 enum RequestStatus {
   PENDING
+  PENDING_STAGE1
+  PENDING_STAGE2
   APPROVED
   REJECTED
   /// Competing request on an item already promised elsewhere (plan §3).
@@ -208,6 +210,10 @@ model User {
   lastVerifiedItems Item[]        @relation("ItemLastVerifiedBy")
   /// Accounts this user approved or rejected (spec 3.1.2).
   accountsReviewed User[]         @relation("AccountReviewedBy")
+  /// Transfers this user approved at stage 1 (releasing head).
+  stage1ApprovedRequests Request[] @relation("TransferStage1Approvals")
+  /// Transfers this user approved at stage 2 (receiving head).
+  stage2ApprovedRequests Request[] @relation("TransferStage2Approvals")
 
   /// The approval queue reads by status, oldest first.
   @@index([accountStatus])
@@ -341,6 +347,14 @@ model Request {
   fromHolderId   String?
   toHolderType   HolderType?
   toHolderId     String?
+
+  /// Two-stage approval for transfers (Phase B). Stage 1 = releasing head, Stage 2 = receiving head.
+  stage1ApprovedById String?
+  stage1ApprovedBy   User?   @relation("TransferStage1Approvals", fields: [stage1ApprovedById], references: [id])
+  stage1ApprovedAt   DateTime?
+  stage2ApprovedById String?
+  stage2ApprovedBy   User?   @relation("TransferStage2Approvals", fields: [stage2ApprovedById], references: [id])
+  stage2ApprovedAt   DateTime?
 
   createdAt DateTime  @default(now())
   decidedAt DateTime?

@@ -265,9 +265,6 @@ export async function applyDecision(
   if (!reviewer) {
     throw httpError(401, "Not authenticated");
   }
-  if (!hasCapability(reviewer.role, "REQUEST_DECIDE")) {
-    throw httpError(403, "Insufficient permissions");
-  }
 
   // 2. Request, item and requester in one read, with explicit `select` blocks
   //    only. `include: { item: true }` would silently start leaking any Item
@@ -310,6 +307,46 @@ export async function applyDecision(
     throw httpError(404, ERROR_REQUEST_NOT_FOUND);
   }
 
+  // Capability check based on request type and stage
+  const isTransfer = request.type === "TRANSFER";
+  const isDisposal = request.type === "DISPOSAL";
+  const isLoan = request.type === "LOAN";
+  const isStage1 = request.status === "PENDING_STAGE1";
+  const isStage2 = request.status === "PENDING_STAGE2";
+  const isInitialPending = request.status === "PENDING";
+
+  // Capability check based on request type and stage
+  if (isTransfer) {
+    if (isStage1 || isInitialPending) {
+      // Stage 1 approval (releasing head) - requires TRANSFER_APPROVE_STAGE1
+      if (!hasCapability(reviewer.role, "TRANSFER_APPROVE_STAGE1")) {
+        throw httpError(403, "Insufficient permissions for stage 1 transfer approval");
+      }
+    } else if (request.status === "PENDING_STAGE2") {
+      // Stage 2 approval (receiving head) - requires TRANSFER_APPROVE_STAGE2
+      if (!hasCapability(reviewer.role, "TRANSFER_APPROVE_STAGE2")) {
+        throw httpError(403, "Insufficient permissions for stage 2 transfer approval");
+      }
+    }
+  } else if (request.type === "DISPOSAL") {
+    // Disposal approval - requires DISPOSAL_APPROVE
+    if (!hasCapability(reviewer.role, "DISPOSAL_APPROVE")) {
+      throw httpError(403, "Insufficient permissions for disposal approval");
+    }
+  } else if (request.type === "LOAN") {
+    // Loan approval - requires LOAN_APPROVE
+    if (!hasCapability(reviewer.role, "LOAN_APPROVE")) {
+      throw httpError(403, "Insufficient permissions for loan approval");
+    }
+  } else if (input.decision === "REJECTED") {
+    // Rejection can be done by anyone with REQUEST_DECIDE
+    if (!hasCapability(reviewer.role, "REQUEST_DECIDE")) {
+      throw httpError(403, "Insufficient permissions to reject");
+    }
+  } else {
+    throw httpError(403, "Insufficient permissions");
+  }
+
   // 3. Business rules, before anything is written.
   assertDecidable({
     requestStatus: request.status,
@@ -340,11 +377,18 @@ export async function applyDecision(
         labels[newOwner.id] = newOwner.fullName;
       }
       itemChanges = buildTransferChanges(request);
-    } else {
+    } else if (request.type === "DISPOSAL") {
       itemChanges = buildDisposalChanges({
         reason: request.reason,
         disposedAt: input.decidedAt,
       });
+    } else if (request.type === "LOAN") {
+      // Loan approval: set item status to LOANED, record due date
+      itemChanges = {
+        status: "LOANED",
+        holderType: "STAFF",
+        holderId: request.newOwnerId,
+      };
     }
   }
 
@@ -352,16 +396,55 @@ export async function applyDecision(
   //    admins approve at the same moment, exactly one `updateMany` matches a
   //    PENDING row, and the loser aborts here without ever touching the item.
   //    Nothing else in this function guards that race.
+  const requestWhere: Record<string, unknown> = { id: request.id };
+  if (request.type === "TRANSFER") {
+    if (request.status === "PENDING_STAGE1") {
+      requestWhere.status = "PENDING_STAGE1";
+    } else if (request.status === "PENDING_STAGE2") {
+      requestWhere.status = "PENDING_STAGE2";
+    } else {
+      requestWhere.status = "PENDING";
+    }
+  } else if (request.type === "LOAN") {
+    requestWhere.status = "PENDING";
+  } else {
+    requestWhere.status = "PENDING";
+  }
+
+  let nextStatus: RequestStatusValue = request.status;
+  let decidedAt: Date | undefined;
+
+  if (input.decision === "REJECTED") {
+    nextStatus = "REJECTED";
+  } else if (input.decision === "APPROVED") {
+    if (request.type === "TRANSFER") {
+      if (request.status === "PENDING_STAGE1" || request.status === "PENDING") {
+        nextStatus = "PENDING_STAGE2";
+      } else if (request.status === "PENDING_STAGE2") {
+        nextStatus = "APPROVED";
+        decidedAt = input.decidedAt;
+      }
+    } else if (request.type === "DISPOSAL") {
+      nextStatus = "APPROVED";
+      decidedAt = input.decidedAt;
+    } else if (request.type === "LOAN") {
+      nextStatus = "APPROVED";
+      decidedAt = input.decidedAt;
+    }
+  }
+
+  const requestUpdateData: Record<string, unknown> = {
+    status: nextStatus,
+    reviewedById: reviewer.id,
+    ...(decidedAt ? { decidedAt } : {}),
+    ...(input.decision === "REJECTED" && input.rejectionReason
+      ? { rejectionReason: input.rejectionReason }
+      : {}),
+  };
+
   const requestUpdate = await tx.request.updateMany({
-    where: { id: request.id, status: "PENDING" },
-    data: {
-      status: input.decision,
-      reviewedById: reviewer.id,
-      decidedAt: input.decidedAt,
-      ...(input.decision === "REJECTED" && input.rejectionReason
-        ? { rejectionReason: input.rejectionReason }
-        : {}),
-    },
+    where: requestWhere,
+    data: requestUpdateData,
   });
   if (requestUpdate.count === 0) {
     throw httpError(409, ERROR_ALREADY_DECIDED);
@@ -501,4 +584,102 @@ export async function applyDecision(
     reviewer: { id: reviewer.id, fullName: reviewer.fullName, email: reviewer.email },
     notificationMessage,
   };
+}
+
+/**
+ * Return a loaned item — mark the loan as returned and restore item to ACTIVE.
+ * Can be called by the borrower, the releasing head, or the property officer.
+ */
+export async function returnLoan(
+  tx: DbClient,
+  input: {
+    requestId: string;
+    returnerId: string;
+    condition: string;
+    notes?: string | null;
+    decidedAt: Date;
+  },
+): Promise<{ requestId: string; itemId: string }> {
+  // 1. Find the loan request
+  const request = await tx.request.findUnique({
+    where: { id: input.requestId },
+    select: {
+      id: true,
+      type: true,
+      status: true,
+      requestedById: true,
+      itemId: true,
+      loanReturnedAt: true,
+      item: {
+        select: {
+          id: true,
+          tagId: true,
+          name: true,
+          status: true,
+          holderType: true,
+          holderId: true,
+        },
+      },
+    },
+  });
+  if (!request) {
+    throw httpError(404, ERROR_REQUEST_NOT_FOUND);
+  }
+  if (request.type !== "LOAN") {
+    throw httpError(400, "Only loan requests can be returned");
+  }
+  if (request.status !== "APPROVED") {
+    throw httpError(409, "Loan is not active");
+  }
+  if (request.loanReturnedAt) {
+    throw httpError(409, "Loan has already been returned");
+  }
+
+  // Verify the returner is authorized (borrower, releasing head, or property officer)
+  const returner = await tx.user.findUnique({
+    where: { id: input.returnerId },
+    select: { id: true, fullName: true, email: true, role: true },
+  });
+  if (!returner) {
+    throw httpError(401, "Not authenticated");
+  }
+  const isBorrower = request.requestedById === input.returnerId;
+  const isReleasingHead = request.item.holderType === "STAFF" && request.item.holderId === input.returnerId;
+  const isPropertyOfficer = returner.role === "PROPERTY_OFFICER";
+  if (!isBorrower && !isReleasingHead && !isPropertyOfficer) {
+    throw httpError(403, "Only the borrower, releasing head, or property officer can return this loan");
+  }
+
+  // Update the item back to ACTIVE and restore holder to the original department/college
+  // For simplicity, return to COLLEGE pool; the department head can re-claim if needed
+  await tx.item.update({
+    where: { id: request.itemId },
+    data: {
+      status: "ACTIVE",
+      holderType: "COLLEGE",
+      holderId: null,
+    },
+  });
+
+  // Record custody event
+  await recordCustodyEvent(tx, {
+    itemId: request.item.id,
+    from: { holderType: "STAFF", holderId: request.requestedById },
+    to: { holderType: "COLLEGE", holderId: null },
+    eventType: "TRANSFERRED",
+    actingUserId: input.returnerId,
+    reason: "Loan returned",
+  });
+
+  // Update the request to mark as returned
+  await tx.request.update({
+    where: { id: input.requestId },
+    data: {
+      loanReturnedAt: input.decidedAt,
+      loanReturnedById: input.returnerId,
+      status: "APPROVED", // Keep as approved but loanReturnedAt indicates return
+    },
+  });
+
+  return { requestId: request.id, itemId: request.item.id };
 }

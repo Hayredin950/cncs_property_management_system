@@ -24,6 +24,7 @@ enum Capability {
   transferApproveStage1,
   transferApproveStage2,
   disposalApprove,
+  loanApprove,
   requestReadAll,
   reportViewAll,
   accountManage,
@@ -47,6 +48,7 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.transferApproveStage1,
     Capability.transferApproveStage2,
     Capability.disposalApprove,
+    Capability.loanApprove,
     Capability.requestReadAll,
     Capability.reportViewAll,
     Capability.auditView,
@@ -105,3 +107,6 @@ bool canApproveTransferStage2(Role? role) => hasCapability(role, Capability.tran
 
 /// Approve a disposal request (property officer only).
 bool canApproveDisposal(Role? role) => hasCapability(role, Capability.disposalApprove);
+
+/// Approve a loan request (property officer only).
+bool canApproveLoan(Role? role) => hasCapability(role, Capability.loanApprove);

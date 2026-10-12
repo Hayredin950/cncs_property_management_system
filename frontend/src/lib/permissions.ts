@@ -25,6 +25,7 @@ export type Capability =
   | "TRANSFER_APPROVE_STAGE1"
   | "TRANSFER_APPROVE_STAGE2"
   | "DISPOSAL_APPROVE"
+  | "LOAN_APPROVE"
   | "REQUEST_READ_ALL"
   | "REPORT_VIEW_ALL"
   | "ACCOUNT_MANAGE"
@@ -47,6 +48,7 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
     "DISPOSAL_APPROVE",
+    "LOAN_APPROVE",
     "REQUEST_READ_ALL",
     "REPORT_VIEW_ALL",
     "AUDIT_VIEW",
@@ -97,3 +99,6 @@ export const canApproveTransferStage2 = (role: Role | undefined | null) =>
 /** Approve a disposal request (property officer only). */
 export const canApproveDisposal = (role: Role | undefined | null) =>
   hasCapability(role, "DISPOSAL_APPROVE");
+/** Approve a loan request (property officer only). */
+export const canApproveLoan = (role: Role | undefined | null) =>
+  hasCapability(role, "LOAN_APPROVE");

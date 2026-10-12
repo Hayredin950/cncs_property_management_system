@@ -214,6 +214,8 @@ model User {
   stage1ApprovedRequests Request[] @relation("TransferStage1Approvals")
   /// Transfers this user approved at stage 2 (receiving head).
   stage2ApprovedRequests Request[] @relation("TransferStage2Approvals")
+  /// Items this user returned from loan.
+  loansReturned Request[] @relation("LoanReturnedBy")
 
   /// The approval queue reads by status, oldest first.
   @@index([accountStatus])
@@ -355,6 +357,12 @@ model Request {
   stage2ApprovedById String?
   stage2ApprovedBy   User?   @relation("TransferStage2Approvals", fields: [stage2ApprovedById], references: [id])
   stage2ApprovedAt   DateTime?
+
+  /// Loan fields (Phase B item 11).
+  loanDueDate       DateTime?
+  loanReturnedAt    DateTime?
+  loanReturnedById  String?
+  loanReturnedBy    User?   @relation("LoanReturnedBy", fields: [loanReturnedById], references: [id])
 
   createdAt DateTime  @default(now())
   decidedAt DateTime?

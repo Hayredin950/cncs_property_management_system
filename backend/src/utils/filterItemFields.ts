@@ -51,6 +51,13 @@ const RESTRICTED_FIELDS = new Set([
   "accessories",
   "ownerId",
   "owner",
+  // The holder pair (spec 4.1) is the same fact as `ownerId`/`owner` and is
+  // stripped with them: `holderId` is a user id, and who physically holds an item
+  // is not something a public tag lookup answers (SRS 3.4's "not visible to the
+  // public" column). The privileged view below keeps them, because custody is what
+  // the workbench is for.
+  "holderId",
+  "holderType",
   // `parentItemId` is the inverse edge of `accessories` — the same relation, so
   // leaving it in would publish a sibling item's id while hiding the list.
   "parentItemId",
@@ -71,9 +78,13 @@ const RESTRICTED_FIELDS = new Set([
 const FULL_DETAIL_ROLES = new Set(["PROPERTY_OFFICER", "AUDITOR"]);
 
 function isCustodian(user: RequestingUser, item: ItemCustody): boolean {
-  // Staff-held, either through the legacy `ownerId` or the holder fields.
-  if (typeof item.ownerId === "string" && item.ownerId === user.id) return true;
+  // Holder-first: the holder columns are authoritative, and new writes always set
+  // them (services/holder.ts).
   if (item.holderType === "STAFF" && item.holderId === user.id) return true;
+  // `ownerId` is the fallback for rows written before the holder columns existed.
+  // It goes when the backfill migration lands, and this line is the only read of
+  // it left in the visibility rules.
+  if (typeof item.ownerId === "string" && item.ownerId === user.id) return true;
   return false;
 }
 

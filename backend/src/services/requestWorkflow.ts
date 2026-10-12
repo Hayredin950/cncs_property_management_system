@@ -11,6 +11,13 @@ import {
   type DecisionValue,
   type RequestTypeValue,
 } from "./notifications.js";
+import {
+  collegeHolderFields,
+  currentHolder,
+  recordCustodyEvent,
+  staffHolderFields,
+  type HolderTypeValue,
+} from "./holder.js";
 
 /**
  * The transfer/disposal approval state machine (SRS F6, F7).
@@ -85,6 +92,18 @@ export interface ItemChanges {
   floor?: string;
   room?: string;
   ownerId?: string;
+  /**
+   * The holder pair (spec 4.1), written alongside `ownerId` and derived from the
+   * same `newOwnerId` — see `buildTransferChanges`. They are intentionally absent
+   * from `TRACKED_ITEM_FIELDS`: `ownerId` is still the custodian column the audit
+   * trail names, with a human label attached, and two history rows for one
+   * change would read as two changes.
+   *
+   * Nullable because the columns are: disposal returns an item to `COLLEGE`, which
+   * is the one holder with no id.
+   */
+  holderType?: HolderTypeValue | null;
+  holderId?: string | null;
   status?: ItemStatusValue;
   disposalReason?: string;
   disposedAt?: Date;
@@ -108,7 +127,9 @@ export function buildTransferChanges(request: TransferRequestFields): ItemChange
     ...(request.newLocationBuilding ? { building: request.newLocationBuilding } : {}),
     ...(request.newLocationFloor ? { floor: request.newLocationFloor } : {}),
     ...(request.newLocationRoom ? { room: request.newLocationRoom } : {}),
-    ...(request.newOwnerId ? { ownerId: request.newOwnerId } : {}),
+    ...(request.newOwnerId
+      ? { ownerId: request.newOwnerId, ...staffHolderFields(request.newOwnerId) }
+      : {}),
   };
 }
 
@@ -121,6 +142,10 @@ export function buildDisposalChanges(input: { reason: string; disposedAt: Date }
     status: "DISPOSED",
     disposalReason: input.reason,
     disposedAt: input.disposedAt,
+    // The item goes back to the college's own pool: a disposed asset is nobody's
+    // assignment, and leaving the last custodian's id on the row would be the
+    // register disagreeing with the custody event written beside it.
+    ...collegeHolderFields(),
   };
 }
 
@@ -151,15 +176,21 @@ export function buildAccessoryCascade(input: AccessoryCascadeInput): ItemChanges
       status: "DISPOSED",
       disposalReason: `Disposed with parent item ${input.parentTagId}: ${input.reason}`,
       disposedAt: input.disposedAt,
+      // Same reasoning as the parent (`buildDisposalChanges`): the bundle leaves
+      // service together, so it also leaves its custodian together.
+      ...collegeHolderFields(),
     };
   }
 
-  const { building, floor, room, ownerId } = input.parentChanges;
+  const { building, floor, room, ownerId, holderType, holderId } = input.parentChanges;
   return {
     ...(building ? { building } : {}),
     ...(floor ? { floor } : {}),
     ...(room ? { room } : {}),
-    ...(ownerId ? { ownerId } : {}),
+    // A custodian change moves the whole bundle: an accessory left recorded
+    // against the previous holder is the same knowingly-wrong data the cascade
+    // rule (D6) exists to prevent, one level down.
+    ...(ownerId ? { ownerId, ...(holderType ? { holderType } : {}), ...(holderId ? { holderId } : {}) } : {}),
   };
 }
 
@@ -211,7 +242,8 @@ export interface ApplyDecisionResult {
  * carries its own status code out to errorHandler.
  *
  * Step order is load-bearing; the numbering below matches docs/phase-2.md.
- * Reads: 4. Writes: at most 4 plus one notification.
+ * Reads: 4. Writes: at most 5 plus one notification (the extra one is the custody
+ * event a transfer or disposal appends — see step 8b).
  *
  * No network I/O of any kind happens in here — the email side-channel runs after
  * the commit, because a transaction holds a pooled Neon connection for its whole
@@ -261,6 +293,10 @@ export async function applyDecision(
           floor: true,
           room: true,
           ownerId: true,
+          // Read so the custody event can record where the item was before the
+          // decision; `ownerId` is what the not-yet-backfilled rows carry.
+          holderType: true,
+          holderId: true,
           disposalReason: true,
           disposedAt: true,
           owner: { select: { id: true, fullName: true } },
@@ -402,6 +438,38 @@ export async function applyDecision(
     // 8. One insert for the parent's rows and every accessory's rows, all
     //    sharing editedById and editedAt. Nothing about the cascade is silent.
     await writeEditLogRows(tx, editLogRows);
+  }
+
+  // 8b. The custody trail (spec 4.1, 4.5). The item write above already carried
+  //     the new holder columns, so this appends the event only — one statement
+  //     holds the holder change and the location change together, under the one
+  //     `status: ACTIVE` guard that makes this decision race-free.
+  //
+  //     A transfer that names no new custodian changes no holder, and
+  //     `recordCustodyEvent` writes nothing for it: a room move has no custody
+  //     story. A disposal does — the item leaves service — so it records the move
+  //     out of a holder's hands to nobody (`to` null), matching the schema's
+  //     "holderId is null when holderType is COLLEGE" and the disposal state.
+  if (input.decision === "APPROVED") {
+    // A transfer that names no new custodian moves the item, not the custody of it
+    // — that is a room change, and its history is the edit log. Only these two
+    // decisions change whose hands the item is in.
+    const leavesService = request.type === "DISPOSAL";
+    const changesCustodian = request.type === "TRANSFER" && Boolean(itemChanges.holderId);
+
+    if (leavesService || changesCustodian) {
+      await recordCustodyEvent(tx, {
+        itemId: request.item.id,
+        from: currentHolder(request.item),
+        to: {
+          holderType: itemChanges.holderType ?? null,
+          holderId: itemChanges.holderId ?? null,
+        },
+        eventType: leavesService ? "DISPOSED" : "TRANSFERRED",
+        actingUserId: reviewer.id,
+        reason: request.reason,
+      });
+    }
   }
 
   // 9. Tell the requester what happened (F8.2). Written inside the transaction,

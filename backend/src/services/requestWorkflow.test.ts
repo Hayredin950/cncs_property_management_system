@@ -119,7 +119,21 @@ describe("buildTransferChanges", () => {
       floor: "2",
       room: "204",
       ownerId: "staff-2",
+      // The holder pair (spec 4.1) travels with `ownerId`, derived from the same
+      // input, so the two columns cannot disagree about who holds the item.
+      holderType: "STAFF",
+      holderId: "staff-2",
     });
+  });
+
+  it("leaves the holder columns alone when no new custodian was named", () => {
+    // A room-only move changes where the item is, not whose hands it is in.
+    const changes = buildTransferChanges({
+      ...nothingRequested,
+      newLocationRoom: "101",
+    });
+    expect(changes).not.toHaveProperty("holderType");
+    expect(changes).not.toHaveProperty("holderId");
   });
 
   it("produces an empty change set when the request named nothing", () => {
@@ -138,6 +152,11 @@ describe("buildDisposalChanges", () => {
       status: "DISPOSED",
       disposalReason: "Beyond economical repair",
       disposedAt,
+      // A disposed asset is nobody's assignment (spec 4.1). Leaving the last
+      // custodian on the row would have the register disagree with the DISPOSED
+      // custody event written beside it.
+      holderType: "COLLEGE",
+      holderId: null,
     });
     // Same instant as Request.decidedAt — passed in, never defaulted here.
     expect(changes.disposedAt).toBe(disposedAt);
@@ -154,12 +173,24 @@ describe("buildAccessoryCascade", () => {
     expect(
       buildAccessoryCascade({
         type: "TRANSFER",
-        parentChanges: { floor: "1", room: "101", ownerId: "staff-2" },
+        parentChanges: {
+          floor: "1",
+          room: "101",
+          ownerId: "staff-2",
+          holderType: "STAFF",
+          holderId: "staff-2",
+        },
         parentTagId: "CNCS-DEMO-0001",
         reason: "Moving to the new staff office",
         disposedAt,
       }),
-    ).toEqual({ floor: "1", room: "101", ownerId: "staff-2" });
+    ).toEqual({
+      floor: "1",
+      room: "101",
+      ownerId: "staff-2",
+      holderType: "STAFF",
+      holderId: "staff-2",
+    });
   });
 
   it("never propagates a disposal field through the transfer branch", () => {
@@ -198,6 +229,8 @@ describe("buildAccessoryCascade", () => {
       status: "DISPOSED",
       disposalReason: "Disposed with parent item CNCS-DEMO-0001: Beyond economical repair",
       disposedAt,
+      holderType: "COLLEGE",
+      holderId: null,
     });
   });
 

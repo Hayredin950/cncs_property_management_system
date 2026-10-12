@@ -16,6 +16,7 @@ import {
   acceptPhotoUpload,
 } from "../middleware/photoUpload.js";
 import { buildEditLogRows, writeEditLogRows } from "../services/itemEditLog.js";
+import { buildCustodyEvent, COLLEGE_HOLDER, staffHolder } from "../services/holder.js";
 import {
   PhotoUploadError,
   readPhotoUploadConfig,
@@ -403,9 +404,27 @@ itemsRouter.post(
       }
 
       const cleaned = cleanDefined(parsed.data);
+      // The holder pair comes from the same `ownerId` the form sent, never from a
+      // second input: one custodian cannot be two different parties, and a client
+      // that posted only one of them would otherwise desync the two columns.
+      const custodian = staffHolder(parsed.data.ownerId);
 
       const newItem = await createItemWithUniqueTag({
         ...(cleaned as Omit<Prisma.ItemUncheckedCreateInput, "tagId">),
+        holderType: custodian.holderType,
+        holderId: custodian.holderId,
+        // The first custody event, nested so it is written by the same statement
+        // as the item itself: a row whose history starts nowhere is exactly the
+        // gap the CustodyEvent table exists to close, and a separate insert could
+        // be lost to a crash between the two.
+        custodyEvents: {
+          create: buildCustodyEvent({
+            eventType: "CREATED",
+            from: COLLEGE_HOLDER,
+            to: custodian,
+            actingUserId: req.user!.id,
+          }),
+        },
         purchaseCost: parsed.data.purchaseCost,
         currentValue: parsed.data.currentValue ?? null,
       });

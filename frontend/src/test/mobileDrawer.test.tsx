@@ -29,7 +29,7 @@ const API = "http://localhost:4000/api/v1";
  */
 async function openDrawer() {
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Open menu" }));
+  await user.click(await screen.findByRole("button", { name: "Open menu", hidden: true }));
   return user;
 }
 
@@ -65,8 +65,8 @@ describe("mobile drawer", () => {
     }
   });
 
-  it("gives a System Admin the account menu and no asset destinations at all", async () => {
-    server.use(http.get(`${API}/auth/me`, () => HttpResponse.json({ user: SYSTEM_ADMIN_USER })));
+  it("gives an Account Admin the account menu and no asset destinations at all", async () => {
+    server.use(http.get(`${API}/auth/me`, () => HttpResponse.json({ user: { ...SYSTEM_ADMIN_USER, id: "acct-admin-1", fullName: "Account Admin", email: "acctadmin@cncs.aau.edu.et", role: "ACCOUNT_ADMIN" } })));
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/dashboard"] });
 
@@ -74,7 +74,7 @@ describe("mobile drawer", () => {
     const nav = drawerNav();
 
     // Accounts, not assets (spec 2.1.1). The menu is the boundary made visible:
-    // a System Admin deep-linking /items gets the shared 404, so offering the
+    // an Account Admin deep-linking /items gets the shared 404, so offering the
     // link would advertise a door that does not open.
     await user.click(within(nav).getByRole("button", { name: "Admin" }));
     expect(within(nav).getByRole("link", { name: "Accounts" })).toBeInTheDocument();

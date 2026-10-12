@@ -28,7 +28,8 @@ enum Capability {
 }
 
 const Map<Role, Set<Capability>> _grants = {
-  Role.systemAdmin: {Capability.accountManage, Capability.userRead},
+  Role.systemAdmin: {Capability.userRead},
+  Role.accountAdmin: {Capability.accountManage, Capability.userRead},
   Role.propertyOfficer: {
     Capability.itemCreate,
     Capability.itemEditIdentity,
@@ -45,7 +46,7 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.auditView,
     Capability.userRead,
   },
-  Role.departmentHead: {Capability.itemEditCustody, Capability.itemClaim, Capability.requestDecide},
+  Role.departmentHead: {Capability.itemEditCustody, Capability.itemClaim, Capability.requestDecide, Capability.accountManage},
   Role.staff: {Capability.itemEditCustody, Capability.itemClaim},
   Role.auditor: {
     Capability.itemReadAll,

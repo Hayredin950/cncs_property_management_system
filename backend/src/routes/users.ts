@@ -1,5 +1,6 @@
 import argon2 from "argon2";
 import { Router, type NextFunction, type Response } from "express";
+import { Prisma } from "../generated/prisma/client.js";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import {
@@ -116,22 +117,32 @@ function toAdminUser(user: {
 /**
  * `GET /users/approvals` — the accounts waiting for a decision, oldest first.
  *
- * Declared before any `/users/:id`-shaped **GET**, and it needs `ACCOUNT_MANAGE`
- * rather than `USER_READ`: the queue is a decision list, not a lookup. The property
- * officer can read the account list (it fills the custodian picker) but has no
- * business seeing, let alone deciding, who is waiting to join.
- *
- * Oldest first, because the queue is worked from the tail: the person who has been
- * waiting longest is the one whose approval is overdue.
+ * What a user sees depends on their role:
+ * - ACCOUNT_ADMIN sees all pending requests (privileged + staff)
+ * - DEPARTMENT_HEAD sees only STAFF requests in their department
+ * - Others with ACCOUNT_MANAGE see all (should only be ACCOUNT_ADMIN in practice)
  */
 usersRouter.get(
   "/approvals",
   authenticate,
   requireCapability("ACCOUNT_MANAGE"),
-  async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
+      const user = req.user!;
+      let where: Prisma.UserWhereInput = { accountStatus: "PENDING_APPROVAL" };
+
+      // DEPARTMENT_HEAD only sees staff requests in their department
+      if (user.role === "DEPARTMENT_HEAD") {
+        where = {
+          ...where,
+          role: "STAFF",
+          departmentId: user.departmentId ?? null,
+        };
+      }
+      // ACCOUNT_ADMIN sees everything (no additional filter)
+
       const pending = await prisma.user.findMany({
-        where: { accountStatus: "PENDING_APPROVAL" },
+        where,
         orderBy: { createdAt: "asc" },
         select: userListSelect,
       });
@@ -148,10 +159,15 @@ usersRouter.get(
  *
  * The role is optional and defaults to the one the request already carries (`STAFF`,
  * assigned by `POST /auth/account-requests`). It is here because approving is the
- * moment an administrator knows who this person is: a request from a lecturer who
- * will run audits should become an `AUDITOR` now, not through a second step.
- * Changing the role also bumps `tokenVersion`, the same way `promote` does —
- * consistent, and free, even though a pending account has no sessions to revoke.
+ * moment an administrator knows who this person is.
+ *
+ * Authorization rules (spec 3.1.4):
+ * - ACCOUNT_ADMIN can approve privileged roles (DEPARTMENT_HEAD, PROPERTY_OFFICER,
+ *   AUDITOR, ACCOUNT_ADMIN) and staff
+ * - DEPARTMENT_HEAD can only approve STAFF in their department
+ * - SYSTEM_ADMIN cannot approve (technical role only)
+ *
+ * Changing the role also bumps `tokenVersion`, the same way `promote` does.
  */
 usersRouter.post(
   "/:id/approve",
@@ -180,24 +196,52 @@ usersRouter.post(
         return;
       }
 
-      // The supervisor's rule, on the server: an administrator cannot approve
-      // their own request, whoever they are.
+      // No self-approval
       assertCanReview({
         targetId: existing.id,
         targetStatus: existing.accountStatus,
         reviewerId: req.user!.id,
       });
 
+      const reviewer = req.user!;
+      const hasExplicitRole = parsed.data.role !== undefined;
+      const requestedRole = parsed.data.role ?? existing.role;
+
+      // Authorization: validate the reviewer can assign this role
+      if (reviewer.role === "ACCOUNT_ADMIN") {
+        // ACCOUNT_ADMIN can approve any role except SYSTEM_ADMIN
+        if (requestedRole === "SYSTEM_ADMIN") {
+          res.status(403).json({ error: "ACCOUNT_ADMIN cannot create SYSTEM_ADMIN accounts" });
+          return;
+        }
+      } else if (reviewer.role === "DEPARTMENT_HEAD") {
+        // DEPARTMENT_HEAD can only approve STAFF in their department
+        if (requestedRole !== "STAFF") {
+          res.status(403).json({ error: "Department heads can only approve staff accounts" });
+          return;
+        }
+        if (!reviewer.departmentId || existing.departmentId !== reviewer.departmentId) {
+          res.status(403).json({ error: "This account is not in your department" });
+          return;
+        }
+      } else {
+        // SYSTEM_ADMIN has ACCOUNT_MANAGE but shouldn't use it for account approvals
+        res.status(403).json({ error: "Only ACCOUNT_ADMIN or DEPARTMENT_HEAD may approve accounts" });
+        return;
+      }
+
+      const updateData: Prisma.UserUpdateInput = {
+        accountStatus: "ACTIVE",
+        reviewedBy: { connect: { id: reviewer.id } },
+        reviewedAt: new Date(),
+        reviewNote: null,
+        ...(hasExplicitRole ? { role: requestedRole } : {}),
+        ...(hasExplicitRole ? { tokenVersion: { increment: 1 } } : {}),
+      };
+
       const approved = await prisma.user.update({
         where: { id },
-        data: {
-          accountStatus: "ACTIVE",
-          reviewedById: req.user!.id,
-          reviewedAt: new Date(),
-          reviewNote: null,
-          ...(parsed.data.role ? { role: parsed.data.role } : {}),
-          ...(parsed.data.role ? { tokenVersion: { increment: 1 } } : {}),
-        },
+        data: updateData,
         select: userListSelect,
       });
 
@@ -238,6 +282,23 @@ usersRouter.post(
       const existing = await prisma.user.findUnique({ where: { id } });
       if (!existing) {
         res.status(404).json({ error: ERROR_APPROVE_NOT_FOUND });
+        return;
+      }
+
+      const reviewer = req.user!;
+
+      // Same authorization as approve: DEPARTMENT_HEAD can only reject staff in their dept
+      if (reviewer.role === "DEPARTMENT_HEAD") {
+        if (existing.role !== "STAFF") {
+          res.status(403).json({ error: "Department heads can only reject staff accounts" });
+          return;
+        }
+        if (!reviewer.departmentId || existing.departmentId !== reviewer.departmentId) {
+          res.status(403).json({ error: "This account is not in your department" });
+          return;
+        }
+      } else if (reviewer.role !== "ACCOUNT_ADMIN") {
+        res.status(403).json({ error: "Only ACCOUNT_ADMIN or DEPARTMENT_HEAD may reject accounts" });
         return;
       }
 

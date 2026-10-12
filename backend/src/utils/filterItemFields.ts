@@ -24,6 +24,7 @@ export interface RequestingUser {
   id: string;
   role:
     | "SYSTEM_ADMIN"
+    | "ACCOUNT_ADMIN"
     | "PROPERTY_OFFICER"
     | "DEPARTMENT_HEAD"
     | "STAFF"

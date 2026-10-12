@@ -16,6 +16,8 @@ export interface ConfirmDialogProps {
   /** `destructive` for reject/dispose, `primary` for approve or a re-render. */
   tone?: "primary" | "destructive";
   loading?: boolean;
+  /** Disable the confirm button without showing loading spinner. */
+  disabled?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   tone = "primary",
   loading = false,
+  disabled = false,
 }: ConfirmDialogProps) {
   return (
     <Modal open={open} onClose={onClose} title={title}>
@@ -46,7 +49,7 @@ export function ConfirmDialog({
           <Button variant="outline" size="sm" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <Button variant={tone} size="sm" onClick={onConfirm} loading={loading}>
+          <Button variant={tone} size="sm" onClick={onConfirm} loading={loading} disabled={disabled || loading}>
             {confirmLabel}
           </Button>
         </div>

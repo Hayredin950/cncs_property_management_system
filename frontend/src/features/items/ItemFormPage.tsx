@@ -55,6 +55,7 @@ const itemSchema = z.object({
     })
     .optional(),
   notes: z.string().trim().max(2000).optional().or(z.literal("")),
+  version: z.number().int().nonnegative().optional(),
 });
 
 type ItemFormValues = z.input<typeof itemSchema>;

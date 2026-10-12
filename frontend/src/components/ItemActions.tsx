@@ -10,13 +10,6 @@ import { useState } from "react";
 import type { Item } from "../types/item";
 
 export interface ItemActionsProps {
-  item: { id: string; tagId: string; name: string };
-  /** `icons` is the compact corner control on a card; `buttons` is the labelled control on the item page. */
-  variant?: "icons" | "buttons";
-  className?: string | undefined;
-}
-
-export interface ItemActionsProps {
   item: Item;
   /** `icons` is the compact corner control on a card; `buttons` is the labelled control on the item page. */
   variant?: "icons" | "buttons";

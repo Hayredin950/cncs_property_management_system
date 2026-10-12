@@ -124,6 +124,7 @@ export interface TestItem {
   parentItemId: string | null;
   disposalReason: string | null;
   disposedAt: Date | null;
+  version: number;
 }
 
 export function makeItem(overrides: Partial<TestItem> = {}): TestItem {
@@ -142,6 +143,7 @@ export function makeItem(overrides: Partial<TestItem> = {}): TestItem {
     parentItemId: null,
     disposalReason: null,
     disposedAt: null,
+    version: 0,
     ...overrides,
   };
 }

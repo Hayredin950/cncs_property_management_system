@@ -117,5 +117,18 @@ export function regenerateTag(itemId: string): Promise<{ tagId: string; url: str
   return apiClient.post(`/items/${encodeURIComponent(itemId)}/tag/regenerate`);
 }
 
+/** `POST /items/:id/claim` — claim a PENDING_CLAIM item. Returns the updated item. */
+export function claimItem(id: string): Promise<Item> {
+  return apiClient.post<Item>(`/items/${encodeURIComponent(id)}/claim`, {});
+}
+
+/**
+ * `POST /items/:id/refuse-claim` — refuse a PENDING_CLAIM item, reverting it to
+ * the college pool. Requires a reason (3–500 characters).
+ */
+export function refuseClaim(id: string, reason: string): Promise<Item> {
+  return apiClient.post<Item>(`/items/${encodeURIComponent(id)}/refuse-claim`, { reason });
+}
+
 /** Re-export so form screens can resolve category names without a second import path. */
 export type { Category };

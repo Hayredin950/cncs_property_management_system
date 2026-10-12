@@ -104,7 +104,12 @@ enum Condition {
 
 enum ItemStatus {
   active('ACTIVE', 'In service'),
+  pendingClaim('PENDING_CLAIM', 'Waiting for claim'),
+  revertedUnverified('REVERTED_UNVERIFIED', 'Returned unverified'),
+  loaned('LOANED', 'On loan'),
+  lost('LOST', 'Lost'),
   disposed('DISPOSED', 'Disposed'),
+  voided('VOIDED', 'Voided'),
   unknown('', 'Unknown');
 
   const ItemStatus(this.wire, this.label);
@@ -114,7 +119,12 @@ enum ItemStatus {
 
   static ItemStatus fromJson(Object? value) => switch (value) {
         'ACTIVE' => ItemStatus.active,
+        'PENDING_CLAIM' => ItemStatus.pendingClaim,
+        'REVERTED_UNVERIFIED' => ItemStatus.revertedUnverified,
+        'LOANED' => ItemStatus.loaned,
+        'LOST' => ItemStatus.lost,
         'DISPOSED' => ItemStatus.disposed,
+        'VOIDED' => ItemStatus.voided,
         _ => ItemStatus.unknown,
       };
 }

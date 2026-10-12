@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../data/providers/items_provider.dart';
+import '../../../../models/enums.dart';
+import '../../../../models/item.dart';
+import '../../../../theme/tokens.dart';
+import '../../../../widgets/app_button.dart';
+import '../../../../widgets/feedback.dart';
 import '../../../core/format.dart';
-import '../../../models/item.dart';
-import '../../../theme/tokens.dart';
 import '../../../widgets/app_card.dart';
-import '../../../widgets/app_button.dart';
 import '../../../widgets/data_display.dart';
 import '../../../widgets/media.dart';
 import '../../../widgets/status_badges.dart';
@@ -293,24 +298,49 @@ class ItemDetailView extends StatelessWidget {
       );
 }
 
+
 /// The staff view's quick-action row: the three things worth doing to an item,
 /// and the two the API will refuse (a disposed item cannot be edited).
-class ItemActionBar extends StatelessWidget {
+class ItemActionBar extends ConsumerWidget {
   const ItemActionBar({
     super.key,
+    required this.item,
     required this.onEdit,
     required this.onViewTag,
     required this.onFileRequest,
-    required this.disposed,
+    required this.currentUserId,
+    required this.currentUserRole,
+    required this.currentUserDepartmentId,
   });
 
+  final Item item;
   final VoidCallback onEdit;
   final VoidCallback onViewTag;
   final VoidCallback onFileRequest;
-  final bool disposed;
+  final String currentUserId;
+  final String currentUserRole;
+  final String? currentUserDepartmentId;
+
+  bool get _isPendingClaim => item.status == ItemStatus.pendingClaim;
+
+  bool _canClaimOrRefuse(String? holderType, String? holderId) {
+    if (!_isPendingClaim) return false;
+    if (holderType == 'STAFF' && holderId == currentUserId) return true;
+    if (currentUserRole == 'DEPARTMENT_HEAD' &&
+        holderType == 'DEPARTMENT' &&
+        holderId == currentUserDepartmentId) return true;
+    if (currentUserRole == 'DEPARTMENT_HEAD' &&
+        holderType == 'STAFF' &&
+        currentUserDepartmentId != null &&
+        item.department == currentUserDepartmentId) return true;
+    return false;
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final canClaimRefuse = _canClaimOrRefuse(item.holderType, item.holderId);
+    final itemActions = ref.read(itemActionsProvider);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -322,12 +352,7 @@ class ItemActionBar extends StatelessWidget {
                 icon: Icons.edit_outlined,
                 variant: AppButtonVariant.primary,
                 expand: true,
-                // Disabled rather than hidden, and the detail screen says why — the
-                // design system's rule ("never hide instead of enforce") is about
-                // *permissions*, and this is not a permission: a disposed item's edit
-                // form would 409 on submit, so a control that explains itself beats a
-                // control that vanishes with no trace.
-                onPressed: disposed ? null : onEdit,
+                onPressed: item.isDisposed ? null : onEdit,
               ),
             ),
             const SizedBox(width: AppSpace.s2),
@@ -350,7 +375,88 @@ class ItemActionBar extends StatelessWidget {
           expand: true,
           onPressed: onFileRequest,
         ),
+        if (canClaimRefuse) ...[
+          const SizedBox(height: AppSpace.s2),
+          Row(
+            children: [
+              Expanded(
+                child: AppButton(
+                  label: 'Refuse',
+                  icon: Icons.block_outlined,
+                  variant: AppButtonVariant.destructive,
+                  expand: true,
+                  onPressed: () => _showRefuseDialog(context, itemActions),
+                ),
+              ),
+              const SizedBox(width: AppSpace.s2),
+              Expanded(
+                child: AppButton(
+                  label: 'Claim',
+                  icon: Icons.check_circle_outline,
+                  variant: AppButtonVariant.primary,
+                  expand: true,
+                  onPressed: () => _handleClaim(context, itemActions),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _showRefuseDialog(BuildContext context, ItemActions itemActions) async {
+    final reason = await showPromptDialog(
+      context,
+      title: 'Refuse ${item.name}?',
+      label: 'Refusal reason',
+      body: '3–500 characters. The item will be returned to the college pool.',
+      confirmLabel: 'Refuse',
+      minLength: 3,
+      maxLength: 500,
+    );
+    if (reason == null || reason.trim().isEmpty) return;
+
+    try {
+      await itemActions.refuseClaim(item.id, reason.trim());
+      if (context.mounted) {
+        showAppToast(
+          context,
+          message: '${item.name} refused and returned to the college pool.',
+          tone: ToastTone.success,
+        );
+        context.go('/item/${item.tagId}');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showAppToast(
+          context,
+          message: e.toString(),
+          tone: ToastTone.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _handleClaim(BuildContext context, ItemActions itemActions) async {
+    try {
+      await itemActions.claim(item.id);
+      if (context.mounted) {
+        showAppToast(
+          context,
+          message: '${item.name} claimed and now active.',
+          tone: ToastTone.success,
+        );
+        context.go('/item/${item.tagId}');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showAppToast(
+          context,
+          message: e.toString(),
+          tone: ToastTone.error,
+        );
+      }
+    }
   }
 }

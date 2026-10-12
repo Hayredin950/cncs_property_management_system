@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/providers/items_provider.dart';
+import '../../data/providers/auth_provider.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/page_scaffold.dart';
@@ -100,10 +101,13 @@ class _ItemStaffPageState extends ConsumerState<ItemStaffPage> {
             ItemDetailView(item: data, showPublicLink: true),
             const SizedBox(height: AppSpace.s2),
             ItemActionBar(
-              disposed: data.isDisposed,
+              item: data,
               onEdit: () => context.push('/items/${data.id}/edit'),
               onViewTag: () => context.push('/item/${data.tagId}'),
               onFileRequest: () => context.push('/requests/new?itemId=${data.id}'),
+              currentUserId: ref.read(currentUserProvider)?.id ?? '',
+              currentUserRole: ref.read(currentUserProvider)?.role.name ?? '',
+              currentUserDepartmentId: ref.read(currentUserProvider)?.departmentId,
             ),
             const SizedBox(height: AppSpace.s5),
             TagPanel(item: data),

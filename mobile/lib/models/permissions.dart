@@ -12,6 +12,7 @@ enum Capability {
   itemCreate,
   itemEditIdentity,
   itemEditCustody,
+  itemClaim,
   itemVoid,
   itemReadAll,
   buildingManage,
@@ -32,6 +33,7 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.itemCreate,
     Capability.itemEditIdentity,
     Capability.itemEditCustody,
+    Capability.itemClaim,
     Capability.itemVoid,
     Capability.itemReadAll,
     Capability.buildingManage,
@@ -43,8 +45,8 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.auditView,
     Capability.userRead,
   },
-  Role.departmentHead: {Capability.itemEditCustody, Capability.requestDecide},
-  Role.staff: {Capability.itemEditCustody},
+  Role.departmentHead: {Capability.itemEditCustody, Capability.itemClaim, Capability.requestDecide},
+  Role.staff: {Capability.itemEditCustody, Capability.itemClaim},
   Role.auditor: {
     Capability.itemReadAll,
     Capability.auditRun,
@@ -78,6 +80,9 @@ bool canManageAccounts(Role? role) => hasCapability(role, Capability.accountMana
 
 /// Read the account list (the custodian picker).
 bool canReadUsers(Role? role) => hasCapability(role, Capability.userRead);
+
+/// Claim or refuse a pending item — Staff/Dept Head/Property Officer.
+bool canClaimItems(Role? role) => hasCapability(role, Capability.itemClaim);
 
 /// Manage the category list.
 bool canManageCategories(Role? role) => hasCapability(role, Capability.categoryManage);

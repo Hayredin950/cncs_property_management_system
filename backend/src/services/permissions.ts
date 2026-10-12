@@ -22,6 +22,8 @@ export type Capability =
   | "ITEM_EDIT_IDENTITY"
   /** Edit condition and notes on an item you hold (spec 4.7.2). */
   | "ITEM_EDIT_CUSTODY"
+  /** Claim or refuse a pending item assigned to you/your department (spec 4.4). */
+  | "ITEM_CLAIM"
   /** Void a duplicate or wrong entry (spec 4.8). */
   | "ITEM_VOID"
   /** Read every item in full, including on a scan (spec 2.2; Yanet's scan rule). */
@@ -61,6 +63,7 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "ITEM_CREATE",
     "ITEM_EDIT_IDENTITY",
     "ITEM_EDIT_CUSTODY",
+    "ITEM_CLAIM",
     "ITEM_VOID",
     "ITEM_READ_ALL",
     "BUILDING_MANAGE",
@@ -74,10 +77,10 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
   ],
   // Scoped to one department. Approves transfers for their department and can
   // hold, claim and edit condition/notes of items like any custodian.
-  DEPARTMENT_HEAD: ["ITEM_EDIT_CUSTODY", "REQUEST_DECIDE"],
+  DEPARTMENT_HEAD: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM", "REQUEST_DECIDE"],
   // Scoped to one department. Holds and claims items, files requests, edits
   // condition and notes of what they hold — nothing else.
-  STAFF: ["ITEM_EDIT_CUSTODY"],
+  STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM"],
   // Conducts audits and reads everything read-only. Approves nothing.
   AUDITOR: ["ITEM_READ_ALL", "AUDIT_RUN", "AUDIT_VIEW", "REPORT_VIEW_ALL"],
 };

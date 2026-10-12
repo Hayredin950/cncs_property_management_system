@@ -16,7 +16,13 @@ import {
   acceptPhotoUpload,
 } from "../middleware/photoUpload.js";
 import { buildEditLogRows, writeEditLogRows } from "../services/itemEditLog.js";
-import { buildCustodyEvent, COLLEGE_HOLDER, staffHolder } from "../services/holder.js";
+import {
+  buildCustodyEvent,
+  COLLEGE_HOLDER,
+  recordCustodyEvent,
+  staffHolder,
+  type HolderRef,
+} from "../services/holder.js";
 import {
   PhotoUploadError,
   readPhotoUploadConfig,
@@ -699,4 +705,231 @@ itemsRouter.put(
       next(err);
     }
   },
+);
+
+const claimSchema = z.object({
+  // For department head claiming on behalf of department, omit or send null
+  // The route determines the claimant from the authenticated user's role
+});
+
+/**
+ * POST /items/:id/claim — claim a PENDING_CLAIM item.
+ *
+ * The authenticated user must be the current holder (STAFF) or the department
+ * head of the item's department. On success, status becomes ACTIVE and
+ * claimedAt is set. A CLAIMED custody event is recorded.
+ */
+itemsRouter.post(
+  "/:id/claim",
+  authenticate,
+  requireCapability("ITEM_CLAIM"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Item ID is required" });
+        return;
+      }
+
+      const parsed = claimSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({
+          error: parsed.error.issues[0]?.message ?? "Validation failed",
+          details: parsed.error.issues,
+        });
+        return;
+      }
+
+const item = await prisma.item.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        holderType: true,
+        holderId: true,
+        claimDueAt: true,
+        departmentId: true,
+      },
+    });
+
+    if (!item) {
+      res.status(404).json({ error: "Item not found" });
+      return;
+    }
+
+    if (item.status !== "PENDING_CLAIM") {
+      res.status(409).json({ error: "Item is not pending claim" });
+      return;
+    }
+
+    if (item.claimDueAt && new Date(item.claimDueAt) < new Date()) {
+      res.status(409).json({ error: "Claim period has expired" });
+      return;
+    }
+
+    // Determine the claimant based on role
+    let claimant: { holderType: "STAFF" | "DEPARTMENT"; holderId: string };
+    const current: HolderRef = {
+      holderType: item.holderType as "STAFF" | "DEPARTMENT" | "COLLEGE" | null,
+      holderId: item.holderId,
+    };
+
+    if (req.user!.role === "STAFF") {
+      if (current.holderType !== "STAFF" || current.holderId !== req.user!.id) {
+        res.status(403).json({ error: "You are not the assigned holder of this item" });
+        return;
+      }
+      claimant = { holderType: "STAFF", holderId: req.user!.id };
+    } else if (req.user!.role === "DEPARTMENT_HEAD") {
+      if (!req.user!.departmentId || item.departmentId !== req.user!.departmentId) {
+        res.status(403).json({ error: "This item is not in your department" });
+        return;
+      }
+      if (current.holderType !== "STAFF" && current.holderType !== "DEPARTMENT") {
+        res.status(409).json({ error: "Item cannot be claimed by this department" });
+        return;
+      }
+      claimant = { holderType: "DEPARTMENT", holderId: req.user!.departmentId };
+    } else {
+      res.status(403).json({ error: "Only the assigned holder or department head may claim" });
+      return;
+    }
+
+      const updatedItem = await prisma.$transaction(async (tx) => {
+        await tx.item.update({
+          where: { id },
+          data: {
+            status: "ACTIVE",
+            claimedAt: new Date(),
+            claimDueAt: null,
+            holderType: claimant.holderType,
+            holderId: claimant.holderId,
+          },
+        });
+
+        await recordCustodyEvent(tx, {
+          itemId: id,
+          from: current,
+          to: { holderType: claimant.holderType, holderId: claimant.holderId },
+          eventType: "CLAIMED",
+          actingUserId: req.user!.id,
+          reason:
+            claimant.holderType === "DEPARTMENT"
+              ? "Department head claimed on behalf of department"
+              : null,
+        });
+
+        return tx.item.findUnique({ where: { id }, include: { category: true } });
+      }, { maxWait: 5000, timeout: 15000 });
+
+      res.status(200).json(updatedItem);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+const refuseClaimSchema = z.object({
+  reason: z.string().trim().min(3, "Reason must be at least 3 characters").max(500, "Reason must be at most 500 characters"),
+});
+
+/**
+ * POST /items/:id/refuse-claim — refuse a PENDING_CLAIM item.
+ *
+ * The item reverts to the COLLEGE pool, status stays PENDING_CLAIM.
+ * A CLAIM_REFUSED custody event is recorded.
+ */
+itemsRouter.post(
+  "/:id/refuse-claim",
+  authenticate,
+  requireCapability("ITEM_CLAIM"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Item ID is required" });
+        return;
+      }
+
+      const parsed = refuseClaimSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: parsed.error.issues[0]?.message ?? "Validation failed",
+          details: parsed.error.issues,
+        });
+        return;
+      }
+
+const item = await prisma.item.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        holderType: true,
+        holderId: true,
+        claimDueAt: true,
+        departmentId: true,
+      },
+    });
+
+    if (!item) {
+      res.status(404).json({ error: "Item not found" });
+      return;
+    }
+
+    if (item.status !== "PENDING_CLAIM") {
+      res.status(409).json({ error: "Item is not pending claim" });
+      return;
+    }
+
+    // Same authorization as claim
+    const current: HolderRef = {
+      holderType: item.holderType as "STAFF" | "DEPARTMENT" | "COLLEGE" | null,
+      holderId: item.holderId,
+    };
+
+    if (req.user!.role === "STAFF") {
+      if (current.holderType !== "STAFF" || current.holderId !== req.user!.id) {
+        res.status(403).json({ error: "You are not the assigned holder of this item" });
+        return;
+      }
+    } else if (req.user!.role === "DEPARTMENT_HEAD") {
+      if (!req.user!.departmentId || item.departmentId !== req.user!.departmentId) {
+        res.status(403).json({ error: "This item is not in your department" });
+        return;
+      }
+      if (current.holderType !== "STAFF" && current.holderType !== "DEPARTMENT") {
+        res.status(409).json({ error: "Item cannot be refused by this department" });
+        return;
+      }
+    } else {
+      res.status(403).json({ error: "Only the assigned holder or department head may refuse" });
+      return;
+    }
+
+      const updatedItem = await prisma.$transaction(async (tx) => {
+        await tx.item.update({
+          where: { id },
+          data: {
+            holderType: "COLLEGE",
+            holderId: null,
+            claimDueAt: null,
+          },
+        });
+
+        await recordCustodyEvent(tx, {
+          itemId: id,
+          from: current,
+          to: COLLEGE_HOLDER,
+          eventType: "CLAIM_REFUSED",
+          actingUserId: req.user!.id,
+          reason: parsed.data.reason,
+        });
+
+        return tx.item.findUnique({ where: { id }, include: { category: true } });
+      }, { maxWait: 5000, timeout: 15000 });
+
+      res.status(200).json(updatedItem);
+    } catch (err) {
+      next(err);
+    }
+  }
 );

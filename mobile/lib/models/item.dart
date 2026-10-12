@@ -45,6 +45,10 @@ class Item {
     this.lastAuditedAt,
     this.rawConditionLabel,
     this.rawStatusLabel,
+    this.holderType,
+    this.holderId,
+    this.claimedAt,
+    this.claimDueAt,
   });
 
   factory Item.fromJson(Map<String, dynamic> json) {
@@ -91,6 +95,10 @@ class Item {
       // instead of "Unknown" — the same "render the raw value" rule as notifications.
       rawConditionLabel: condition == Condition.unknown ? rawCondition : null,
       rawStatusLabel: status == ItemStatus.unknown ? rawStatus : null,
+      holderType: asStringOrNull(json['holderType']),
+      holderId: asStringOrNull(json['holderId']),
+      claimedAt: asStringOrNull(json['claimedAt']),
+      claimDueAt: asStringOrNull(json['claimDueAt']),
     );
   }
 
@@ -132,6 +140,14 @@ class Item {
   final String? disposalReason;
   final String? disposedAt;
   final String? lastAuditedAt;
+
+  /// Holder fields (spec 4.1) — who the item is with.
+  final String? holderType;
+  final String? holderId;
+
+  /// Claim handshake (spec 4.4) — when claimed and when claim expires.
+  final String? claimedAt;
+  final String? claimDueAt;
 
   /// Non-null only when the server sent an enum member this build doesn't know.
   final String? rawConditionLabel;

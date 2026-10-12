@@ -19,12 +19,16 @@ vi.mock("../lib/prisma.js", () => {
   };
 });
 
-function createToken(payload: { id: string; role: "ADMIN" | "STAFF" }) {
+function createToken(payload: {
+  id: string;
+  role: "SYSTEM_ADMIN" | "PROPERTY_OFFICER" | "DEPARTMENT_HEAD" | "STAFF" | "AUDITOR";
+}) {
   return jwt.sign(payload, process.env.JWT_SECRET!);
 }
 
 describe("POST /auth/register", () => {
-  const adminToken = createToken({ id: "admin-1", role: "ADMIN" });
+  // Registration is ACCOUNT_MANAGE — the System Admin role.
+  const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
   const staffToken = createToken({ id: "staff-1", role: "STAFF" });
 
   beforeEach(() => {
@@ -167,6 +171,8 @@ describe("POST /auth/register", () => {
         email: "test@example.com",
         passwordHash: "somehash",
         role: "STAFF",
+        departmentId: null,
+        accountStatus: "ACTIVE",
         createdAt: new Date(),
         tokenVersion: 0,
         mustChangePassword: false,
@@ -195,6 +201,8 @@ describe("POST /auth/register", () => {
         email: "EMP-001",
         passwordHash: "somehash",
         role: "STAFF",
+        departmentId: null,
+        accountStatus: "ACTIVE",
         createdAt: new Date(),
         tokenVersion: 0,
         mustChangePassword: false,
@@ -223,6 +231,8 @@ describe("POST /auth/register", () => {
         email: "test@example.com",
         passwordHash: "somehash",
         role: "STAFF",
+        departmentId: null,
+        accountStatus: "ACTIVE",
         createdAt: new Date(),
         tokenVersion: 0,
         mustChangePassword: false,
@@ -396,7 +406,7 @@ describe("POST /auth/register", () => {
         id: "admin-2",
         fullName: "Marta Alamu",
         email: "marta@example.com",
-        role: "ADMIN" as const,
+        role: "SYSTEM_ADMIN" as const,
         createdAt: new Date(),
       };
 
@@ -410,12 +420,12 @@ describe("POST /auth/register", () => {
           fullName: "Marta Alamu",
           email: "marta@example.com",
           password: "password123",
-          role: "ADMIN",
+          role: "SYSTEM_ADMIN",
         });
 
       expect(res.status).toBe(201);
       expect(res.body.fullName).toBe("Marta Alamu");
-      expect(res.body.role).toBe("ADMIN");
+      expect(res.body.role).toBe("SYSTEM_ADMIN");
       expect(JSON.stringify(res.body)).not.toContain("passwordHash");
     });
   });
@@ -632,13 +642,13 @@ describe("GET /auth/me", () => {
   });
 
   it("returns the authenticated user profile excluding password hash with valid token", async () => {
-    const token = createToken({ id: "user-profile-1", role: "ADMIN" });
+    const token = createToken({ id: "user-profile-1", role: "SYSTEM_ADMIN" });
 
     const mockUser = {
       id: "user-profile-1",
       fullName: "Eleni Gebre",
       email: "eleni@cncs.aau.edu.et",
-      role: "ADMIN" as const,
+      role: "SYSTEM_ADMIN" as const,
       createdAt: new Date("2026-09-02T10:00:00.000Z"),
     };
 
@@ -652,7 +662,7 @@ describe("GET /auth/me", () => {
     expect(res.body.id).toBe("user-profile-1");
     expect(res.body.fullName).toBe("Eleni Gebre");
     expect(res.body.email).toBe("eleni@cncs.aau.edu.et");
-    expect(res.body.role).toBe("ADMIN");
+    expect(res.body.role).toBe("SYSTEM_ADMIN");
     expect(res.body.password).toBeUndefined();
     expect(res.body.passwordHash).toBeUndefined();
     expect(res.body.user.password).toBeUndefined();

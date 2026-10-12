@@ -34,11 +34,13 @@ class RequestsListPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final query = ref.watch(requestQueryProvider);
     final requests = ref.watch(requestListProvider);
-    final isAdmin = ref.watch(isAdminProvider);
+    // Decision rights, not a role name: the Property Officer and the Department
+    // Head both review requests (spec 2.2).
+    final decidesRequests = ref.watch(canDecideRequestsProvider);
 
     return PageScaffold(
       title: 'Requests',
-      subtitle: isAdmin ? 'Everything filed against the register' : 'Your requests',
+      subtitle: decidesRequests ? 'Everything filed against the register' : 'Your requests',
       maxWidth: 900,
       padBottom: 96,
       trailing: AppIconButton(
@@ -70,7 +72,7 @@ class RequestsListPage extends ConsumerWidget {
                     .read(requestQueryProvider.notifier)
                     .setType(query.type == type.wire ? null : type.wire),
               ),
-            if (isAdmin)
+            if (decidesRequests)
               _TypeToggle(
                 label: 'Only mine',
                 icon: Icons.person_outline,

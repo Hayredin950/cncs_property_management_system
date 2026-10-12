@@ -31,7 +31,7 @@ const CODE_PREFIX = /^\[([A-Z_]+)\]\s*([\s\S]*)$/;
 
 export const MAX_REJECTION_REASON_LENGTH = 500;
 
-export type RequestTypeValue = "TRANSFER" | "DISPOSAL";
+export type RequestTypeValue = "TRANSFER" | "DISPOSAL" | "LOAN";
 export type DecisionValue = "APPROVED" | "REJECTED";
 
 export interface RequestSubmittedInput {
@@ -103,16 +103,15 @@ export function parseNotificationMessage(raw: string): {
  * Decision D2 — who is told a request needs review.
  *
  * `Request.reviewedById` is null at submit time, so there is nobody specific to
- * notify: fan out to everyone who is allowed to decide it. Approval is
- * ADMIN-only (SRS §9 leaves the reviewer role unresolved; ADMIN-only is the
- * reading that needs no schema change), minus the requester — an admin who filed
- * the request already knows about it and is barred from deciding it anyway.
+ * notify: fan out to everyone who is allowed to decide it — the property officer
+ * and the department head (spec 5.1) — minus the requester, who already knows and
+ * is barred from deciding their own request anyway.
  */
 export function reviewerRecipientsWhere(requesterId: string): {
-  role: "ADMIN";
+  role: { in: Array<"PROPERTY_OFFICER" | "DEPARTMENT_HEAD"> };
   id: { not: string };
 } {
-  return { role: "ADMIN", id: { not: requesterId } };
+  return { role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] }, id: { not: requesterId } };
 }
 
 export async function resolveReviewerRecipients(

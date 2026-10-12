@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
-import { ADMIN_USER, PRIVILEGED_ITEM, STAFF_USER } from "./fixtures";
+import { ACCOUNTS, OFFICER_USER, PRIVILEGED_ITEM, STAFF_USER } from "./fixtures";
 
 const API = "http://localhost:4000/api/v1";
 
@@ -21,6 +21,10 @@ const API = "http://localhost:4000/api/v1";
  *      be overridden by the signed-in user's id in the payload, which made the
  *      select decorative. That mattered quietly, because registering is the only
  *      moment an item's custodian can be set without a transfer request.
+ *
+ * Both cases are run by the one role that reaches `/items/new` at all: the
+ * Property Officer (spec 4.3), which also holds `USER_READ`, so the menu it sees
+ * is every account rather than just itself.
  */
 async function fillRequiredFields() {
   const user = userEvent.setup();
@@ -65,21 +69,21 @@ describe("item form custodian", () => {
     await user.click(screen.getByRole("button", { name: "Register item" }));
 
     await waitFor(() => expect(created()).not.toBeNull());
-    expect(created()).toMatchObject({ ownerId: ADMIN_USER.id, name: "Laptop", categoryId: "cat-1" });
+    expect(created()).toMatchObject({ ownerId: OFFICER_USER.id, name: "Laptop", categoryId: "cat-1" });
   });
 
-  it("registers the item for another custodian when an admin picks one", async () => {
+  it("registers the item for another custodian when the registrar picks one", async () => {
     const created = captureCreateBody();
 
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/items/new"] });
     const user = await fillRequiredFields();
 
-    // An admin can enumerate accounts (`GET /users` is admin-only), so the menu is
-    // every account — registering on behalf of the person holding the asset is the
-    // real workflow, and this is the only place an owner is set at all.
+    // The registrar holds `USER_READ`, so the menu is every account — registering
+    // on behalf of the person holding the asset is the real workflow, and this is
+    // the only place an owner is set at all.
     const owner = screen.getByLabelText("Owner (custodian)");
-    await waitFor(() => expect(within(owner).getAllByRole("option").length).toBe(2));
+    await waitFor(() => expect(within(owner).getAllByRole("option").length).toBe(ACCOUNTS.length));
     await user.selectOptions(owner, STAFF_USER.id);
 
     await user.click(screen.getByRole("button", { name: "Register item" }));
@@ -87,35 +91,16 @@ describe("item form custodian", () => {
     await waitFor(() => expect(created()).not.toBeNull());
     expect(created()).toMatchObject({ ownerId: STAFF_USER.id });
     // The label keeps the "(you)" marker for the signed-in account only.
-    expect(within(owner).getByRole("option", { name: `${ADMIN_USER.fullName} (you)` })).toBeInTheDocument();
+    expect(within(owner).getByRole("option", { name: `${OFFICER_USER.fullName} (you)` })).toBeInTheDocument();
   });
 
-  it("offers a staff registrar only their own account, and does not ask for the list", async () => {
-    let accountListCalls = 0;
-    const created = captureCreateBody();
-    server.use(
-      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: STAFF_USER })),
-      http.get(`${API}/users`, () => {
-        accountListCalls += 1;
-        return HttpResponse.json([]);
-      }),
-    );
-
-    setToken("test-token");
-    renderWithProviders({ initialEntries: ["/items/new"] });
-    const user = await fillRequiredFields();
-
-    const owner = screen.getByLabelText("Owner (custodian)");
-    const options = within(owner).getAllByRole("option");
-    expect(options).toHaveLength(1);
-    expect(options[0]).toHaveTextContent(`${STAFF_USER.fullName} (you)`);
-
-    await user.click(screen.getByRole("button", { name: "Register item" }));
-    await waitFor(() => expect(created()).not.toBeNull());
-    expect(created()).toMatchObject({ ownerId: STAFF_USER.id });
-
-    // The request would only 403, so it is not sent: a staff member has no way to
-    // enumerate accounts (gap G2), which is what the hint tells them.
-    expect(accountListCalls).toBe(0);
-  });
+  /*
+    There used to be a third case here: a registrar without `USER_READ` offered
+    only their own account, with `GET /users` never sent. Under the five roles
+    (spec 2.1.1) it cannot be reached through the UI — `/items/new` is the
+    Property Officer's alone (spec 4.3), the officer has `USER_READ`, and the edit
+    form shows the custodian read-only because a change of custodian is a TRANSFER.
+    The self-only branch in `OwnerSelect` stays as a guard for the day the matrix
+    widens; no route exercises it, so no route test claims it.
+  */
 });

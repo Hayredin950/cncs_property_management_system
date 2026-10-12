@@ -165,11 +165,13 @@ class ProfilePage extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpace.s2),
               Text(
-                user.role.isAdmin
+                // Copy keyed to the capability, not to "are you the admin": only a
+                // viewer who can open the accounts screen is offered it.
+                ref.watch(canManageAccountsProvider)
                     ? 'Your own name and email are set by the property office. Every '
                         'other account can be edited under More \u2192 Accounts.'
-                    : 'Your name and email are set by an administrator. Ask the property '
-                        'office if either needs to change.',
+                    : 'Your name and email are set by the accounts office. Ask the '
+                        'property office if either needs to change.',
                 style: const TextStyle(
                   fontSize: 12.5,
                   color: AppColors.aauGray600,

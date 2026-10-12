@@ -1,4 +1,10 @@
-import { Role, Condition, ItemStatus, RequestStatus, RequestType } from "@prisma/client";
+import {
+  Role,
+  Condition,
+  ItemStatus,
+  RequestStatus,
+  RequestType,
+} from "../src/generated/prisma/client.js";
 import { prisma } from "../src/lib/prisma.js";
 import argon2 from "argon2";
 import { generateTagQR } from "../src/utils/qrGenerator.js";
@@ -7,6 +13,7 @@ import { renderRequestSubmitted } from "../src/services/notifications.js";
 
 const SEED_USERS = {
   admin: { email: "admin@cncs.aau.edu.et", password: "Admin123!" },
+  officer: { email: "officer@cncs.aau.edu.et", password: "Officer123!" },
   staff: { email: "staff@cncs.aau.edu.et", password: "Staff123!" },
 };
 
@@ -38,14 +45,25 @@ async function main() {
   const byName = Object.fromEntries(categories.map((c) => [c.name, c]));
 
   console.log("Seeding users...");
-  const admin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: SEED_USERS.admin.email },
     update: {},
     create: {
       fullName: "System Admin",
       email: SEED_USERS.admin.email,
       passwordHash: await argon2.hash(SEED_USERS.admin.password, { type: argon2.argon2id }),
-      role: Role.ADMIN,
+      role: Role.SYSTEM_ADMIN,
+    },
+  });
+
+  const officer = await prisma.user.upsert({
+    where: { email: SEED_USERS.officer.email },
+    update: {},
+    create: {
+      fullName: "Property Officer",
+      email: SEED_USERS.officer.email,
+      passwordHash: await argon2.hash(SEED_USERS.officer.password, { type: argon2.argon2id }),
+      role: Role.PROPERTY_OFFICER,
     },
   });
 
@@ -97,7 +115,7 @@ async function main() {
       building: "CNCS Building",
       floor: "1",
       room: "101",
-      ownerId: admin.id,
+      ownerId: officer.id,
       purchaseCost: 8000,
       condition: Condition.NEW,
       photoUrl: "/photos/desk.jpg",
@@ -215,9 +233,10 @@ async function main() {
   // API uses, so the seeded text cannot drift from the D3 template — including
   // the `[REQUEST_SUBMITTED]` prefix, which `GET /notifications` strips.
   //
-  // Only one row, for the one admin: the real fan-out (D2 — every ADMIN except
-  // the requester) is `notifyReviewersOfNewRequest`, exercised by the API, and
-  // duplicating it here would mean non-deterministic ids for no demo value.
+  // Only one row, for the property officer who can decide it: the real fan-out
+  // (D2 — every deciding role except the requester) is
+  // `notifyReviewersOfNewRequest`, exercised by the API, and duplicating it here
+  // would mean non-deterministic ids for no demo value.
   const submittedMessage = renderRequestSubmitted({
     requesterName: staff.fullName,
     requestType: "TRANSFER",
@@ -229,7 +248,7 @@ async function main() {
     update: { message: submittedMessage, isRead: false },
     create: {
       id: SEED_NOTIFICATION_ID,
-      userId: admin.id,
+      userId: officer.id,
       message: submittedMessage,
       relatedRequestId: transferRequest.id,
     },
@@ -238,7 +257,8 @@ async function main() {
   console.log("Seed complete:");
   console.log(`  ${categories.length} categories`);
   console.log(
-    `  2 users: ${SEED_USERS.admin.email} / ${SEED_USERS.admin.password} (ADMIN), ` +
+    `  3 users: ${SEED_USERS.admin.email} / ${SEED_USERS.admin.password} (SYSTEM_ADMIN), ` +
+      `${SEED_USERS.officer.email} / ${SEED_USERS.officer.password} (PROPERTY_OFFICER), ` +
       `${SEED_USERS.staff.email} / ${SEED_USERS.staff.password} (STAFF)`
   );
   console.log(`  ${sampleItems.length + 1} items with QR tags generated under uploads/tags/`);

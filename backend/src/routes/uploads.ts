@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import { httpError } from "../lib/httpError.js";
-import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import {
   ALLOWED_PHOTO_TYPES,
   PHOTO_FIELD_NAME,
@@ -38,7 +38,7 @@ export const uploadsRouter: Router = Router();
 uploadsRouter.post(
   "/photo",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("ITEM_EDIT_IDENTITY"),
   acceptPhotoUpload,
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -102,7 +102,7 @@ const deletePhotoSchema = z.object({
 uploadsRouter.delete(
   "/photo",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("ITEM_EDIT_IDENTITY"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const parsed = deletePhotoSchema.safeParse(req.body);

@@ -25,11 +25,25 @@ import type { ItemsHistoryResponse } from "../types/history";
  * test asserts on the *absence* of the privileged keys, so the public fixture
  * must not merely null them but omit them entirely.
  */
-export const ADMIN_USER: AuthUser = {
+export const SYSTEM_ADMIN_USER: AuthUser = {
   id: "00000000-0000-4000-8000-000000000001",
   fullName: "Abebe Admin",
   email: "admin@cncs.aau.edu.et",
-  role: "ADMIN",
+  role: "SYSTEM_ADMIN",
+  createdAt: "2026-09-01T08:00:00.000Z",
+};
+
+/**
+ * The asset-side power user (spec 2.2): registers items, decides requests, reads
+ * the account list, reads every audit. It is the default session in the fixtures
+ * because it is the role a walkthrough of the workbench is run as — the System
+ * Admin sees no asset data at all, by design.
+ */
+export const OFFICER_USER: AuthUser = {
+  id: "00000000-0000-4000-8000-000000000003",
+  fullName: "Abdi Officer",
+  email: "officer@cncs.aau.edu.et",
+  role: "PROPERTY_OFFICER",
   createdAt: "2026-09-01T08:00:00.000Z",
 };
 
@@ -38,6 +52,22 @@ export const STAFF_USER: AuthUser = {
   fullName: "Sara Staff",
   email: "staff@cncs.aau.edu.et",
   role: "STAFF",
+  createdAt: "2026-09-01T08:00:00.000Z",
+};
+
+/**
+ * The Auditor (spec 8.1): runs a session end to end, reads items, reports.
+ *
+ * Running an audit and registering an item are different roles now, and no single
+ * account holds both — which is why the walkthrough tests that touch `/audit/...`
+ * sign in as this user rather than as the Property Officer the rest of the suite
+ * uses.
+ */
+export const AUDITOR_USER: AuthUser = {
+  id: "00000000-0000-4000-8000-000000000004",
+  fullName: "Almaz Auditor",
+  email: "auditor@cncs.aau.edu.et",
+  role: "AUDITOR",
   createdAt: "2026-09-01T08:00:00.000Z",
 };
 
@@ -102,13 +132,21 @@ export const ITEMS_LIST = (items: Item[], page = 1, total = items.length) => ({
   pagination: { page, limit: 20, total, totalPages: Math.max(1, Math.ceil(total / 20)) },
 });
 
-export const LOGIN_RESPONSE: LoginResponse = { token: "test-token", user: ADMIN_USER };
-export const ME_RESPONSE: MeResponse = { user: ADMIN_USER };
+export const LOGIN_RESPONSE: LoginResponse = { token: "test-token", user: OFFICER_USER };
+export const ME_RESPONSE: MeResponse = { user: OFFICER_USER };
 
-/** `GET /users` — the admin accounts list. Counts differ so the screen's rendering of them is observable. */
-export const ADMIN_ACCOUNT: UserSummary = { ...ADMIN_USER, itemCount: 3 };
+/**
+ * `GET /users` — the accounts list. Counts differ so the screen's rendering of
+ * them is observable: one account that is part of the record, one that is not.
+ *
+ * The acting administrator is in the list too, because the server returns every
+ * account — and the "you cannot do this to yourself" affordances only exist when
+ * its own row is rendered.
+ */
+export const OFFICER_ACCOUNT: UserSummary = { ...OFFICER_USER, itemCount: 3 };
 export const STAFF_ACCOUNT: UserSummary = { ...STAFF_USER, itemCount: 0 };
-export const ACCOUNTS: UserSummary[] = [ADMIN_ACCOUNT, STAFF_ACCOUNT];
+export const SYSTEM_ADMIN_ACCOUNT: UserSummary = { ...SYSTEM_ADMIN_USER, itemCount: 0 };
+export const ACCOUNTS: UserSummary[] = [OFFICER_ACCOUNT, STAFF_ACCOUNT, SYSTEM_ADMIN_ACCOUNT];
 
 export const PENDING_COUNT: PendingCountResponse = { pendingCount: 2 };
 
@@ -170,10 +208,10 @@ export const AUDIT_SESSION: AuditSession = {
   id: "audit-1",
   scopeType: "DEPARTMENT",
   scopeValue: "Computer Science",
-  runById: ADMIN_USER.id,
+  runById: OFFICER_USER.id,
   startedAt: "2026-09-22T08:00:00.000Z",
   completedAt: null,
-  runBy: { id: ADMIN_USER.id, fullName: ADMIN_USER.fullName, email: ADMIN_USER.email },
+  runBy: { id: OFFICER_USER.id, fullName: OFFICER_USER.fullName, email: OFFICER_USER.email },
 };
 
 export const AUDIT_SCAN_ROW: AuditScanRow = {
@@ -327,7 +365,7 @@ export const HISTORY_FIXTURE: ItemsHistoryResponse = {
       oldValue: "Room 101",
       newValue: "Room 204",
       editedAt: "2026-09-21T12:00:00.000Z",
-      editedBy: { id: ADMIN_USER.id, fullName: ADMIN_USER.fullName },
+      editedBy: { id: OFFICER_USER.id, fullName: OFFICER_USER.fullName },
     },
   ],
   total: 1,

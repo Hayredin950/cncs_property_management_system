@@ -28,8 +28,8 @@ vi.mock("../lib/prisma.js", () => {
   return { prisma: client };
 });
 
+const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
-const adminToken = createToken({ id: "admin-1", role: "ADMIN" });
 
 const DECIDED_AT = new Date("2026-09-02T09:30:00.000Z");
 
@@ -64,7 +64,7 @@ describe("GET /items/:id/history", () => {
   it("returns the item and one entry per changed field", async () => {
     const res = await request(app)
       .get("/items/item-1/history")
-      .set("Authorization", `Bearer ${staffToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     // The mock returns a whole row, so the narrowing that matters is the `select`
@@ -95,7 +95,7 @@ describe("GET /items/:id/history", () => {
   });
 
   it("orders newest first, then by field name within one decision", async () => {
-    await request(app).get("/items/item-1/history").set("Authorization", `Bearer ${adminToken}`);
+    await request(app).get("/items/item-1/history").set("Authorization", `Bearer ${officerToken}`);
 
     const args = vi.mocked(prisma.itemEditLog.findMany).mock.calls[0]?.[0];
     // Rows from one approval share an exact editedAt, so the second key is what
@@ -126,7 +126,7 @@ describe("GET /items/:id/history", () => {
 
     const res = await request(app)
       .get("/items/item-1/history")
-      .set("Authorization", `Bearer ${staffToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.item.status).toBe("DISPOSED");
@@ -137,7 +137,7 @@ describe("GET /items/:id/history", () => {
   it("filters to a single field", async () => {
     await request(app)
       .get("/items/item-1/history?field=ownerId&limit=10&offset=20")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     const args = vi.mocked(prisma.itemEditLog.findMany).mock.calls[0]?.[0];
     expect(args?.where).toEqual({ itemId: "item-1", fieldChanged: "ownerId" });
@@ -152,7 +152,7 @@ describe("GET /items/:id/history", () => {
 
     const res = await request(app)
       .get("/items/item-ghost/history")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: "Item not found" });
@@ -162,10 +162,19 @@ describe("GET /items/:id/history", () => {
   it("rejects an out-of-range limit", async () => {
     const res = await request(app)
       .get("/items/item-1/history?limit=500")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(400);
     expect(res.body.details[0].path).toEqual(["limit"]);
+    expect(prisma.item.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("refuses a STAFF member — edit history is not theirs to read", async () => {
+    const res = await request(app)
+      .get("/items/item-1/history")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(403);
     expect(prisma.item.findFirst).not.toHaveBeenCalled();
   });
 
@@ -180,10 +189,10 @@ describe("GET /items/:id/history", () => {
   it("is reachable under both mount paths", async () => {
     const prefixed = await request(app)
       .get("/api/v1/items/item-1/history")
-      .set("Authorization", `Bearer ${staffToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
     const bare = await request(app)
       .get("/items/item-1/history")
-      .set("Authorization", `Bearer ${staffToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(prefixed.status).toBe(200);
     expect(bare.body).toEqual(prefixed.body);

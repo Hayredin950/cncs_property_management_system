@@ -147,8 +147,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
       if (path == '/splash') return '/dashboard';
 
-      // Admin-only *frontend* routes: a non-admin gets the 404, not a 403 (§9.1).
-      if (path.startsWith('/admin') && !auth.isAdmin) return '/not-found';
+      // Role-gated *frontend* routes: a viewer without the capability gets the 404,
+      // not a 403 (§9.1) — the same shared 404 an unknown path renders. The
+      // capability, not a role name, is what each pair of routes is keyed to, so
+      // the two `/admin` screens no longer share one gate: accounts are the System
+      // Admin's, the catalogue is the Property Officer's.
+      if (!_mayOpen(path, auth)) return '/not-found';
 
       return null;
     },
@@ -257,6 +261,27 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// What a path needs, and whether this session has it.
+///
+/// A table rather than a chain of `if`s so the routes and the rights are read in
+/// one place: the `/audit/...` four are the ones that used to be open to anybody
+/// signed in, which is how a staff account could start a session the API then
+/// refused to write to.
+bool _mayOpen(String path, AuthState auth) {
+  if (path.startsWith('/admin/users')) return auth.canManageAccounts;
+  if (path.startsWith('/admin/categories')) return auth.canManageCategories;
+  if (path.startsWith('/admin')) return auth.canManageAccounts;
+  if (path == '/items/new') return auth.canCreateItems;
+  // Note the prefix on both scan rules: the bare `/scan` is the public QR reader,
+  // open to everyone, and only a scan *inside a session* needs `AUDIT_RUN`.
+  if (path == '/audit/new' || (path.startsWith('/audit/') && path.endsWith('/scan'))) {
+    return auth.canRunAudits;
+  }
+  if (path.startsWith('/audits') || path.contains('/report')) return auth.canViewAudits;
+  if (path.startsWith('/reports')) return auth.canViewReports;
+  return true;
+}
 
 /// Shown only while the stored token is being verified — a branded blank rather
 /// than a spinner on a white void, so the first frame of a cold start already looks

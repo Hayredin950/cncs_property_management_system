@@ -1,3 +1,28 @@
+// CNCS Property Management System — data model
+//
+// Phase A is being landed as an **expand → contract** migration so the app keeps
+// building and the test suite keeps running at every step.
+//
+// Expand (this change, additive only — nothing below is removed):
+//   · Department entity, with nullable department links on User and Item
+//   · holder fields on Item (holder type + holder reference) beside the old ownerId
+//   · the full item state machine, including PENDING_CLAIM / REVERTED_UNVERIFIED /
+//     LOANED / LOST / VOIDED, plus the claim fields
+//   · lifetime PIN with a database uniqueness constraint
+//   · CustodyEvent — the append-only evidence log (spec 4.5)
+//   · Item.version for optimistic locking, so two officers editing one item cannot
+//     silently overwrite each other (gap-analysis A7)
+//   · audit: session type + report number, frozen in-scope rows, uniqueness per item
+//     per session, and the audit result values the review asked for
+//   · account status for the approval queue
+//
+// Contract (next slice, with its code changes — do not do it before the code moves):
+//   · drop Item.ownerId, Item.department (free text), User.department (free text)
+//   · drop mustChangePassword once the admin-approval account flow is in
+//
+// Every add is nullable or defaulted on purpose: no backfill is required, and the
+// contract migration is the one that will need the data mapping.
+
 datasource db {
   provider = "postgresql"
 }
@@ -7,9 +32,34 @@ generator client {
   output   = "../src/generated/prisma"
 }
 
+/// Spec 2.1 as amended 12 Oct: the Account Admin merged into SYSTEM_ADMIN, so five
+/// roles, not six. `ADMIN`/`STAFF` are retired in the role slice; the migration maps
+/// `ADMIN` → `PROPERTY_OFFICER` (the college-level operational role) and leaves
+/// `STAFF` alone. See `src/services/permissions.ts` for what each role may do.
 enum Role {
-  ADMIN
+  SYSTEM_ADMIN
+  PROPERTY_OFFICER
+  DEPARTMENT_HEAD
   STAFF
+  AUDITOR
+}
+
+/// Account lifecycle for the admin-approval queue (spec 3.1.2).
+/// Default ACTIVE keeps every existing row and every existing test valid.
+enum AccountStatus {
+  ACTIVE
+  PENDING_EMAIL_VERIFICATION
+  PENDING_APPROVAL
+  REJECTED
+  DEACTIVATED
+}
+
+/// Who an item is with. Exactly one of: a staff member, a department, or the college
+/// (spec 4.1). COLLEGE means the Property Office pool — holderId is null for it.
+enum HolderType {
+  STAFF
+  DEPARTMENT
+  COLLEGE
 }
 
 enum Condition {
@@ -20,26 +70,90 @@ enum Condition {
   BEYOND_REPAIR
 }
 
+/// Spec 4.2 states, plus LOANED, which the loan decision needs and the spec's list
+/// predates. "In use vs in store" is not a state: it is derived from the holder.
 enum ItemStatus {
+  PENDING_CLAIM
   ACTIVE
+  REVERTED_UNVERIFIED
+  LOANED
+  LOST
   DISPOSED
+  VOIDED
 }
 
 enum RequestType {
   TRANSFER
   DISPOSAL
+  /// Added for the loan workflow (plan §5).
+  LOAN
+  /// The role-scoped typed requests (self-use, department-use, transfer-to-department,
+  /// transfer-to-individual, disposal-initiate) land with the request-model slice in
+  /// Phase B, together with the narrowing of TRANSFER and DISPOSAL.
 }
 
 enum RequestStatus {
   PENDING
   APPROVED
   REJECTED
+  /// Competing request on an item already promised elsewhere (plan §3).
+  WAITLISTED
 }
 
+/// PENDING is the "in scope, not yet scanned" value written when a session opens,
+/// which is what freezes the in-scope list (plan §6 step 2).
 enum AuditItemResult {
+  PENDING
   FOUND
   MISSING
   LOCATION_MISMATCH
+  DAMAGED
+}
+
+enum AuditSessionType {
+  ANNUAL_FULL_COUNT
+  SPOT_CHECK
+  COMPLIANCE
+  HANDOVER
+}
+
+/// Append-only. Every claim, refusal, expiry, reversion, transfer, disposal, loss and
+/// location change writes a row (spec 4.5). Rows are never updated or deleted; the
+/// database role used by the app is to be denied UPDATE/DELETE on this table, which is
+/// the part that makes "append-only" a mechanism rather than a policy.
+enum CustodyEventType {
+  CREATED
+  CLAIMED
+  CLAIM_REFUSED
+  CLAIM_EXPIRED
+  REVERTED
+  TRANSFERRED
+  DISPOSED
+  LOST
+  RECOVERED
+  LOCATION_CHANGED
+  VERIFIED
+  HOLDER_DEACTIVATED
+  EDITED
+}
+
+/// A real organisational unit. A Department is a Unit; the Office of Auditors is a unit
+/// with no head (spec 2.3.2), which is why headId is optional.
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  code      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  /// One head per department, and a head belongs to one department. A vacant head is
+  /// null rather than an empty string (spec 13.1 fixes this with a fallback approver,
+  /// which lands with the approver-resolution slice).
+  headId String? @unique
+  head   User?   @relation("DepartmentHead", fields: [headId], references: [id])
+
+  users User[] @relation("UserDepartment")
+  items Item[] @relation("ItemDepartment")
 }
 
 model User {
@@ -50,15 +164,24 @@ model User {
   role         Role
   createdAt    DateTime @default(now())
 
+  /// Real department link. The old system's free-text department lives on Item only
+  /// and is removed in the contract slice.
+  departmentId String?
+  departmentRef Department? @relation("UserDepartment", fields: [departmentId], references: [id])
+
+  accountStatus AccountStatus @default(ACTIVE)
+
   /// Bumped whenever this account's sessions must die (password change, admin
-  /// reset). Carried in the JWT as `ver`; `authenticate` rejects a token whose
-  /// `ver` no longer matches. Defaults to 0, and tokens minted before this
-  /// column existed carry no `ver` at all — those are trusted until they expire
-  /// (≤1 day), which makes the rollout non-breaking.
+  /// reset, and role change — gap-analysis E10). Carried in the JWT as `ver`;
+  /// `authenticate` rejects a token whose `ver` no longer matches. Defaults to 0,
+  /// and tokens minted before this column existed carry no `ver` at all — those are
+  /// trusted until they expire (≤1 day), which makes the rollout non-breaking.
   tokenVersion       Int     @default(0)
-  /// Set when an administrator resets the password; cleared once the account
-  /// holder chooses their own. Drives the forced change screen after sign-in.
+  /// Retiring with the admin-set-password flow: with self-registration the person
+  /// chooses their own password (spec 3.3.7, 12.5).
   mustChangePassword Boolean @default(false)
+
+  headOfDepartment Department? @relation("DepartmentHead")
 
   ownedItems       Item[]         @relation("ItemOwner")
   requestsCreated  Request[]      @relation("RequestedBy")
@@ -66,6 +189,9 @@ model User {
   auditsRun        AuditSession[] @relation("RunBy")
   itemEdits        ItemEditLog[]
   notifications    Notification[]
+  custodyEvents    CustodyEvent[] @relation("CustodyEvents")
+  voidedItems      Item[]         @relation("ItemVoidedBy")
+  lastVerifiedItems Item[]        @relation("ItemLastVerifiedBy")
 }
 
 model Category {
@@ -75,15 +201,28 @@ model Category {
 }
 
 model Item {
-  id             String      @id @default(uuid())
-  tagId          String      @unique
-  name           String
-  categoryId     String
-  category       Category    @relation(fields: [categoryId], references: [id])
-  department     String
-  building       String
-  floor          String
-  room           String
+  id           String      @id @default(uuid())
+  tagId        String      @unique
+  /// Lifetime asset number. Unique at the database level, never reused, including
+  /// after a void (the QR-tag rule in the review's item 23).
+  pin          String?     @unique
+  name         String
+  categoryId   String
+  category     Category    @relation(fields: [categoryId], references: [id])
+  /// Free-text department, kept read-only until the contract slice.
+  department   String
+  departmentId String?
+  departmentRecord Department? @relation("ItemDepartment", fields: [departmentId], references: [id])
+  building     String
+  floor        String
+  room         String
+
+  /// Holder model (spec 4.1). `ownerId` stays until the contract slice, because
+  /// dropping it means changing every read and write at once; new code writes the
+  /// holder fields. holderId is null when holderType is COLLEGE.
+  holderType HolderType?
+  holderId   String?
+
   ownerId        String
   owner          User        @relation("ItemOwner", fields: [ownerId], references: [id])
   purchaseCost   Decimal
@@ -100,6 +239,28 @@ model Item {
   registeredAt   DateTime    @default(now())
   lastAuditedAt  DateTime?
 
+  /// Claim handshake (spec 4.4): the item is created PENDING_CLAIM and reverts to the
+  /// college pool once claimDueAt passes. Imported items are exempt for now — that
+  /// exemption is still an open question in the plan.
+  claimedAt    DateTime?
+  claimDueAt   DateTime?
+
+  /// Written only by an audit (or a verification). This is the field that lets reports
+  /// and the UI say "not verified since <date>" (plan §6 step 8).
+  lastVerifiedAt   DateTime?
+  lastVerifiedById String?
+  lastVerifiedBy   User?    @relation("ItemLastVerifiedBy", fields: [lastVerifiedById], references: [id])
+
+  /// Void replaces delete (spec 4.8). A voided row is never deleted, only hidden.
+  voidReason String?
+  voidedAt   DateTime?
+  voidedById String?
+  voidedBy   User?    @relation("ItemVoidedBy", fields: [voidedById], references: [id])
+
+  /// Optimistic locking. Every write sends the version it read and fails loudly on a
+  /// mismatch instead of silently overwriting another officer's edit.
+  version Int @default(0)
+
   accessories    Item[]      @relation("ItemAccessories")
   parentItem     Item?       @relation("ItemAccessories", fields: [parentItemId], references: [id])
   parentItemId   String?
@@ -107,6 +268,34 @@ model Item {
   requests       Request[]
   editLogs       ItemEditLog[]
   auditResults   AuditItemResultRow[]
+  custodyEvents  CustodyEvent[]
+
+  @@index([holderType, holderId])
+  @@index([status])
+  @@index([departmentId])
+}
+
+model CustodyEvent {
+  id      String           @id @default(uuid())
+  itemId  String
+  item    Item             @relation(fields: [itemId], references: [id])
+  eventType CustodyEventType
+
+  fromHolderType HolderType?
+  fromHolderId   String?
+  toHolderType   HolderType?
+  toHolderId     String?
+
+  actingUserId String
+  actingUser   User   @relation("CustodyEvents", fields: [actingUserId], references: [id])
+
+  reason String?
+  /// Who was the responsible department head at that moment, or "vacant" (spec 4.5,
+  /// 4.9.4). Stored as identity at the time, because heads change.
+  departmentHeadSnapshot String?
+  createdAt DateTime @default(now())
+
+  @@index([itemId, createdAt])
 }
 
 model Request {
@@ -125,7 +314,14 @@ model Request {
   newLocationBuilding String?
   newLocationFloor    String?
   newLocationRoom     String?
-  newOwnerId          String?
+
+  /// Kept until the holder model lands in the transfer slice; new transfers record the
+  /// from/to holder pair instead (plan §3).
+  newOwnerId String?
+  fromHolderType HolderType?
+  fromHolderId   String?
+  toHolderType   HolderType?
+  toHolderId     String?
 
   createdAt DateTime  @default(now())
   decidedAt DateTime?
@@ -145,12 +341,19 @@ model ItemEditLog {
 
 model AuditSession {
   id          String    @id @default(uuid())
+  sessionType AuditSessionType @default(ANNUAL_FULL_COUNT)
+  /// Serial number of the frozen report this session produces (plan §6 step 5).
+  /// Official reports are reproducible artifacts, not live lists.
+  reportNumber String?  @unique
   scopeType   String
   scopeValue  String?
   runById     String
   runBy       User      @relation("RunBy", fields: [runById], references: [id])
   startedAt   DateTime  @default(now())
   completedAt DateTime?
+
+  /// Grace window after close before an unanswered MISSING becomes LOST (plan §6 step 4).
+  graceEndsAt DateTime?
 
   results AuditItemResultRow[]
 }
@@ -161,8 +364,12 @@ model AuditItemResultRow {
   auditSession   AuditSession    @relation(fields: [auditSessionId], references: [id])
   itemId         String
   item           Item            @relation(fields: [itemId], references: [id])
-  result         AuditItemResult
+  result         AuditItemResult @default(PENDING)
   scannedAt      DateTime?
+
+  /// One row per item per session: a duplicate row would silently double-count a
+  /// department's audit (gap-analysis A5).
+  @@unique([auditSessionId, itemId])
 }
 
 model Notification {

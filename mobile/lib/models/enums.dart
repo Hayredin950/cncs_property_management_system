@@ -8,9 +8,20 @@
 /// instead of crashing a screen that used to work. See [enumLabel].
 library;
 
+/// The five account roles (spec 2.1, amended 12 Oct: the Account Admin merged
+/// into the System Admin). What each one may do is `models/permissions.dart` —
+/// this enum is only the wire values and their labels.
+///
+/// There used to be two members, `ADMIN`/`STAFF`, and a pile of `isAdmin` checks.
+/// The checks are what had to go: "is this the administrator" stopped meaning
+/// anything once registering items, deciding requests and running audits landed on
+/// three different roles.
 enum Role {
-  admin('ADMIN', 'Admin'),
+  systemAdmin('SYSTEM_ADMIN', 'System Admin'),
+  propertyOfficer('PROPERTY_OFFICER', 'Property Officer'),
+  departmentHead('DEPARTMENT_HEAD', 'Department Head'),
   staff('STAFF', 'Staff'),
+  auditor('AUDITOR', 'Auditor'),
   unknown('', 'Unknown');
 
   const Role(this.wire, this.label);
@@ -19,13 +30,24 @@ enum Role {
   final String label;
 
   static Role fromJson(Object? value) => switch (value) {
-        'ADMIN' => Role.admin,
+        'SYSTEM_ADMIN' => Role.systemAdmin,
+        'PROPERTY_OFFICER' => Role.propertyOfficer,
+        'DEPARTMENT_HEAD' => Role.departmentHead,
         'STAFF' => Role.staff,
+        'AUDITOR' => Role.auditor,
         _ => Role.unknown,
       };
 
-  bool get isAdmin => this == Role.admin;
-  bool get isStaff => this == Role.staff;
+  /// The roles a picker may offer, in the order `frontend/src/types/enums.ts`
+  /// declares them. [unknown] is deliberately absent: it is what an unrecognised
+  /// wire value degrades to, never a role anyone can choose.
+  static const List<Role> selectable = [
+    systemAdmin,
+    propertyOfficer,
+    departmentHead,
+    staff,
+    auditor,
+  ];
 }
 
 enum Condition {

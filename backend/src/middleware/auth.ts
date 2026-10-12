@@ -1,14 +1,28 @@
 import type { Request as ExpressRequest, NextFunction, Response } from "express";
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma.js";
+import { hasCapability, type Capability } from "../services/permissions.js";
 
-export type UserRole = "ADMIN" | "STAFF";
+/** The five spec roles (2.1, as amended 12 Oct). Kept in sync with `enum Role`. */
+export type UserRole =
+  | "SYSTEM_ADMIN"
+  | "PROPERTY_OFFICER"
+  | "DEPARTMENT_HEAD"
+  | "STAFF"
+  | "AUDITOR";
 
 export interface AuthenticatedRequest extends ExpressRequest {
   user?:
     | {
         id: string;
         role: UserRole;
+        /**
+         * The account's department, when known. Taken from the database on the
+         * `ver` path and from the token otherwise. Used by the item-scope checks
+         * (a department head reads their own department) — absent is treated as
+         * "no department", never as "every department".
+         */
+        departmentId?: string | null;
       }
     | undefined;
 }
@@ -16,6 +30,7 @@ export interface AuthenticatedRequest extends ExpressRequest {
 interface JwtPayload {
   id: string;
   role: UserRole;
+  departmentId?: string | null;
   /**
    * `User.tokenVersion` at the moment the token was issued. Absent on tokens
    * minted before the column existed; see the note in `authenticate`.
@@ -81,15 +96,15 @@ export async function authenticate(
     if (typeof decoded.ver === "number") {
       const user = await prisma.user.findUnique({
         where: { id: decoded.id },
-        select: { role: true, tokenVersion: true },
+        select: { role: true, tokenVersion: true, departmentId: true },
       });
       if (!user || user.tokenVersion !== decoded.ver) {
         res.status(401).json({ error: INVALID_TOKEN });
         return;
       }
-      req.user = { id: decoded.id, role: user.role };
+      req.user = { id: decoded.id, role: user.role, departmentId: user.departmentId };
     } else {
-      req.user = { id: decoded.id, role: decoded.role };
+      req.user = { id: decoded.id, role: decoded.role, departmentId: decoded.departmentId ?? null };
     }
     next();
   } catch (err) {
@@ -98,15 +113,19 @@ export async function authenticate(
 }
 
 /**
- * Usage: router.post("/items", authenticate, requireRole(["ADMIN", "STAFF"]), handler)
+ * Usage: router.post("/items", authenticate, requireCapability("ITEM_CREATE"), handler)
  * Must run AFTER authenticate() — relies on req.user already being set.
+ *
+ * Routes name the *capability* they need, never the roles: the matrix lives in
+ * `services/permissions.ts`, so changing who may do something is one row there
+ * rather than a hunt through every route.
  */
-export function requireRole(roles: UserRole[]) {
+export function requireCapability(capability: Capability) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" });
     }
-    if (!roles.includes(req.user.role)) {
+    if (!hasCapability(req.user.role, capability)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     next();
@@ -149,13 +168,13 @@ export async function optionalAuthenticate(
     if (typeof decoded.ver === "number") {
       const user = await prisma.user.findUnique({
         where: { id: decoded.id },
-        select: { role: true, tokenVersion: true },
+        select: { role: true, tokenVersion: true, departmentId: true },
       });
       if (user && user.tokenVersion === decoded.ver) {
-        req.user = { id: decoded.id, role: user.role };
+        req.user = { id: decoded.id, role: user.role, departmentId: user.departmentId };
       }
     } else {
-      req.user = { id: decoded.id, role: decoded.role };
+      req.user = { id: decoded.id, role: decoded.role, departmentId: decoded.departmentId ?? null };
     }
   } catch {
     // Invalid, expired or revoked — treat the request as unauthenticated.

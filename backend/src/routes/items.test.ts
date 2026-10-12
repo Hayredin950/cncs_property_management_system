@@ -31,7 +31,7 @@ vi.mock("../lib/prisma.js", () => {
 });
 
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
-const adminToken = createToken({ id: "admin-1", role: "ADMIN" });
+const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
 
 /**
  * Richer than `makeItem()` on purpose: every field SRS 3.4 hides from the public
@@ -223,7 +223,7 @@ describe("GET /items/:tagId", () => {
 
     const res = await request(app)
       .get("/items/CNCS-DEMO-0001")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("DISPOSED");
@@ -261,7 +261,7 @@ describe("POST /items", () => {
   it("creates an item and generates a CNCS- tag id", async () => {
     const res = await request(app)
       .post("/items")
-      .set("Authorization", `Bearer ${staffToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send(VALID_CREATE);
 
     expect(res.status).toBe(201);
@@ -280,7 +280,7 @@ describe("POST /items", () => {
     expect(room).toBe("312");
     const missing = await request(app)
       .post("/items")
-      .set("Authorization", `Bearer ${staffToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send(noRoom);
     expect(missing.status).toBe(400);
     expect(missing.body.error).toBe("Validation failed");
@@ -288,7 +288,7 @@ describe("POST /items", () => {
 
     const badEnum = await request(app)
       .post("/items")
-      .set("Authorization", `Bearer ${staffToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send({ ...VALID_CREATE, condition: "SLIGHTLY_BENT" });
     expect(badEnum.status).toBe(400);
     expect(prisma.item.create).not.toHaveBeenCalled();
@@ -310,7 +310,7 @@ describe("POST /items", () => {
 
     const res = await request(app)
       .post("/items")
-      .set("Authorization", `Bearer ${staffToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send(VALID_CREATE);
 
     expect(res.status).toBe(201);
@@ -335,7 +335,7 @@ describe("POST /items", () => {
 
     const res = await request(app)
       .post("/items")
-      .set("Authorization", `Bearer ${staffToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send(VALID_CREATE);
 
     // Straight to the error handler, which maps P2002 to 409 — retrying would
@@ -353,7 +353,7 @@ describe("POST /items", () => {
     // which the single-level approval cascade then half-moves.
     const res = await request(app)
       .post("/items")
-      .set("Authorization", `Bearer ${staffToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send({ ...VALID_CREATE, parentItemId: "item-1" });
 
     expect(res.status).toBe(400);
@@ -526,7 +526,7 @@ describe("PUT /items/:id", () => {
     // that the move is approved, not that Staff cannot make it.
     const res = await request(app)
       .put("/items/item-1")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send({ room: "101" });
 
     expect(res.status).toBe(400);
@@ -581,7 +581,7 @@ describe("PUT /items/:id", () => {
     vi.mocked(prisma.category.findMany).mockResolvedValue([] as never);
     const category = await request(app)
       .put("/items/item-1")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send({ categoryId: CATEGORY_UUID });
 
     expect(category.status).toBe(400);

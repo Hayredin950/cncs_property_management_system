@@ -86,14 +86,17 @@ class _RequestFormPageState extends ConsumerState<RequestFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = ref.watch(isAdminProvider);
+    // The new-custodian picker reads `GET /users`, so it belongs to whoever holds
+    // `USER_READ` — the System Admin does not reach this screen (no asset data),
+    // and the reviewing roles and Staff file here.
+    final canListAccounts = ref.watch(canReadUsersProvider);
 
     return Column(
       children: [
         Expanded(
           child: PageScaffold(
             title: 'File a request',
-            subtitle: 'A transfer or a disposal, reviewed by an administrator',
+            subtitle: 'A transfer or a disposal, reviewed by the property office',
             maxWidth: 640,
             padBottom: 24,
             children: [
@@ -202,12 +205,11 @@ class _RequestFormPageState extends ConsumerState<RequestFormPage> {
                         Expanded(child: AppTextField(label: 'New room', controller: _room)),
                       ],
                     ),
-                    if (isAdmin) _ownerPicker(),
-                    if (!isAdmin)
+                    if (canListAccounts) _ownerPicker(),
+                    if (!canListAccounts)
                       const Text(
-                        'Reassigning to another account is done by an administrator when '
-                        'they approve this transfer \u2014 a staff session cannot enumerate '
-                        'accounts.',
+                        'Reassigning to another account is done when the transfer is '
+                        'decided \u2014 this session cannot enumerate accounts.',
                         style: TextStyle(
                           fontSize: 12.5,
                           color: AppColors.aauGray500,

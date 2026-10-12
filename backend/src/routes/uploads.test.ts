@@ -29,7 +29,9 @@ const { PhotoUploadError, readPhotoUploadConfig, uploadPendingPhoto } = await im
 const readConfigMock = vi.mocked(readPhotoUploadConfig);
 const uploadMock = vi.mocked(uploadPendingPhoto);
 
-const staffToken = createToken({ id: "staff-1", role: "STAFF" });
+// Photo uploads are an identity-field write, so the fixture carries the role that
+// holds ITEM_EDIT_IDENTITY. The id stays "staff-1" to keep the suite's ids stable.
+const staffToken = createToken({ id: "staff-1", role: "PROPERTY_OFFICER" });
 
 /** A 1x1 PNG — small enough to keep the suite fast, real enough for multer. */
 const PNG_BYTES = Buffer.from(

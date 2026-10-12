@@ -13,7 +13,12 @@ import jwt from "jsonwebtoken";
  * entirely; keeping the fixtures cost-free keeps that invariant visible.
  */
 
-export type TestRole = "ADMIN" | "STAFF";
+export type TestRole =
+  | "SYSTEM_ADMIN"
+  | "PROPERTY_OFFICER"
+  | "DEPARTMENT_HEAD"
+  | "STAFF"
+  | "AUDITOR";
 
 /**
  * Signs a JWT with the same `{ id, role }` payload routes/auth.ts issues.
@@ -23,7 +28,12 @@ export type TestRole = "ADMIN" | "STAFF";
  * read, which is what keeps the route suites unchanged. Pass `ver` when the test
  * is specifically about revocation.
  */
-export function createToken(payload: { id: string; role: TestRole; ver?: number }): string {
+export function createToken(payload: {
+  id: string;
+  role: TestRole;
+  departmentId?: string | null;
+  ver?: number;
+}): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error("Set process.env.JWT_SECRET at the top of the test file before createToken()");
@@ -36,6 +46,7 @@ export interface TestUser {
   fullName: string;
   email: string;
   role: TestRole;
+  departmentId?: string | null;
   createdAt: Date;
 }
 
@@ -45,17 +56,55 @@ export function makeUser(overrides: Partial<TestUser> = {}): TestUser {
     fullName: "Demo Staff",
     email: "staff@cncs.aau.edu.et",
     role: "STAFF",
+    departmentId: null,
     createdAt: new Date("2026-09-01T00:00:00.000Z"),
     ...overrides,
   };
 }
 
+/**
+ * The college-level operational fixture — registers items, manages buildings,
+ * tags and categories, records transfers and finalises disposals. This is what
+ * used to be `makeAdmin`; read the diff as "the operational role, not the
+ * account role", which is the whole point of the 12 Oct merge.
+ */
+export function makeOfficer(overrides: Partial<TestUser> = {}): TestUser {
+  return makeUser({
+    id: "officer-1",
+    fullName: "Property Officer",
+    email: "officer@cncs.aau.edu.et",
+    role: "PROPERTY_OFFICER",
+    ...overrides,
+  });
+}
+
+/** Account administration only — invites, approvals, deactivation, resets. */
 export function makeAdmin(overrides: Partial<TestUser> = {}): TestUser {
   return makeUser({
     id: "admin-1",
     fullName: "System Admin",
     email: "admin@cncs.aau.edu.et",
-    role: "ADMIN",
+    role: "SYSTEM_ADMIN",
+    ...overrides,
+  });
+}
+
+export function makeHead(overrides: Partial<TestUser> = {}): TestUser {
+  return makeUser({
+    id: "head-1",
+    fullName: "Department Head",
+    email: "head@cncs.aau.edu.et",
+    role: "DEPARTMENT_HEAD",
+    ...overrides,
+  });
+}
+
+export function makeAuditor(overrides: Partial<TestUser> = {}): TestUser {
+  return makeUser({
+    id: "auditor-1",
+    fullName: "Auditor",
+    email: "auditor@cncs.aau.edu.et",
+    role: "AUDITOR",
     ...overrides,
   });
 }

@@ -34,13 +34,18 @@ vi.mock("../lib/prisma.js", () => {
   };
 });
 
-function createToken(payload: { id: string; role: "ADMIN" | "STAFF" }) {
+function createToken(payload: {
+  id: string;
+  role: "SYSTEM_ADMIN" | "PROPERTY_OFFICER" | "DEPARTMENT_HEAD" | "STAFF" | "AUDITOR";
+}) {
   return jwt.sign(payload, process.env.JWT_SECRET!);
 }
 
 describe("Audit Endpoints", () => {
-  const adminToken = createToken({ id: "user-admin-1", role: "ADMIN" });
-  const staffToken = createToken({ id: "user-staff-1", role: "STAFF" });
+  // Only AUDITOR holds AUDIT_RUN/AUDIT_VIEW (spec 8.1). Ids stay as they were so
+  // the `runById` assertions below keep their meaning.
+  const adminToken = createToken({ id: "user-admin-1", role: "AUDITOR" });
+  const staffToken = createToken({ id: "user-staff-1", role: "AUDITOR" });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -373,8 +378,8 @@ describe("Audit Endpoints", () => {
  * half-done one only in the tab that started it.
  */
 describe("GET /audits", () => {
-  const adminToken = createToken({ id: "user-admin-1", role: "ADMIN" });
-  const staffToken = createToken({ id: "user-staff-1", role: "STAFF" });
+  const adminToken = createToken({ id: "user-admin-1", role: "AUDITOR" });
+  const staffToken = createToken({ id: "user-staff-1", role: "AUDITOR" });
 
   const SESSION = {
     id: "session-1",
@@ -415,23 +420,22 @@ describe("GET /audits", () => {
     expect(prisma.auditSession.findMany).not.toHaveBeenCalled();
   });
 
-  it("scopes a Staff member to the audits they ran", async () => {
+  it("shows the whole audit history to an auditor, and narrows to their own on mine=true", async () => {
     const res = await request(app).get("/api/v1/audits").set("Authorization", `Bearer ${staffToken}`);
 
     expect(res.status).toBe(200);
-    expect(vi.mocked(prisma.auditSession.findMany).mock.calls[0]?.[0]?.where).toEqual({
-      runById: "user-staff-1",
-    });
+    // No automatic per-runner scoping: auditors and the property officer act on
+    // the college's findings, so the history is college-wide unless `mine` asks.
+    expect(vi.mocked(prisma.auditSession.findMany).mock.calls[0]?.[0]?.where).toEqual({});
     expect(res.body.total).toBe(1);
   });
 
-  it("shows an admin every audit, and narrows to their own on mine=true", async () => {
+  it("narrows to the caller's own sessions on mine=true", async () => {
     await request(app).get("/api/v1/audits").set("Authorization", `Bearer ${adminToken}`);
     expect(vi.mocked(prisma.auditSession.findMany).mock.calls[0]?.[0]?.where).toEqual({});
 
     await request(app).get("/api/v1/audits?mine=true").set("Authorization", `Bearer ${adminToken}`);
-    // `mine` is applied on top of the scope, never instead of it — so it can only
-    // ever narrow what an admin already sees.
+    // `mine` can only ever narrow what the caller already sees.
     expect(vi.mocked(prisma.auditSession.findMany).mock.calls[1]?.[0]?.where).toEqual({
       runById: "user-admin-1",
     });
@@ -486,7 +490,7 @@ describe("GET /audits", () => {
 });
 
 describe("GET /audits/:id", () => {
-  const staffToken = createToken({ id: "user-staff-1", role: "STAFF" });
+  const staffToken = createToken({ id: "user-staff-1", role: "AUDITOR" });
 
   const item = {
     tagId: "CNCS-0001",

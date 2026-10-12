@@ -13,6 +13,7 @@ import { SkeletonText } from "../../components/Skeleton";
 import { useAuditsList } from "../../hooks/useAudits";
 import { AUDITS_PAGE_SIZE } from "../../api/audits";
 import { formatDateTimeUTC, formatRelativeTime } from "../../lib/formatters";
+import { canRunAudits, canViewAudits } from "../../lib/permissions";
 import { toast } from "../../lib/toast";
 import { NetworkError } from "../../types/api";
 import type { AuditSessionSummary } from "../../types/audit";
@@ -34,11 +35,15 @@ import type { AuditSessionSummary } from "../../types/audit";
  */
 export function AuditListPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";
+  // Viewing history and running a session are different rights (spec 2.2): the
+  // Property Officer reads every session but runs none, the Auditor — who ran
+  // them — gets the "only mine" narrowing.
+  const canBrowseAll = canViewAudits(user?.role);
+  const canRun = canRunAudits(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  const mine = isAdmin && searchParams.get("mine") === "1";
+  const mine = canBrowseAll && searchParams.get("mine") === "1";
   const page = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
 
   const auditsQuery = useAuditsList({ mine, page });
@@ -77,13 +82,13 @@ export function AuditListPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Audits</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {isAdmin
+            {canBrowseAll
               ? "Every audit session, newest first — including any left unfinished."
               : "The audits you've run, newest first — including any left unfinished."}
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
-          {isAdmin && (
+          {canBrowseAll && (
             <Select
               label="Show"
               options={[
@@ -95,11 +100,13 @@ export function AuditListPage() {
               className="sm:w-40"
             />
           )}
-          <Link to="/audit/new">
-            <Button size="sm" leftIcon={<Plus className="h-4 w-4" />}>
-              Start an audit
-            </Button>
-          </Link>
+          {canRun && (
+            <Link to="/audit/new">
+              <Button size="sm" leftIcon={<Plus className="h-4 w-4" />}>
+                Start an audit
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 

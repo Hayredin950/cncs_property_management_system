@@ -4,8 +4,8 @@ import app from "../app.js";
 import { prisma } from "../lib/prisma.js";
 import {
   createToken,
-  makeAdmin,
   makeItem,
+  makeOfficer,
   makeRequest,
   makeUser,
   type TestRequest,
@@ -52,7 +52,7 @@ vi.mock("../lib/prisma.js", () => {
 });
 
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
-const adminToken = createToken({ id: "admin-1", role: "ADMIN" });
+const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
 
 const TRANSFER_BODY = {
   type: "TRANSFER",
@@ -92,7 +92,7 @@ function primeCreate(): void {
 
 /** Default happy-path mocks for a decision on a PENDING request. */
 function primeDecision(overrides: Partial<TestRequest> = {}): void {
-  vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeAdmin() as never);
+  vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
   vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(makeRequest(overrides) as never);
   vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 1 } as never);
   vi.mocked(prisma.item.updateMany).mockResolvedValue({ count: 1 } as never);
@@ -128,9 +128,9 @@ describe("POST /requests", () => {
     expect(created).not.toHaveProperty("newLocationBuilding");
     expect(created).not.toHaveProperty("newOwnerId");
 
-    // D2 — every ADMIN except the requester.
+    // D2 — everyone who may decide (officer and head), except the requester.
     expect(prisma.user.findMany).toHaveBeenCalledWith({
-      where: { role: "ADMIN", id: { not: "staff-1" } },
+      where: { role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] }, id: { not: "staff-1" } },
       select: { id: true, email: true, fullName: true },
     });
     expect(prisma.notification.createMany).toHaveBeenCalledWith({
@@ -340,7 +340,7 @@ describe("GET /requests", () => {
   });
 
   it("gives an admin the unscoped queue, pending first", async () => {
-    const res = await request(app).get("/requests").set("Authorization", `Bearer ${adminToken}`);
+    const res = await request(app).get("/requests").set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     const args = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0];
@@ -355,7 +355,7 @@ describe("GET /requests", () => {
   it("passes status and type filters into the where clause", async () => {
     const res = await request(app)
       .get("/requests?status=APPROVED&type=DISPOSAL&limit=5&offset=10")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     const args = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0];
@@ -369,17 +369,17 @@ describe("GET /requests", () => {
   it("lets an admin narrow to their own with ?mine=true", async () => {
     await request(app)
       .get("/requests?mine=true")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where).toEqual({
-      requestedById: "admin-1",
+      requestedById: "officer-1",
     });
   });
 
   it("rejects an out-of-range limit", async () => {
     const res = await request(app)
       .get("/requests?limit=9999")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(400);
     expect(res.body.details[0].path).toEqual(["limit"]);
@@ -393,7 +393,7 @@ describe("GET /requests/pending-count", () => {
 
     const res = await request(app)
       .get("/requests/pending-count")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ pendingCount: 3 });
@@ -423,7 +423,7 @@ describe("GET /requests/:id", () => {
 
     const res = await request(app)
       .get("/requests/req-1")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.request.id).toBe("req-1");
@@ -457,7 +457,7 @@ describe("POST /requests/:id/approve", () => {
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.request.status).toBe("APPROVED");
@@ -468,7 +468,7 @@ describe("POST /requests/:id/approve", () => {
 
     expect(prisma.request.updateMany).toHaveBeenCalledWith({
       where: { id: "req-1", status: "PENDING" },
-      data: { status: "APPROVED", reviewedById: "admin-1", decidedAt: expect.any(Date) },
+      data: { status: "APPROVED", reviewedById: "officer-1", decidedAt: expect.any(Date) },
     });
     expect(prisma.item.updateMany).toHaveBeenCalledWith({
       where: { id: "item-1", status: "ACTIVE" },
@@ -481,7 +481,7 @@ describe("POST /requests/:id/approve", () => {
     expect(rows).toEqual([
       {
         itemId: "item-1",
-        editedById: "admin-1",
+        editedById: "officer-1",
         fieldChanged: "floor",
         oldValue: "3",
         newValue: "1",
@@ -489,7 +489,7 @@ describe("POST /requests/:id/approve", () => {
       },
       {
         itemId: "item-1",
-        editedById: "admin-1",
+        editedById: "officer-1",
         fieldChanged: "room",
         oldValue: "312",
         newValue: "101",
@@ -504,7 +504,7 @@ describe("POST /requests/:id/approve", () => {
 
     await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     // The whole race guard is this ordering: a lost race aborts at the request
     // CAS and can therefore never apply the item change twice.
@@ -520,7 +520,7 @@ describe("POST /requests/:id/approve", () => {
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     const decidedAt = vi.mocked(prisma.request.updateMany).mock.calls[0]?.[0]?.data?.decidedAt;
     const rows = vi.mocked(prisma.itemEditLog.createMany).mock.calls[0]?.[0]?.data as
@@ -538,14 +538,14 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("answers 409 when the request CAS matches nothing, without touching the item", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeAdmin() as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(makeRequest() as never);
     // Another admin committed the decision between the read and the write.
     vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 0 } as never);
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: "Request has already been decided" });
@@ -555,14 +555,14 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("takes the fast path when the request is already decided", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeAdmin() as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
       makeRequest({ status: "APPROVED", reviewedById: "admin-1" }) as never,
     );
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: "Request has already been decided" });
@@ -570,14 +570,14 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("refuses to approve a request whose item was disposed meanwhile", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeAdmin() as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
       makeRequest({ item: makeItem({ status: "DISPOSED" }) }) as never,
     );
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: "Item is already disposed" });
@@ -585,14 +585,14 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("answers 409 when the item CAS loses the race", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeAdmin() as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(makeRequest() as never);
     vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 1 } as never);
     vi.mocked(prisma.item.updateMany).mockResolvedValueOnce({ count: 0 } as never);
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: "Item is already disposed" });
@@ -600,18 +600,18 @@ describe("POST /requests/:id/approve", () => {
     expect(prisma.itemEditLog.createMany).not.toHaveBeenCalled();
   });
 
-  it("refuses to let an admin decide their own request (F6.2)", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeAdmin() as never);
+  it("refuses to let an officer decide their own request (F6.2)", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
       makeRequest({
-        requestedById: "admin-1",
-        requestedBy: { id: "admin-1", fullName: "System Admin", email: "admin@cncs.aau.edu.et" },
+        requestedById: "officer-1",
+        requestedBy: { id: "officer-1", fullName: "Property Officer", email: "officer@cncs.aau.edu.et" },
       }) as never,
     );
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     // 403, not 409: being barred from deciding is authorization, and it stays
     // true whatever the request's status is. Role-gating alone would let this
@@ -622,14 +622,14 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("checks self-decision before status, so an own decided request still says 403", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeAdmin() as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
-      makeRequest({ requestedById: "admin-1", status: "REJECTED" }) as never,
+      makeRequest({ requestedById: "officer-1", status: "REJECTED" }) as never,
     );
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: "You cannot decide your own request" });
@@ -646,15 +646,15 @@ describe("POST /requests/:id/approve", () => {
     expectNoWrites();
   });
 
-  it("re-reads the role from the database, so a stale ADMIN token is refused", async () => {
-    // The token was issued before the demotion and still claims ADMIN.
+  it("re-reads the role from the database, so a stale officer token is refused", async () => {
+    // The token was issued before the demotion and still claims PROPERTY_OFFICER.
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(
-      makeUser({ id: "admin-1", role: "STAFF" }) as never,
+      makeUser({ id: "officer-1", role: "STAFF" }) as never,
     );
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: "Insufficient permissions" });
@@ -667,7 +667,7 @@ describe("POST /requests/:id/approve", () => {
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: "Not authenticated" });
@@ -675,12 +675,12 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("answers 404 for a request id that does not exist", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeAdmin() as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(null as never);
 
     const res = await request(app)
       .post("/requests/req-ghost/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: "Request not found" });
@@ -689,7 +689,7 @@ describe("POST /requests/:id/approve", () => {
 
   it("refuses a newOwnerId that stopped existing after the request was filed", async () => {
     vi.mocked(prisma.user.findUnique)
-      .mockResolvedValueOnce(makeAdmin() as never)
+      .mockResolvedValueOnce(makeOfficer() as never)
       .mockResolvedValueOnce(null as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
       makeRequest({ newOwnerId: "ghost-user" }) as never,
@@ -697,7 +697,7 @@ describe("POST /requests/:id/approve", () => {
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: "newOwnerId does not match an existing user" });
@@ -706,7 +706,7 @@ describe("POST /requests/:id/approve", () => {
 
   it("logs an owner change as \"<name> (<id>)\" on both sides (D1)", async () => {
     vi.mocked(prisma.user.findUnique)
-      .mockResolvedValueOnce(makeAdmin() as never)
+      .mockResolvedValueOnce(makeOfficer() as never)
       .mockResolvedValueOnce({ id: "staff-2", fullName: "Second Staff" } as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
       makeRequest({ newOwnerId: "staff-2" }) as never,
@@ -719,7 +719,7 @@ describe("POST /requests/:id/approve", () => {
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.itemChanges).toEqual({ floor: "1", room: "101", ownerId: "staff-2" });
@@ -745,7 +745,7 @@ describe("POST /requests/:id/approve", () => {
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     const args = vi.mocked(prisma.item.updateMany).mock.calls[0]?.[0];
@@ -777,7 +777,7 @@ describe("POST /requests/:id/approve", () => {
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.cascadedItemIds).toEqual(["item-4"]);
@@ -803,7 +803,7 @@ describe("POST /requests/:id/approve", () => {
       "item-4:room",
     ]);
     expect(new Set(rows?.map((row) => row.editedAt))).toHaveProperty("size", 1);
-    expect(new Set(rows?.map((row) => row.editedById))).toEqual(new Set(["admin-1"]));
+    expect(new Set(rows?.map((row) => row.editedById))).toEqual(new Set(["officer-1"]));
     expect(res.body.editLogRowCount).toBe(4);
   });
 
@@ -830,7 +830,7 @@ describe("POST /requests/:id/approve", () => {
 
     const res = await request(app)
       .post("/requests/req-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(vi.mocked(prisma.item.updateMany).mock.calls[1]?.[0]?.data).toEqual({
@@ -852,7 +852,7 @@ describe("POST /requests/:id/reject", () => {
 
     const res = await request(app)
       .post("/requests/req-1/reject")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send({ rejectionReason: "Item is still serviceable" });
 
     expect(res.status).toBe(200);
@@ -862,10 +862,9 @@ describe("POST /requests/:id/reject", () => {
     expect(res.body.editLogRowCount).toBe(0);
 
     expect(prisma.request.updateMany).toHaveBeenCalledWith({
-      where: { id: "req-1", status: "PENDING" },
-      data: {
-        status: "REJECTED",
-        reviewedById: "admin-1",
+      where: { id: "req-1", status: "PENDING" },        data: {
+          status: "REJECTED",
+          reviewedById: "officer-1",
         decidedAt: expect.any(Date),
         rejectionReason: "Item is still serviceable",
       },
@@ -880,7 +879,7 @@ describe("POST /requests/:id/reject", () => {
       relatedRequestId: "req-1",
       message:
         "[REQUEST_REJECTED] Your TRANSFER request for item CNCS-DEMO-0001 " +
-        "(Dell Latitude Laptop) was rejected by System Admin. Reason: Item is still serviceable",
+        "(Dell Latitude Laptop) was rejected by Property Officer. Reason: Item is still serviceable",
     });
     expect(res.body.notification.code).toBe("REQUEST_REJECTED");
     expect(res.body.notification.message).not.toContain("[");
@@ -890,7 +889,7 @@ describe("POST /requests/:id/reject", () => {
   it("requires a reason", async () => {
     const res = await request(app)
       .post("/requests/req-1/reject")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send({});
 
     expect(res.status).toBe(400);
@@ -902,7 +901,7 @@ describe("POST /requests/:id/reject", () => {
   it("caps the reason at 500 characters", async () => {
     const res = await request(app)
       .post("/requests/req-1/reject")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send({ rejectionReason: "x".repeat(501) });
 
     expect(res.status).toBe(400);
@@ -911,14 +910,14 @@ describe("POST /requests/:id/reject", () => {
   });
 
   it("refuses a self-rejection just as it refuses a self-approval", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeAdmin() as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
-      makeRequest({ requestedById: "admin-1" }) as never,
+      makeRequest({ requestedById: "officer-1" }) as never,
     );
 
     const res = await request(app)
       .post("/requests/req-1/reject")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${officerToken}`)
       .send({ rejectionReason: "Changed my mind" });
 
     expect(res.status).toBe(403);
@@ -933,10 +932,10 @@ describe("mount paths", () => {
 
     const prefixed = await request(app)
       .get("/api/v1/requests/pending-count")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
     const bare = await request(app)
       .get("/requests/pending-count")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${officerToken}`);
 
     // The bare alias exists only so Phase 1's tests keep passing; both must work.
     expect(prefixed.status).toBe(200);

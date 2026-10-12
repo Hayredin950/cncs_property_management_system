@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
 import { collapseAuditRows, computeAuditResults } from "../services/auditCompletion.js";
 
@@ -33,7 +33,7 @@ const createScanSchema = z.object({
 auditsRouter.post(
   "/",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("AUDIT_RUN"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.user) {
@@ -86,7 +86,7 @@ auditsRouter.post(
 auditsRouter.post(
   "/:id/scan",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("AUDIT_RUN"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.user) {
@@ -164,7 +164,7 @@ auditsRouter.post(
 auditsRouter.post(
   "/:id/complete",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("AUDIT_RUN"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -326,7 +326,7 @@ type ListQuery = z.infer<typeof listQuerySchema>;
 auditsRouter.get(
   "/",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("AUDIT_VIEW"),
   validateQuery(listQuerySchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -339,7 +339,9 @@ auditsRouter.get(
       const query = validatedQuery<ListQuery>(req);
 
       const where = {
-        ...(user.role === "ADMIN" ? {} : { runById: user.id }),
+        // Anyone with AUDIT_VIEW (an auditor or the property officer acting on
+        // findings) sees the college's audit history; `mine=true` narrows to
+        // their own sessions and nothing widens it back.
         ...(query.mine === "true" ? { runById: user.id } : {}),
       };
 
@@ -412,7 +414,7 @@ auditsRouter.get(
 auditsRouter.get(
   "/:id",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("AUDIT_VIEW"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

@@ -97,9 +97,11 @@ class _RequestDetailPageState extends ConsumerState<RequestDetailPage> {
   Widget _body(RequestDetail detail) {
     final request = detail.summary;
     final currentUserId = ref.watch(currentUserProvider)?.id;
-    final isAdmin = ref.watch(isAdminProvider);
+    // The right to decide, plus two conditions that are not about roles: the
+    // request must still be pending, and nobody reviews their own filing.
+    final decidesRequests = ref.watch(canDecideRequestsProvider);
 
-    final canDecide = isAdmin &&
+    final canDecide = decidesRequests &&
         request.status == RequestStatus.pending &&
         request.requestedById != currentUserId;
 
@@ -295,14 +297,14 @@ class _RequestDetailPageState extends ConsumerState<RequestDetailPage> {
         ] else if (request.status == RequestStatus.pending && request.requestedById == currentUserId)
           const InfoNote(
             icon: Icons.person_outline,
-            message: 'You filed this request, so you cannot decide it. Another administrator '
-                'has to review it.',
+            message: 'You filed this request, so you cannot decide it. Someone else with '
+                'review rights has to decide it.',
             tone: InfoTone.warning,
           )
-        else if (request.status == RequestStatus.pending && !isAdmin)
+        else if (request.status == RequestStatus.pending && !decidesRequests)
           const InfoNote(
             icon: Icons.schedule_outlined,
-            message: 'An administrator reviews this. You will be notified when it is decided.',
+            message: 'This is under review. You will be notified when it is decided.',
             tone: InfoTone.neutral,
           ),
       ],

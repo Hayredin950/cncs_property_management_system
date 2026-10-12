@@ -9,6 +9,7 @@ import {
   type UpdateUserPayload,
 } from "../api/users";
 import { toast } from "../lib/toast";
+import { ROLE_LABELS, type Role } from "../types/enums";
 
 /** `POST /auth/register` — the created account now also shows in the accounts list (`GET /users`). */
 export function useRegisterUser() {
@@ -75,16 +76,22 @@ export function useUpdateUser() {
   });
 }
 
-/** `POST /users/:id/promote` — the one-directional role change. */
+/**
+ * `POST /users/:id/promote` — set an account's role.
+ *
+ * The success toast names the new role rather than saying "promoted": the same
+ * endpoint now grants any of the five roles, and "Sara Staff is now a System
+ * Admin" is the sentence an administrator can check at a glance.
+ */
 export function usePromoteUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => promoteUser(id),
+    mutationFn: ({ id, role }: { id: string; role: Role }) => promoteUser(id, role),
     onSuccess: (user) => {
-      toast.success(`${user.fullName} is now an administrator.`);
+      toast.success(`${user.fullName} is now ${ROLE_LABELS[user.role]}.`);
       void queryClient.invalidateQueries({ queryKey: ["users"] });
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't promote the account"),
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't change the role"),
   });
 }
 

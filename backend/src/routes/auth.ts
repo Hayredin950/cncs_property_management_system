@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
-  requireRole,
+  requireCapability,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
 import { createRateLimiter, noRateLimit } from "../middleware/rateLimit.js";
@@ -34,9 +34,10 @@ const registerSchema = z
     id: z.string().trim().min(1, "ID is required").optional(),
     emailOrId: z.string().trim().min(1, "Email or ID is required").optional(),
     password: z.string().min(1, "Password is required"),
-    role: z.enum(["ADMIN", "STAFF"], {
-      message: "Role must be either ADMIN or STAFF",
-    }),
+    role: z.enum(
+      ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"],
+      { message: "Role must be one of the five system roles" },
+    ),
   })
   .refine((data) => Boolean(data.name || data.fullName), {
     message: "Name is required",
@@ -86,7 +87,7 @@ const loginSchema = z
 router.post(
   ["/register", "/auth/register"],
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("ACCOUNT_MANAGE"),
   async (req: AuthenticatedRequest, res: Response) => {
     const parseResult = registerSchema.safeParse(req.body);
     if (!parseResult.success) {
@@ -251,6 +252,7 @@ router.post(
         {
           id: user.id,
           role: user.role,
+          departmentId: user.departmentId,
           ver: user.tokenVersion,
         },
         secret,
@@ -308,6 +310,7 @@ router.get(
           fullName: true,
           email: true,
           role: true,
+          departmentId: true,
           createdAt: true,
           mustChangePassword: true,
         },
@@ -416,6 +419,7 @@ router.post(
           fullName: true,
           email: true,
           role: true,
+          departmentId: true,
           createdAt: true,
           mustChangePassword: true,
           tokenVersion: true,
@@ -427,7 +431,12 @@ router.post(
         throw new Error("JWT_SECRET is not set in environment variables");
       }
       const token = jwt.sign(
-        { id: updated.id, role: updated.role, ver: updated.tokenVersion },
+        {
+          id: updated.id,
+          role: updated.role,
+          departmentId: updated.departmentId,
+          ver: updated.tokenVersion,
+        },
         secret,
         { expiresIn: "1d" },
       );

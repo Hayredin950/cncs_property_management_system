@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
-import { ADMIN_USER } from "./fixtures";
+import { OFFICER_USER } from "./fixtures";
 
 /**
  * The hamburger used to open a different menu depending on the page.
@@ -27,7 +27,7 @@ async function openDrawer() {
 
 /** The drawer's identity card — the only place the account's email is rendered. */
 function identityCard(): HTMLElement {
-  return screen.getByText(ADMIN_USER.email).closest("div") as HTMLElement;
+  return screen.getByText(OFFICER_USER.email).closest("div") as HTMLElement;
 }
 
 describe("header account block", () => {
@@ -37,8 +37,8 @@ describe("header account block", () => {
 
     await openDrawer();
 
-    expect(within(identityCard()).getByText(ADMIN_USER.fullName)).toBeInTheDocument();
-    expect(within(identityCard()).getByText("Admin")).toBeInTheDocument();
+    expect(within(identityCard()).getByText(OFFICER_USER.fullName)).toBeInTheDocument();
+    expect(within(identityCard()).getByText("Property Officer")).toBeInTheDocument();
 
     // One control in the bar (`Dashboard`) plus the drawer's own full-width one.
     expect(screen.getAllByRole("button", { name: "Dashboard" })).toHaveLength(2);

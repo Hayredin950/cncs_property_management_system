@@ -181,13 +181,13 @@ class DashboardPage extends ConsumerWidget {
   }
 
   Widget _preview(BuildContext context, WidgetRef ref, List<RequestSummary> requests) {
-    final isAdmin = ref.watch(isAdminProvider);
+    final decidesRequests = ref.watch(canDecideRequestsProvider);
 
     if (requests.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SectionHeader(title: isAdmin ? 'Needs your review' : 'Your recent requests'),
+          SectionHeader(title: decidesRequests ? 'Needs your review' : 'Your recent requests'),
           const AppCard(
             child: Text(
               'Nothing waiting on you. New requests will show up here.',
@@ -202,7 +202,7 @@ class DashboardPage extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionHeader(
-          title: isAdmin ? 'Needs your review' : 'Your recent requests',
+          title: decidesRequests ? 'Needs your review' : 'Your recent requests',
           actionLabel: 'View all',
           onAction: () => context.push('/requests'),
         ),

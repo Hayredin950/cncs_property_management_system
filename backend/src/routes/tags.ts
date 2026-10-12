@@ -1,6 +1,6 @@
 import { Router, type Response, type Router as ExpressRouter } from "express";
 import { prisma } from "../lib/prisma.js";
-import { authenticate, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import { generateTagQR, regenerateTagQR, readTagFile } from "../utils/qrGenerator.js";
 
 
@@ -27,7 +27,7 @@ async function getItemTagIdOr404(id: string, res: Response): Promise<string | nu
 tagsRouter.get(
   "/:id/tag",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("TAG_MANAGE"),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const itemId = req.params.id;
@@ -65,7 +65,7 @@ tagsRouter.get(
 tagsRouter.post(
   "/:id/tag/regenerate",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("TAG_MANAGE"),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const itemId = req.params.id;

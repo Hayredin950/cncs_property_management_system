@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { COMPLETED_AUDIT_ID } from "./msw/handlers";
 import { server } from "./msw/server";
 import {
-  ADMIN_USER,
+  AUDITOR_USER,
+  OFFICER_USER,
   AUDIT_COMPLETION_BODY,
   AUDIT_READBACK,
   AUDIT_SCAN_ROW,
@@ -90,7 +91,10 @@ function statValue(label: string): string | null | undefined {
 async function startAuditAndScan() {
   const scanBodies: unknown[] = [];
 
+  // Running a session is the Auditor's alone (spec 8.1) — the officer reads the
+  // history and no officer can start one.
   server.use(
+    http.get(`${API}/auth/me`, () => HttpResponse.json({ user: AUDITOR_USER })),
     http.post(`${API}/audits`, () => HttpResponse.json(AUDIT_SESSION, { status: 201 })),
     http.post(`${API}/audits/audit-1/scan`, async ({ request }) => {
       scanBodies.push(await request.json());
@@ -169,6 +173,7 @@ describe("audit walkthrough (F9)", () => {
       case is covered in `auditHistory.test.tsx`.
     */
     server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: AUDITOR_USER })),
       http.get(`${API}/audits/:id`, () => HttpResponse.json(AUDIT_READBACK(COMPLETED_AUDIT_ID))),
     );
 
@@ -186,6 +191,7 @@ describe("audit walkthrough (F9)", () => {
   });
 
   it("reports a tag that matches no item as a failed scan, never a silent success", async () => {
+    server.use(http.get(`${API}/auth/me`, () => HttpResponse.json({ user: AUDITOR_USER })));
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/audit/audit-1/scan"] });
     const user = userEvent.setup();
@@ -416,7 +422,7 @@ describe("full walkthrough", () => {
     await user.type(screen.getByLabelText("Building"), "Building 1");
     await user.type(screen.getByLabelText("Floor"), "Floor 2");
     await user.type(screen.getByLabelText("Room"), "Room 204");
-    await user.selectOptions(screen.getByLabelText("Owner (custodian)"), ADMIN_USER.id);
+    await user.selectOptions(screen.getByLabelText("Owner (custodian)"), OFFICER_USER.id);
     await user.type(screen.getByLabelText("Purchase cost (ETB)"), "45000");
     await user.click(screen.getByRole("button", { name: "Register item" }));
 

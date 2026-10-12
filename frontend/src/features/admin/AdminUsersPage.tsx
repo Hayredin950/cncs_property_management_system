@@ -14,6 +14,8 @@ import { Input } from "../../components/Input";
 import { Modal } from "../../components/Modal";
 import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
+import { RoleBadge } from "../../components/StatusBadges";
+import { ROLE_LABELS, ROLES, type Role } from "../../types/enums";
 import {
   useDeleteUser,
   usePromoteUser,
@@ -30,10 +32,13 @@ const createSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
   email: z.string().trim().email("Enter a valid email"),
   password: z.string().min(8, "At least 8 characters"),
-  role: z.enum(["ADMIN", "STAFF"]),
+  role: z.enum(ROLES),
 });
 
 type CreateFormValues = z.infer<typeof createSchema>;
+
+/** The five spec roles (2.1), in the order `types/enums.ts` declares them. */
+const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role] }));
 
 /**
  * `/admin/users` — **Admin only** (RequireAuth gates the route; every endpoint it
@@ -44,12 +49,17 @@ type CreateFormValues = z.infer<typeof createSchema>;
  * administrator actually needs: every account, what it owns, and the operations
  * on it.
  *
- * ### The role changes are deliberately one-directional
+ * ### A role change is its own action, behind a confirmation that names it
  *
- * A STAFF account can be **promoted** to ADMIN. There is no demote and no role
- * dropdown in the edit form, because a demote silently strips someone's access to
- * every screen they were using — the kind of change that should never be one
- * mis-click away.
+ * The five roles (spec 2.1) differ in what they may do, so a role change is a
+ * permission change, not a profile edit: it is never part of the name/email form
+ * and it never happens on a bare click. The dialog states which role the account
+ * is becoming, and the server ends every session that account holds, so a
+ * permission the change removed cannot outlive it (gap-analysis E10).
+ *
+ * An administrator cannot change **their own** role from here, for the same
+ * reason they cannot delete themselves: a single mis-click would lock them out of
+ * this page with no way back in.
  *
  * ### Delete is fenced by the record
  *
@@ -74,7 +84,9 @@ export function AdminUsersPage() {
   const [passwordFor, setPasswordFor] = useState<UserSummary | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [promoting, setPromoting] = useState<UserSummary | null>(null);
+  const [changingRole, setChangingRole] = useState<UserSummary | null>(null);
+  const [nextRole, setNextRole] = useState<Role>("STAFF");
+  const [confirmingRole, setConfirmingRole] = useState<UserSummary | null>(null);
   const [deleting, setDeleting] = useState<UserSummary | null>(null);
 
   const {
@@ -95,6 +107,11 @@ export function AdminUsersPage() {
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : "Couldn't reach the server.");
     }
+  }
+
+  function openRoleChange(account: UserSummary) {
+    setChangingRole(account);
+    setNextRole(account.role);
   }
 
   function openEdit(account: UserSummary) {
@@ -171,10 +188,8 @@ export function AdminUsersPage() {
           />
           <Select
             label="Role"
-            options={[
-              { value: "STAFF", label: "Staff" },
-              { value: "ADMIN", label: "Admin" },
-            ]}
+            options={ROLE_OPTIONS}
+            hint="It decides what they can do, not just what they see — the matrix is in spec 2.2."
             error={errors.role?.message}
             {...register("role")}
             required
@@ -221,7 +236,6 @@ export function AdminUsersPage() {
           <ul className="flex flex-col gap-2">
             {accounts.map((account) => {
               const isSelf = account.id === currentUser?.id;
-              const isAdmin = account.role === "ADMIN";
               const ownsItems = account.itemCount > 0;
               return (
                 <li key={account.id}>
@@ -229,9 +243,7 @@ export function AdminUsersPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold text-slate-900">{account.fullName}</span>
-                        <Badge tone={isAdmin ? "violet" : "neutral"} icon={<ShieldCheck className="h-3.5 w-3.5" />}>
-                          {isAdmin ? "Admin" : "Staff"}
-                        </Badge>
+                        <RoleBadge role={account.role} />
                         {isSelf && <span className="text-xs text-slate-500">(you)</span>}
                       </div>
                       <p className="mt-0.5 truncate text-sm text-slate-600">{account.email}</p>
@@ -262,20 +274,18 @@ export function AdminUsersPage() {
                           setPasswordError(null);
                         }}
                       />
-                      {!isAdmin && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          leftIcon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
-                          onClick={() => setPromoting(account)}
-                        >
-                          Promote
-                        </Button>
-                      )}
-                      {/*
-                        No demote control: the API has no demote, so an
-                        administrator is never stripped of access by a mis-click.
-                      */}
+                      <IconButton
+                        size="sm"
+                        variant="outline"
+                        icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
+                        label={
+                          isSelf
+                            ? "You cannot change your own role"
+                            : `Change role for ${account.fullName}`
+                        }
+                        disabled={isSelf}
+                        onClick={() => openRoleChange(account)}
+                      />
                       <IconButton
                         size="sm"
                         variant="outline"
@@ -371,22 +381,74 @@ export function AdminUsersPage() {
         </form>
       </Modal>
 
+      <Modal
+        open={changingRole !== null}
+        onClose={() => setChangingRole(null)}
+        title={changingRole ? `Change role for ${changingRole.fullName}` : "Change role"}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            // The confirm step below is what actually sends the change; this
+            // modal only picks the role, so that the confirmation can name it.
+            if (!changingRole || nextRole === changingRole.role) return;
+            setConfirmingRole(changingRole);
+            setChangingRole(null);
+          }}
+          className="flex flex-col gap-4"
+        >
+          <Select
+            label="New role"
+            options={ROLE_OPTIONS}
+            value={nextRole}
+            onChange={(event) => setNextRole(event.target.value as Role)}
+            hint={changingRole ? `Currently ${ROLE_LABELS[changingRole.role]}.` : undefined}
+            required
+          />
+          <p className="text-xs text-slate-500">
+            A role decides what an account may do (spec 2.2). Changing it ends every session that account is
+            signed into, so the new role is the only one it can act under.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setChangingRole(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={!changingRole || nextRole === changingRole.role}>
+              Continue
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       <ConfirmDialog
-        open={promoting !== null}
-        onClose={() => setPromoting(null)}
+        open={confirmingRole !== null}
+        onClose={() => setConfirmingRole(null)}
         onConfirm={() => {
-          if (promoting) promoteMutation.mutate(promoting.id, { onSuccess: () => setPromoting(null) });
+          if (confirmingRole) {
+            promoteMutation.mutate(
+              { id: confirmingRole.id, role: nextRole },
+              { onSuccess: () => setConfirmingRole(null) },
+            );
+          }
         }}
-        title={promoting ? `Promote ${promoting.fullName}?` : "Promote account"}
+        title={confirmingRole ? `Make ${confirmingRole.fullName} a ${ROLE_LABELS[nextRole]}?` : "Change role"}
         loading={promoteMutation.isPending}
-        confirmLabel="Promote to admin"
+        confirmLabel={`Set role to ${ROLE_LABELS[nextRole]}`}
         body={
           <>
-            <strong>{promoting?.fullName}</strong> will get full administrator access — every item, every request,
-            every report, and this accounts page. An admin can promote others and cannot be de-promoted here.
+            <strong>{confirmingRole?.fullName}</strong> becomes <strong>{ROLE_LABELS[nextRole]}</strong>.{" "}
+            {nextRole === "SYSTEM_ADMIN" && (
+              <>
+                That is full administrator access — every account, the approval queue, and this page.
+              </>
+            )}
             <br />
             <br />
-            Only promote someone who should have that access.
+            The change takes effect immediately: every session this account is signed into ends, so nothing
+            it could do a moment ago is left running under the old role.
+            <br />
+            <br />
+            Only set a role this person should actually have.
           </>
         }
       />

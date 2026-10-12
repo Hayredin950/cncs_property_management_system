@@ -1,9 +1,11 @@
 import { apiClient } from "../lib/apiClient";
+import type { Role } from "../types/enums";
 import type { UserSummary } from "../types/user";
 
 /**
- * `GET /users` — **Admin only.** Every account, with the number of items it
- * owns. The server enforces the role, so a staff-side render would be a UI bug,
+ * `GET /users` — requires `USER_READ` (spec 2.1.1): the System Admin and the
+ * Property Officer hold it. Every account, with the number of items it owns. The
+ * server enforces the capability, so a render by anyone else would be a UI bug,
  * not a way in.
  */
 export function fetchUsers(signal?: AbortSignal): Promise<UserSummary[]> {
@@ -21,13 +23,15 @@ export function updateUser(id: string, payload: UpdateUserPayload): Promise<User
 }
 
 /**
- * `POST /users/:id/promote` — STAFF → ADMIN.
+ * `POST /users/:id/promote` — set an account's role (any of the five, spec 2.1).
  *
- * There is deliberately no demote counterpart: a promote grants access, a
- * demote silently strips it, and the API only offers the safe direction.
+ * One operation rather than promote/demote pairs, and the endpoint is named
+ * `promote` for the direction that was originally the only one. The server bumps
+ * the account's `tokenVersion`, so the role change takes effect on the next
+ * request instead of whenever the old token happens to expire (gap-analysis E10).
  */
-export function promoteUser(id: string): Promise<UserSummary> {
-  return apiClient.post<UserSummary>(`/users/${encodeURIComponent(id)}/promote`, {});
+export function promoteUser(id: string, role: Role): Promise<UserSummary> {
+  return apiClient.post<UserSummary>(`/users/${encodeURIComponent(id)}/promote`, { role });
 }
 
 /** `POST /users/:id/password` — set a new password for the account. */

@@ -6,6 +6,7 @@ import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
 import {
+  AUDITOR_USER,
   AUDITS_LIST,
   AUDIT_READBACK,
   AUDIT_SESSION,
@@ -70,7 +71,7 @@ describe("/audits — the audit history", () => {
     }
   });
 
-  it("lets an admin narrow the list to their own audits", async () => {
+  it("lets a viewer narrow the list to the audits they ran", async () => {
     const urls: string[] = [];
     server.use(
       http.get(`${API}/audits`, ({ request }) => {
@@ -93,7 +94,9 @@ describe("/audits — the audit history", () => {
 
 describe("audit walkthrough — stored scans", () => {
   it("lists scans the server already has when the tab is new", async () => {
+    // The scan page is the Auditor's (spec 8.1).
     server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: AUDITOR_USER })),
       http.get(`${API}/audits/:id`, () =>
         HttpResponse.json(AUDIT_READBACK(AUDIT_SESSION.id, { rows: AUDIT_STORED_ROWS })),
       ),
@@ -113,6 +116,7 @@ describe("audit walkthrough — stored scans", () => {
 
   it("won't offer to complete a session the server already completed", async () => {
     server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: AUDITOR_USER })),
       http.get(`${API}/audits/:id`, () =>
         HttpResponse.json(
           AUDIT_READBACK(AUDIT_SESSION.id, {

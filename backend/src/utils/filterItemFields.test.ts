@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isPrivilegedViewer, sanitizeItem } from './filterItemFields.js';
+import { isAuthenticatedViewer, seesFullItemDetail, sanitizeItem } from './filterItemFields.js';
 
 describe('Server-Side Field-Filtering Helper (sanitizeItem)', () => {
   const mockItem = {
@@ -50,21 +50,41 @@ describe('Server-Side Field-Filtering Helper (sanitizeItem)', () => {
     expect(result.owner).toBeUndefined();
   });
 
-  it('keeps all fields when requester is an ADMIN', () => {
-    const adminUser = { id: 'admin-1', role: 'ADMIN' as const };
-    const result = sanitizeItem(mockItem, adminUser);
+  it('keeps all fields when requester is a PROPERTY_OFFICER', () => {
+    const officer = { id: 'officer-1', role: 'PROPERTY_OFFICER' as const };
+    const result = sanitizeItem(mockItem, officer);
 
     expect(result.purchaseCost).toBe(4500.0);
     expect(result.serialNumber).toBe('SN-998822');
     expect(result.ownerId).toBe('staff-user-1');
   });
 
-  it('keeps all fields when requester is STAFF', () => {
-    const staffUser = { id: 'staff-2', role: 'STAFF' as const };
-    const result = sanitizeItem(mockItem, staffUser);
+  it('keeps all fields when requester is an AUDITOR (read-only, but full)', () => {
+    const auditor = { id: 'auditor-1', role: 'AUDITOR' as const };
+    const result = sanitizeItem(mockItem, auditor);
 
     expect(result.purchaseCost).toBe(4500.0);
-    expect(result.brand).toBe('Olympus');
+    expect(result.serialNumber).toBe('SN-998822');
+  });
+
+  it('strips everything for a SYSTEM_ADMIN — it is an account role, not an asset role', () => {
+    const sys = { id: 'sys-1', role: 'SYSTEM_ADMIN' as const };
+    const result = sanitizeItem(mockItem, sys);
+
+    expect(result.tagId).toBe('CNCS-LAB-001');
+    expect(result.purchaseCost).toBeUndefined();
+    expect(result.serialNumber).toBeUndefined();
+    expect(result.owner).toBeUndefined();
+  });
+
+  it('gives a STAFF member only their own items — someone else\u2019s is stripped', () => {
+    const otherStaff = { id: 'staff-2', role: 'STAFF' as const };
+    const result = sanitizeItem(mockItem, otherStaff);
+
+    expect(result.tagId).toBe('CNCS-LAB-001');
+    expect(result.purchaseCost).toBeUndefined();
+    expect(result.brand).toBeUndefined();
+    expect(result.serialNumber).toBeUndefined();
   });
 
   it('keeps all fields when requester is the assigned owner (custodian)', () => {
@@ -75,6 +95,15 @@ describe('Server-Side Field-Filtering Helper (sanitizeItem)', () => {
     expect(result.purchaseCost).toBe(4500.0);
     expect(result.serialNumber).toBe('SN-998822');
     expect(result.notes).toBe('Stored in cabinet A');
+  });
+
+  it('gives a DEPARTMENT_HEAD full detail for their own department only', () => {
+    const ownHead = { id: 'head-1', role: 'DEPARTMENT_HEAD' as const, departmentId: 'dept-bio' };
+    const inDepartment = sanitizeItem({ ...mockItem, departmentId: 'dept-bio' }, ownHead);
+    expect(inDepartment.purchaseCost).toBe(4500.0);
+
+    const otherDepartment = sanitizeItem({ ...mockItem, departmentId: 'dept-cs' }, ownHead);
+    expect(otherDepartment.purchaseCost).toBeUndefined();
   });
 
   it('strips the bundle and history relations the SRS 3.4 table implies', () => {
@@ -118,19 +147,46 @@ describe('Server-Side Field-Filtering Helper (sanitizeItem)', () => {
   });
 });
 
-describe('isPrivilegedViewer', () => {
-  // The same predicate gates the disposed-tag 410 in GET /items/:tagId: F7.2
-  // keeps a disposed item queryable for staff, F7.3 hides it from the public.
-  it('is true for the two roles SRS 3.4 grants every field to', () => {
-    expect(isPrivilegedViewer({ id: 'admin-1', role: 'ADMIN' })).toBe(true);
-    expect(isPrivilegedViewer({ id: 'staff-1', role: 'STAFF' })).toBe(true);
+describe('seesFullItemDetail', () => {
+  it('is true for the college-wide roles', () => {
+    expect(seesFullItemDetail({ id: 'o', role: 'PROPERTY_OFFICER' })).toBe(true);
+    expect(seesFullItemDetail({ id: 'a', role: 'AUDITOR' })).toBe(true);
   });
 
   it('is false for a guest, with no exception for a malformed viewer', () => {
-    expect(isPrivilegedViewer(null)).toBe(false);
-    expect(isPrivilegedViewer(undefined)).toBe(false);
-    expect(isPrivilegedViewer()).toBe(false);
+    expect(seesFullItemDetail(null)).toBe(false);
+    expect(seesFullItemDetail(undefined)).toBe(false);
     // A role that is not in the enum is not a free pass.
-    expect(isPrivilegedViewer({ id: 'x', role: 'VIEWER' } as never)).toBe(false);
+    expect(seesFullItemDetail({ id: 'x', role: 'VIEWER' } as never)).toBe(false);
+  });
+
+  it('is false for a SYSTEM_ADMIN and for a STAFF member who is not the custodian', () => {
+    expect(seesFullItemDetail({ id: 's', role: 'SYSTEM_ADMIN' })).toBe(false);
+    expect(seesFullItemDetail({ id: 'staff-2', role: 'STAFF' }, { ownerId: 'staff-1' })).toBe(false);
+  });
+
+  it('is true for a STAFF member who holds the item, via ownerId or the holder fields', () => {
+    expect(seesFullItemDetail({ id: 'staff-1', role: 'STAFF' }, { ownerId: 'staff-1' })).toBe(true);
+    expect(
+      seesFullItemDetail(
+        { id: 'staff-1', role: 'STAFF' },
+        { holderType: 'STAFF', holderId: 'staff-1' },
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('isAuthenticatedViewer', () => {
+  // Gates the disposed-tag 410 in GET /items/:tagId: F7.2 keeps a disposed item
+  // queryable for any signed-in user, F7.3 hides it from the public.
+  it('is true whenever a user is present, whatever the role', () => {
+    expect(isAuthenticatedViewer({ id: 's', role: 'SYSTEM_ADMIN' })).toBe(true);
+    expect(isAuthenticatedViewer({ id: 'x', role: 'STAFF' })).toBe(true);
+  });
+
+  it('is false for a guest', () => {
+    expect(isAuthenticatedViewer(null)).toBe(false);
+    expect(isAuthenticatedViewer(undefined)).toBe(false);
+    expect(isAuthenticatedViewer()).toBe(false);
   });
 });

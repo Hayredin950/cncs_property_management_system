@@ -1,21 +1,43 @@
 /**
- * SDS 3.2 field filtering for item responses.
+ * Field visibility for item responses.
  *
- * The SDS names the mechanism explicitly: "check if the requester is logged in
- * AND their `id` matches the item's `ownerId` (or they're Staff/Admin). If not,
- * **strip** ... from the response object before sending it." So this is a
- * deny-list plus an owner branch, by prescription — not by shortcut.
+ * This replaces the old "SDS 3.2 deny-list for the public plus an owner branch"
+ * with the role model from spec 2.2 and Yanet's scan rule (11 Oct):
  *
- * A deny-list fails open: a column added to `Item` later is public until
- * someone remembers to list it here. That is the one weakness of the shape the
- * SDS asked for, and the mitigation is to keep this set wider than SRS 3.4's
- * table and to re-read it whenever the schema grows.
+ *   - PROPERTY_OFFICER and AUDITOR see every field of every item.
+ *   - A DEPARTMENT_HEAD sees full detail for items their department holds.
+ *   - STAFF see only the items they hold, and the public sees nothing restricted.
+ *   - SYSTEM_ADMIN is an account role and sees no asset data at all.
+ *
+ * The owner branch survives, but it is now *one* way to be a custodian: an item
+ * is held by a staff member (`ownerId` / `holderType = STAFF`) or by a department
+ * (`departmentId`). The helper checks both, so the same rule holds whether the
+ * item was written before or after the holder fields were introduced.
+ *
+ * A deny-list still fails open for a *column added later*, so the mitigation is
+ * the same as before: keep the set wider than the table and re-read it whenever
+ * `Item` grows.
  */
 
-/** Structurally identical to `AuthenticatedRequest["user"]` — kept local so utils don't import middleware. */
+/** Structurally a subset of `AuthenticatedRequest["user"]` — kept local so utils don't import middleware. */
 export interface RequestingUser {
   id: string;
-  role: "ADMIN" | "STAFF";
+  role:
+    | "SYSTEM_ADMIN"
+    | "PROPERTY_OFFICER"
+    | "DEPARTMENT_HEAD"
+    | "STAFF"
+    | "AUDITOR";
+  /** Filled when the token carried a `ver` claim and the row was read; see `authenticate`. */
+  departmentId?: string | null;
+}
+
+/** The item fields the visibility helpers read. Everything else is opaque here. */
+interface ItemCustody {
+  ownerId?: string | null;
+  holderType?: string | null;
+  holderId?: string | null;
+  departmentId?: string | null;
 }
 
 const RESTRICTED_FIELDS = new Set([
@@ -29,44 +51,74 @@ const RESTRICTED_FIELDS = new Set([
   "accessories",
   "ownerId",
   "owner",
-
-  // Not in that table, but restricted for reasons the table implies:
-  // `parentItemId` is the inverse edge of `accessories` — the same relation,
-  // so leaving it in would publish a sibling item's id while hiding the list.
+  // `parentItemId` is the inverse edge of `accessories` — the same relation, so
+  // leaving it in would publish a sibling item's id while hiding the list.
   "parentItemId",
-  // Edit history is ❌ for the public *and* for the owner (SRS 3.4), so it is
-  // stripped even though no current call site includes it.
+  // Edit history is ❌ for the public *and* for the owner (SRS 3.4).
   "editLogs",
   "requests",
-  // F7.3 gives the public one sentence about a disposed item and "nothing
-  // else". `GET /items/:tagId` returns 410 before reaching this function and
-  // `GET /items` filters to ACTIVE, so these two cannot leak today; they are
-  // listed so a third call site can't reintroduce the leak.
+  // F7.3 gives the public one sentence about a disposed item and "nothing else".
   "disposalReason",
   "disposedAt",
 ]);
 
 /**
- * True for a viewer SRS 3.4 grants every field to. Exported because the
- * disposed-item guard in `GET /items/:tagId` needs the same predicate: F7.2
- * keeps a disposed item "queryable in reports/history", so Staff/Admin get the
- * record while the public gets F7.3's sentence.
- *
- * `Role` has exactly two members, so today this is "is authenticated at all".
- * It is written as a role check anyway — if a VIEWER or AUDITOR role ever
- * lands, this is the one line that has to be right.
+ * Roles that see full detail on any item regardless of who holds it
+ * (spec 2.2: property officers see everything; auditors read everything).
+ * SYSTEM_ADMIN is deliberately absent — it is an account role with no asset
+ * access, so an admin scanning a tag gets the same stripped view as the public.
  */
-export function isPrivilegedViewer(user?: RequestingUser | null): boolean {
-  return user?.role === "ADMIN" || user?.role === "STAFF";
+const FULL_DETAIL_ROLES = new Set(["PROPERTY_OFFICER", "AUDITOR"]);
+
+function isCustodian(user: RequestingUser, item: ItemCustody): boolean {
+  // Staff-held, either through the legacy `ownerId` or the holder fields.
+  if (typeof item.ownerId === "string" && item.ownerId === user.id) return true;
+  if (item.holderType === "STAFF" && item.holderId === user.id) return true;
+  return false;
+}
+
+/**
+ * True when the viewer may see every field of this item.
+ *
+ * Written per-item rather than per-role alone because a DEPARTMENT_HEAD's access
+ * depends on the item, not just on who they are — that is the scoping rule from
+ * spec 2.3.3 ("an item's department is derived from its holder").
+ */
+export function seesFullItemDetail(
+  user: RequestingUser | null | undefined,
+  item: ItemCustody = {},
+): boolean {
+  if (!user) return false;
+  if (FULL_DETAIL_ROLES.has(user.role)) return true;
+  if (isCustodian(user, item)) return true;
+
+  // A department head sees their department's holdings. The item's department
+  // comes from the holder; both the stored `departmentId` and a
+  // DEPARTMENT-held `holderId` are checked, because the holder fields are new
+  // and the column link is what older rows populate.
+  if (user.role === "DEPARTMENT_HEAD" && user.departmentId) {
+    if (item.departmentId === user.departmentId) return true;
+    if (item.holderType === "DEPARTMENT" && item.holderId === user.departmentId) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Kept for the disposed-item guard: it asks "is this an internal viewer at all?",
+ * which is broader than "may they see every field". A STAFF member scanning a
+ * disposed tag is still an authenticated user who should get the record, not
+ * F7.3's sentence — but the record they get is still field-filtered below.
+ */
+export function isAuthenticatedViewer(user?: RequestingUser | null): boolean {
+  return Boolean(user);
 }
 
 export function sanitizeItem(
   item: Record<string, unknown>,
-  user?: RequestingUser | null
+  user?: RequestingUser | null,
 ): Record<string, unknown> {
-  const isOwner = user && typeof item.ownerId === "string" && user.id === item.ownerId;
-
-  if (isPrivilegedViewer(user) || isOwner) {
+  if (seesFullItemDetail(user, item as ItemCustody)) {
     return item;
   }
 

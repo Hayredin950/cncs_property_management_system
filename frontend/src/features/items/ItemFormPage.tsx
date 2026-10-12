@@ -17,6 +17,7 @@ import { useCategories } from "../../hooks/useCategories";
 import { useCreateItem, useUpdateItem } from "../../hooks/useItemMutations";
 import { useItemById } from "../../hooks/useItems";
 import { useUsers } from "../../hooks/useUsers";
+import { canReadUsers } from "../../lib/permissions";
 import { ApiError, NetworkError } from "../../types/api";
 import type { UserSummary } from "../../types/user";
 import { CONDITIONS, CONDITION_LABELS } from "../../types/enums";
@@ -130,11 +131,12 @@ function toPayload(values: ItemFormValues, ownerId: string) {
  * The custodian control (F2.1) — the one place an item's owner is decided.
  *
  * It used to offer exactly one option, the signed-in account, because a Staff
- * member has no way to enumerate accounts (G2). An **Admin** can (`GET /users` is
- * admin-only), and an admin is the person who actually registers an asset on
- * behalf of whoever holds it — so the list is every account for them, and just
- * themselves for Staff, with the hint saying which of the two it is instead of
- * leaving a one-option dropdown looking broken.
+ * member has no way to enumerate accounts (G2). The roles with `USER_READ` can —
+ * the System Admin and the Property Officer (spec 2.1.1) — and the Property
+ * Officer is the person who actually registers an asset on behalf of whoever
+ * holds it, so the list is every account for them, and just themselves for
+ * everyone else, with the hint saying which of the two it is instead of leaving a
+ * one-option dropdown looking broken.
  *
  * This matters more than it looks: `PUT /items/:id` refuses `ownerId` (an owner
  * change is an approved TRANSFER), so registration is the *only* moment the
@@ -151,9 +153,12 @@ function OwnerSelect({
   error?: string | undefined;
 }) {
   const { user } = useAuth();
-  // `GET /users` is Admin-only (gap G2), so a Staff registrar cannot enumerate
-  // accounts — the request would only come back 403, which is why it is not sent.
-  const canListAccounts = user?.role === "ADMIN";
+  // `GET /users` needs `USER_READ` (gap G2), so a registrar without it cannot
+  // enumerate accounts — the request would only come back 403, which is why it is
+  // not sent at all. Today only the Property Officer reaches create mode and it
+  // holds `USER_READ`, so this is a guard against the matrix widening rather than
+  // a branch any role currently takes on this screen.
+  const canListAccounts = canReadUsers(user?.role);
   const usersQuery = useUsers(canListAccounts);
 
   /**

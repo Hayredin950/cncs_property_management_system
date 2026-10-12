@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { authenticate, requireRole } from "../middleware/auth.js";
+import { authenticate, requireCapability } from "../middleware/auth.js";
 
 export const categoriesRouter: Router = Router();
 
@@ -54,7 +54,7 @@ categoriesRouter.get(
 categoriesRouter.post(
   "/",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("CATEGORY_MANAGE"),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const parsed = createCategorySchema.safeParse(req.body);
@@ -92,7 +92,7 @@ categoriesRouter.post(
 categoriesRouter.put(
   "/:id",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("CATEGORY_MANAGE"),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -155,7 +155,7 @@ categoriesRouter.put(
 categoriesRouter.delete(
   "/:id",
   authenticate,
-  requireRole(["ADMIN"]),
+  requireCapability("CATEGORY_MANAGE"),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

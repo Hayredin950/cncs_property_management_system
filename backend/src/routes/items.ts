@@ -7,7 +7,7 @@ import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
   optionalAuthenticate,
-  requireRole,
+  requireCapability,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
 import {
@@ -22,10 +22,46 @@ import {
   uploadItemPhoto,
 } from "../services/photoStorage.js";
 import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
-import { isPrivilegedViewer, sanitizeItem } from "../utils/filterItemFields.js";
+import { isAuthenticatedViewer, sanitizeItem } from "../utils/filterItemFields.js";
+import { capabilitiesFor } from "../services/permissions.js";
 import { isPhotoSource } from "../utils/photoSource.js";
 
 export const itemsRouter: Router = Router();
+
+/**
+ * The `where` fragment limiting a listing to what the viewer may see.
+ * `undefined` means "no restriction"; an empty `in` list matches nothing, which
+ * is how a role with no asset access is expressed (rather than by omitting a
+ * clause and accidentally matching everything).
+ */
+function itemListScope(
+  user?: AuthenticatedRequest["user"],
+): Prisma.ItemWhereInput | undefined {
+  if (!user) return undefined; // public listing; the public routes go in a later Phase A step
+  switch (user.role) {
+    // The college-wide operational and read-only roles.
+    case "PROPERTY_OFFICER":
+    case "AUDITOR":
+      return undefined;
+    // Account administration only — sees no asset data (spec 2.1.1).
+    case "SYSTEM_ADMIN":
+      return { id: { in: [] } };
+    // Own holdings only, via either the legacy owner link or the holder fields.
+    case "STAFF":
+      return { OR: [{ ownerId: user.id }, { holderType: "STAFF", holderId: user.id }] };
+    // Their department's holdings, plus anything they personally hold.
+    case "DEPARTMENT_HEAD":
+      return user.departmentId
+        ? {
+            OR: [
+              { departmentId: user.departmentId },
+              { holderType: "DEPARTMENT", holderId: user.departmentId },
+              { ownerId: user.id },
+            ],
+          }
+        : { ownerId: user.id };
+  }
+}
 
 const ConditionEnum = z.enum(["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"]);
 
@@ -110,6 +146,24 @@ const BUNDLE_FIELD_ERROR =
  * should learn where the field really lives, not watch it disappear.
  */
 const TRANSFER_ONLY_FIELDS = ["building", "floor", "room", "ownerId"] as const;
+
+/**
+ * Spec 4.7.1's identity and financial fields. A custodian (STAFF or a head) may
+ * change condition and notes and nothing else — compared against the stored row,
+ * so the edit form resubmitting an untouched field is not treated as a change.
+ */
+const IDENTITY_FIELDS = [
+  "name",
+  "categoryId",
+  "brand",
+  "model",
+  "serialNumber",
+  "purchaseCost",
+  "currentValue",
+  "photoUrl",
+  "department",
+  "departmentId",
+] as const;
 
 const TRANSFER_ONLY_ERROR =
   "An item's location and custodian can only change through an approved transfer — file a TRANSFER request instead";
@@ -203,6 +257,21 @@ itemsRouter.get(
 
       if (typeof department === "string") {
         filters.department = { contains: department, mode: "insensitive" };
+      }
+
+      /**
+       * Scan/listing visibility (spec 2.2 and Yanet's 11 Oct scan rule): a STAFF
+       * member's world is the items they hold, a DEPARTMENT_HEAD's is their
+       * department, and property officers and auditors see the college. A
+       * SYSTEM_ADMIN is an account role and sees no asset data at all, so its
+       * scope is empty by construction rather than by forgetting a clause.
+       *
+       * Applied as an `AND` term so it composes with the search `OR` above rather
+       * than replacing it.
+       */
+      const scope = itemListScope(req.user);
+      if (scope) {
+        filters.AND = [scope];
       }
 
       /**
@@ -300,7 +369,7 @@ itemsRouter.get(
        * Staff/Admin every field. An admin scanning a disposed tag needs the
        * record, not an error — the restriction is on the public, not on the row.
        */
-      if (item.status === "DISPOSED" && !isPrivilegedViewer(req.user)) {
+      if (item.status === "DISPOSED" && !isAuthenticatedViewer(req.user)) {
         res.status(410).json({ error: DISPOSED_PUBLIC_MESSAGE });
         return;
       }
@@ -316,7 +385,7 @@ itemsRouter.get(
 itemsRouter.post(
   "/",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("ITEM_CREATE"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (rejectedBundleField(req.body)) {
@@ -358,7 +427,7 @@ itemsRouter.post(
 itemsRouter.post(
   "/:id/photo",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("ITEM_EDIT_IDENTITY"),
   acceptPhotoUpload,
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -439,7 +508,7 @@ itemsRouter.post(
 itemsRouter.put(
   "/:id",
   authenticate,
-  requireRole(["ADMIN", "STAFF"]),
+  requireCapability("ITEM_EDIT_CUSTODY"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -488,6 +557,29 @@ itemsRouter.put(
       }
 
       const updates = cleanDefined(parsed.data);
+
+      /**
+       * Field-level rule from spec 4.7: a custodian edits condition and notes; the
+       * identity and financial fields belong to the Property Officer. Enforced
+       * server-side because the client form is not a control — a staff member who
+       * sends `purchaseCost` should be refused, not quietly ignored.
+       */
+      if (!capabilitiesFor(req.user!.role).includes("ITEM_EDIT_IDENTITY")) {
+        const disallowed = IDENTITY_FIELDS.filter(
+          (field) =>
+            field in updates &&
+            String(updates[field as keyof typeof updates]) !==
+              String(existingItem[field as keyof typeof existingItem]),
+        );
+        if (disallowed.length > 0) {
+          res.status(403).json({
+            error:
+              "A custodian may only edit an item's condition and notes; identity and financial fields belong to the Property Officer",
+            fields: disallowed,
+          });
+          return;
+        }
+      }
 
       /**
        * A move or a reassignment is a TRANSFER, and the approval path is its only

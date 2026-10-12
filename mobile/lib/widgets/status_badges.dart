@@ -148,14 +148,27 @@ class RoleBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppBadge(
+        // One tone and icon per role, all five distinct: the badge is how an
+        // accounts list is scanned, and two roles sharing a look would be the one
+        // mistake this widget exists to prevent. `unknown` is not in the list a
+        // picker offers — it is what an unrecognised wire value degrades to.
+        // The colours and icons are the web table's (`frontend-design-system.md` §3.2),
+        // tone for tone and glyph for glyph, so the same account wears the same badge
+        // in both clients.
         tone: switch (role) {
-          Role.admin => BadgeTone.violet,
+          Role.systemAdmin => BadgeTone.violet,
+          Role.propertyOfficer => BadgeTone.info,
+          Role.departmentHead => BadgeTone.accent,
           Role.staff => BadgeTone.brand,
+          Role.auditor => BadgeTone.warning,
           Role.unknown => BadgeTone.neutral,
         },
         icon: switch (role) {
-          Role.admin => Icons.verified_user_outlined,
+          Role.systemAdmin => Icons.verified_user_outlined,
+          Role.propertyOfficer => Icons.work_outline,
+          Role.departmentHead => Icons.groups_outlined,
           Role.staff => Icons.badge_outlined,
+          Role.auditor => Icons.fact_check_outlined,
           Role.unknown => Icons.person_outline,
         },
         label: role.label,

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
-import { ADMIN_USER } from "./fixtures";
+import { OFFICER_USER } from "./fixtures";
 
 const API = "http://localhost:4000/api/v1";
 
@@ -19,13 +19,13 @@ describe("forced password change", () => {
     let changeBody: unknown = null;
     server.use(
       http.get(`${API}/auth/me`, () =>
-        HttpResponse.json({ user: { ...ADMIN_USER, mustChangePassword: true } }),
+        HttpResponse.json({ user: { ...OFFICER_USER, mustChangePassword: true } }),
       ),
       http.post(`${API}/auth/change-password`, async ({ request }) => {
         changeBody = await request.json();
         return HttpResponse.json({
           token: "new-token",
-          user: { ...ADMIN_USER, mustChangePassword: false },
+          user: { ...OFFICER_USER, mustChangePassword: false },
         });
       }),
     );
@@ -55,11 +55,11 @@ describe("forced password change", () => {
     let changeCalls = 0;
     server.use(
       http.get(`${API}/auth/me`, () =>
-        HttpResponse.json({ user: { ...ADMIN_USER, mustChangePassword: true } }),
+        HttpResponse.json({ user: { ...OFFICER_USER, mustChangePassword: true } }),
       ),
       http.post(`${API}/auth/change-password`, () => {
         changeCalls += 1;
-        return HttpResponse.json({ token: "new-token", user: ADMIN_USER });
+        return HttpResponse.json({ token: "new-token", user: OFFICER_USER });
       }),
     );
 

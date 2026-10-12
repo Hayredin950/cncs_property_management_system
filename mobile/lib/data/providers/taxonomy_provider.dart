@@ -74,11 +74,10 @@ class UserActions {
     return user;
   }
 
-  /// `POST /users/:id/promote` — STAFF → ADMIN. There is deliberately **no demote**:
-  /// the endpoint does not exist, so this screen states that limitation rather than
-  /// shipping a control that implies it.
-  Future<UserSummary> promote(String id) async {
-    final user = await _ref.read(usersApiProvider).promote(id);
+  /// `POST /users/:id/promote` — set the account's role (any of the five, spec
+  /// 2.1). One operation rather than promote/demote pairs.
+  Future<UserSummary> promote(String id, String role) async {
+    final user = await _ref.read(usersApiProvider).promote(id, role);
     _ref.invalidate(usersProvider);
     return user;
   }

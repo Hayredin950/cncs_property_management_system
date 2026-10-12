@@ -26,6 +26,7 @@ import { RootErrorElement } from "./AppErrorBoundary";
 import { PublicLayout } from "./PublicLayout";
 import { RequireAuth } from "./RequireAuth";
 import { RootProviders } from "./RootProviders";
+import type { Role } from "../types/enums";
 import { SmartLayout } from "./SmartLayout";
 
 /**
@@ -56,6 +57,18 @@ import { SmartLayout } from "./SmartLayout";
  * test harness mounts the *production* tree inside `createMemoryRouter`
  * rather than a hand-copied route list that would drift.
  */
+/** Every signed-in role. The shell itself admits all five; each screen guards
+ * itself below, because the roles have genuinely different jobs now. */
+const ALL_ROLES: Role[] = [
+  "SYSTEM_ADMIN",
+  "PROPERTY_OFFICER",
+  "DEPARTMENT_HEAD",
+  "STAFF",
+  "AUDITOR",
+];
+/** Everyone except the SYSTEM_ADMIN — the roles that may see asset data. */
+const ASSET_ROLES: Role[] = ["PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"];
+
 export const appRoutes: RouteObject[] = [
   {
     // Only reached by a throw from a layout/provider itself, or a loader error —
@@ -93,7 +106,7 @@ export const appRoutes: RouteObject[] = [
       },
       {
         element: (
-          <RequireAuth roles={["ADMIN", "STAFF"]}>
+          <RequireAuth roles={ALL_ROLES}>
             <AppLayout />
           </RequireAuth>
         ),
@@ -102,37 +115,77 @@ export const appRoutes: RouteObject[] = [
           // Reachable by any signed-in role; `RequireAuth` funnels a forced
           // password change here from every other screen.
           { path: "/change-password", element: <ChangePasswordPage /> },
-          { path: "/items/new", element: <ItemFormPage mode="create" /> },
-          { path: "/items/:id/edit", element: <ItemFormPage mode="edit" /> },
-          { path: "/items/:id", element: <ItemStaffPage /> },
-          { path: "/requests", element: <RequestsListPage /> },
-          { path: "/requests/new", element: <RequestFormPage /> },
-          { path: "/requests/:id", element: <RequestDetailPage /> },
           { path: "/notifications", element: <NotificationsPage /> },
-          // Phase 3: audit walkthrough (F9) and the CSV exports (F10).
-          // `/audits` (plural) is the history; `/audit/...` (singular) is one session.
-          { path: "/audits", element: <AuditListPage /> },
-          { path: "/audit/new", element: <AuditNewPage /> },
-          { path: "/audit/:id/scan", element: <AuditScanPage /> },
-          { path: "/audit/:id/report", element: <AuditReportPage /> },
-          { path: "/reports", element: <ReportsPage /> },
-          // Admin-only screens. The staff shell's guard admits STAFF, so these
-          // need a second, ADMIN-only guard around them — without it a staff
-          // deep-link rendered the accounts screen, and the nav hiding the link
-          // was the only thing keeping it out of sight. A failed role check here
-          // renders the same 404 as any unknown path (frontend-plan.md §6, §9.1).
+
+          // Asset screens. The SYSTEM_ADMIN is an account role and sees no
+          // asset data (spec 2.1.1), so it is the one role these guards keep
+          // out — the reverse of the old ADMIN-only admin screens.
           {
-            // `Outlet` is required: this route is a guard, not a page, so
-            // without it the nested children below would never mount.
             element: (
-              <RequireAuth roles={["ADMIN"]}>
+              <RequireAuth roles={ASSET_ROLES}>
                 <Outlet />
               </RequireAuth>
             ),
             children: [
-              { path: "/admin/users", element: <AdminUsersPage /> },
+              { path: "/items/:id/edit", element: <ItemFormPage mode="edit" /> },
+              { path: "/items/:id", element: <ItemStaffPage /> },
+              { path: "/requests", element: <RequestsListPage /> },
+              { path: "/requests/new", element: <RequestFormPage /> },
+              { path: "/requests/:id", element: <RequestDetailPage /> },
+            ],
+          },
+
+          // Registering an item is the Property Officer's alone (spec 4.3).
+          {
+            element: (
+              <RequireAuth roles={["PROPERTY_OFFICER"]}>
+                <Outlet />
+              </RequireAuth>
+            ),
+            children: [
+              { path: "/items/new", element: <ItemFormPage mode="create" /> },
               { path: "/admin/categories", element: <AdminCategoriesPage /> },
             ],
+          },
+
+          // Phase 3: audit walkthrough (F9) and the CSV exports (F10).
+          // `/audits` (plural) is the history; `/audit/...` (singular) is one
+          // session. Running one is AUDITOR-only (spec 8.1); the officer reads the
+          // history and reports to act on the findings.
+          {
+            element: (
+              <RequireAuth roles={["PROPERTY_OFFICER", "AUDITOR"]}>
+                <Outlet />
+              </RequireAuth>
+            ),
+            children: [
+              { path: "/audits", element: <AuditListPage /> },
+              { path: "/audit/:id/report", element: <AuditReportPage /> },
+              { path: "/reports", element: <ReportsPage /> },
+            ],
+          },
+          {
+            element: (
+              <RequireAuth roles={["AUDITOR"]}>
+                <Outlet />
+              </RequireAuth>
+            ),
+            children: [
+              { path: "/audit/new", element: <AuditNewPage /> },
+              { path: "/audit/:id/scan", element: <AuditScanPage /> },
+            ],
+          },
+
+          // Account administration is the System Admin's (the Account Admin was
+          // merged into it on 12 Oct). A failed role check renders the same 404
+          // as any unknown path (frontend-plan.md §6, §9.1).
+          {
+            element: (
+              <RequireAuth roles={["SYSTEM_ADMIN"]}>
+                <Outlet />
+              </RequireAuth>
+            ),
+            children: [{ path: "/admin/users", element: <AdminUsersPage /> }],
           },
         ],
       },

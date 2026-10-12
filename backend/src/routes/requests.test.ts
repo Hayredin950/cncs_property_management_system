@@ -36,6 +36,7 @@ vi.mock("../lib/prisma.js", () => {
       count: vi.fn(),
     },
     itemEditLog: { createMany: vi.fn(), findMany: vi.fn(), count: vi.fn() },
+    custodyEvent: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
     notification: {
       create: vi.fn(),
       createMany: vi.fn(),
@@ -98,6 +99,7 @@ function primeDecision(overrides: Partial<TestRequest> = {}): void {
   vi.mocked(prisma.item.updateMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
   vi.mocked(prisma.itemEditLog.createMany).mockResolvedValue({ count: 2 } as never);
+  vi.mocked(prisma.custodyEvent.create).mockResolvedValue({ id: "custody-1" } as never);
   vi.mocked(prisma.notification.create).mockResolvedValue({ id: "notif-1" } as never);
 }
 
@@ -722,7 +724,16 @@ describe("POST /requests/:id/approve", () => {
       .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.itemChanges).toEqual({ floor: "1", room: "101", ownerId: "staff-2" });
+    // The holder pair rides along with `ownerId` (spec 4.1), derived from the same
+    // `newOwnerId` — the item's custody columns and the custodian column can never
+    // name two different people.
+    expect(res.body.itemChanges).toEqual({
+      floor: "1",
+      room: "101",
+      ownerId: "staff-2",
+      holderType: "STAFF",
+      holderId: "staff-2",
+    });
 
     const rows = vi.mocked(prisma.itemEditLog.createMany).mock.calls[0]?.[0]?.data as
       | Array<Record<string, unknown>>
@@ -754,9 +765,89 @@ describe("POST /requests/:id/approve", () => {
       status: "DISPOSED",
       disposalReason: "Beyond economical repair after the power surge",
       disposedAt: expect.any(Date),
+      // Back to the college's own pool: a disposed asset is nobody's assignment.
+      holderType: "COLLEGE",
+      holderId: null,
     });
     // A status change, never a delete: the row stays queryable for reports.
     expect(res.body.editLogRowCount).toBe(3);
+  });
+
+  it("records the custody change when a transfer names a new custodian", async () => {
+    vi.mocked(prisma.user.findUnique)
+      .mockResolvedValueOnce(makeOfficer() as never)
+      .mockResolvedValueOnce({ id: "staff-2", fullName: "Second Staff" } as never);
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({ newOwnerId: "staff-2" }) as never,
+    );
+    vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+    vi.mocked(prisma.item.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.itemEditLog.createMany).mockResolvedValue({ count: 3 } as never);
+    vi.mocked(prisma.custodyEvent.create).mockResolvedValue({ id: "custody-1" } as never);
+    vi.mocked(prisma.notification.create).mockResolvedValue({ id: "notif-1" } as never);
+
+    const res = await request(app)
+      .post("/requests/req-1/approve")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    expect(res.status).toBe(200);
+    // Both ends of the move, the person who acted, and why — the row a reader uses
+    // to answer "who had this in March?" without reconstructing it from edit logs.
+    expect(prisma.custodyEvent.create).toHaveBeenCalledWith({
+      data: {
+        itemId: "item-1",
+        eventType: "TRANSFERRED",
+        fromHolderType: "STAFF",
+        fromHolderId: "staff-1",
+        toHolderType: "STAFF",
+        toHolderId: "staff-2",
+        actingUserId: "officer-1",
+        reason: "Moving to the new staff office",
+        departmentHeadSnapshot: null,
+      },
+    });
+  });
+
+  it("writes no custody event for a transfer that only moves the item", async () => {
+    primeDecision();
+
+    const res = await request(app)
+      .post("/requests/req-1/approve")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    expect(res.status).toBe(200);
+    // A room change is a location change, and its history is the edit log. A
+    // TRANSFERRED row here would claim a handover that never happened.
+    expect(prisma.custodyEvent.create).not.toHaveBeenCalled();
+  });
+
+  it("records a disposal as the item leaving its custodian's hands", async () => {
+    primeDecision({
+      type: "DISPOSAL",
+      reason: "Beyond economical repair after the power surge",
+      newLocationFloor: null,
+      newLocationRoom: null,
+    });
+
+    const res = await request(app)
+      .post("/requests/req-1/approve")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    expect(res.status).toBe(200);
+    expect(prisma.custodyEvent.create).toHaveBeenCalledWith({
+      data: {
+        itemId: "item-1",
+        eventType: "DISPOSED",
+        fromHolderType: "STAFF",
+        fromHolderId: "staff-1",
+        toHolderType: "COLLEGE",
+        toHolderId: null,
+        actingUserId: "officer-1",
+        reason: "Beyond economical repair after the power surge",
+        departmentHeadSnapshot: null,
+      },
+    });
   });
 
   it("cascades a transfer to the accessories and logs every cascaded field (D6)", async () => {
@@ -838,6 +929,9 @@ describe("POST /requests/:id/approve", () => {
       disposalReason:
         "Disposed with parent item CNCS-DEMO-0001: Beyond economical repair after the power surge",
       disposedAt: expect.any(Date),
+      // The bundle leaves service together, so it leaves its custodian together.
+      holderType: "COLLEGE",
+      holderId: null,
     });
     // parentItemId is preserved: the bundle stays recorded as a bundle.
     expect(vi.mocked(prisma.item.updateMany).mock.calls[1]?.[0]?.data).not.toHaveProperty(

@@ -414,11 +414,27 @@ tests passing across 30 files**.
 - **Verified:** backend `tsc` + eslint clean, **412 tests green**; web `tsc` + eslint clean,
   **185 tests green**; mobile `flutter analyze` clean, **51 tests green**.
 
-**Still deferred to the contract step, with their code changes:** dropping `Item.ownerId` and
-the free-text `department`.
+**Landed 12 Oct (later still) — Phase A items 3 and 6, the holder model:**
 
-**Next in Phase A:** the holder model and transfer fields (item 3), the account-approval queue
-(item 4), the claim handshake + custody writes (items 5–6), and the security items (7–8).
+- `backend/src/services/holder.ts` is the one place that decides holder fields and writes the
+  custody trail: `POST /items` writes the holder pair and a nested `CREATED` event (one
+  statement, so a row cannot exist without its history starting), and an approved transfer or
+  disposal writes the new holder and a `TRANSFERRED`/`DISPOSED` event inside the decision
+  transaction. A transfer that names no new custodian writes **no** event — a room move has no
+  custody story, and saying otherwise would make the table noisier than the edit log beside it.
+- Disposal returns an item to `COLLEGE` (nobody's assignment) in the same write that sets its
+  status, so the row and its custody event cannot disagree about who holds it.
+- Migration `20261012020000_backfill_holder_fields` fills `holderType`/`holderId` on the rows
+  written before the columns existed, mapping the custodian to a `STAFF` holder; applied to the
+  dev database. `ownerId` is still written alongside the holder fields and still read as a
+  fallback in the visibility rules — dropping it is the contract step, which can now land.
+- **Still deferred:** the claim handshake (`PENDING_CLAIM` → `claimedAt`), reversion, and the
+  department-level holder (`DEPARTMENT` with `departmentId`), which is also what would give
+  `CustodyEvent.departmentHeadSnapshot` a head to name.
+- **Verified:** backend `tsc` + eslint clean, **430 tests green**.
+
+**Next in Phase A:** the account-approval queue (item 4), the claim handshake (item 5), and the
+security items (7–8).
 
 ---
 

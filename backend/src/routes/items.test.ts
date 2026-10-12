@@ -273,6 +273,26 @@ describe("POST /items", () => {
     // Absent optional columns are written as an explicit null rather than left
     // undefined, so the row is fully specified from creation.
     expect(data.currentValue).toBeNull();
+
+    // The holder pair (spec 4.1) is derived from the custodian the form sent, not
+    // from a second input, so the two cannot name different people.
+    expect(data.holderType).toBe("STAFF");
+    expect(data.holderId).toBe(OWNER_UUID);
+
+    // And the item's history starts at creation: one CREATED event, nested so it is
+    // written by the same statement as the row itself.
+    expect(data.custodyEvents).toEqual({
+      create: {
+        eventType: "CREATED",
+        fromHolderType: "COLLEGE",
+        fromHolderId: null,
+        toHolderType: "STAFF",
+        toHolderId: OWNER_UUID,
+        actingUserId: "officer-1",
+        reason: null,
+        departmentHeadSnapshot: null,
+      },
+    });
   });
 
   it("rejects a missing required field and an unknown condition", async () => {

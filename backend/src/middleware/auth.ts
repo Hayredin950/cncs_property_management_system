@@ -4,9 +4,10 @@ import { prisma } from "../lib/prisma.js";
 import { hasCapability, type Capability } from "../services/permissions.js";
 import { canHoldSession } from "../services/accountApproval.js";
 
-/** The five spec roles (2.1, as amended 12 Oct). Kept in sync with `enum Role`. */
+/** The six spec roles (2.1, as amended per v2). Kept in sync with `enum Role`. */
 export type UserRole =
   | "SYSTEM_ADMIN"
+  | "ACCOUNT_ADMIN"
   | "PROPERTY_OFFICER"
   | "DEPARTMENT_HEAD"
   | "STAFF"

@@ -6,6 +6,7 @@
 
 export const ROLES = [
   "SYSTEM_ADMIN",
+  "ACCOUNT_ADMIN",
   "PROPERTY_OFFICER",
   "DEPARTMENT_HEAD",
   "STAFF",
@@ -102,6 +103,7 @@ export const ACCOUNT_STATUS_LABELS: Record<AccountStatus, string> = {
 
 export const ROLE_LABELS: Record<Role, string> = {
   SYSTEM_ADMIN: "System Admin",
+  ACCOUNT_ADMIN: "Account Admin",
   PROPERTY_OFFICER: "Property Officer",
   DEPARTMENT_HEAD: "Department Head",
   STAFF: "Staff",

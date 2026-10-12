@@ -57,7 +57,11 @@ export type Capability =
 const GRANTS: Record<UserRole, readonly Capability[]> = {
   // Technical + account administration only. Sees no asset data, approves
   // nothing business-related (spec 2.1.1).
-  SYSTEM_ADMIN: ["ACCOUNT_MANAGE", "USER_READ"],
+  SYSTEM_ADMIN: ["USER_READ"],
+  // Invites privileged accounts (heads, officers, auditors, other account admins),
+  // approves/rejects privileged account requests, deactivates heads and auditors.
+  // Sees no asset data. (spec 2.1.2)
+  ACCOUNT_ADMIN: ["ACCOUNT_MANAGE", "USER_READ"],
   // The single college-level operational role (spec 2.1.2).
   PROPERTY_OFFICER: [
     "ITEM_CREATE",
@@ -77,7 +81,8 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
   ],
   // Scoped to one department. Approves transfers for their department and can
   // hold, claim and edit condition/notes of items like any custodian.
-  DEPARTMENT_HEAD: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM", "REQUEST_DECIDE"],
+  // Approves staff registrations in their department. (spec 2.1.3)
+  DEPARTMENT_HEAD: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM", "REQUEST_DECIDE", "ACCOUNT_MANAGE"],
   // Scoped to one department. Holds and claims items, files requests, edits
   // condition and notes of what they hold — nothing else.
   STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM"],

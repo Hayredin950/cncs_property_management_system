@@ -21,14 +21,14 @@ vi.mock("../lib/prisma.js", () => {
 
 function createToken(payload: {
   id: string;
-  role: "SYSTEM_ADMIN" | "PROPERTY_OFFICER" | "DEPARTMENT_HEAD" | "STAFF" | "AUDITOR";
+  role: "SYSTEM_ADMIN" | "ACCOUNT_ADMIN" | "PROPERTY_OFFICER" | "DEPARTMENT_HEAD" | "STAFF" | "AUDITOR";
 }) {
   return jwt.sign(payload, process.env.JWT_SECRET!);
 }
 
 describe("POST /auth/register", () => {
-  // Registration is ACCOUNT_MANAGE — the System Admin role.
-  const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
+  // Registration is ACCOUNT_MANAGE — the Account Admin role.
+  const adminToken = createToken({ id: "admin-1", role: "ACCOUNT_ADMIN" });
   const staffToken = createToken({ id: "staff-1", role: "STAFF" });
 
   beforeEach(() => {

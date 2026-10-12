@@ -157,6 +157,7 @@ class RoleBadge extends StatelessWidget {
         // in both clients.
         tone: switch (role) {
           Role.systemAdmin => BadgeTone.violet,
+          Role.accountAdmin => BadgeTone.violet,
           Role.propertyOfficer => BadgeTone.info,
           Role.departmentHead => BadgeTone.accent,
           Role.staff => BadgeTone.brand,
@@ -165,6 +166,7 @@ class RoleBadge extends StatelessWidget {
         },
         icon: switch (role) {
           Role.systemAdmin => Icons.verified_user_outlined,
+          Role.accountAdmin => Icons.verified_user_outlined,
           Role.propertyOfficer => Icons.work_outline,
           Role.departmentHead => Icons.groups_outlined,
           Role.staff => Icons.badge_outlined,

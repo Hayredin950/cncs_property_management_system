@@ -26,7 +26,7 @@ vi.mock("../lib/prisma.js", () => {
   return { prisma: client };
 });
 
-const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
+const adminToken = createToken({ id: "admin-1", role: "ACCOUNT_ADMIN" });
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
 
 /** A row in the shape `userListSelect` returns, `_count` included. */
@@ -474,7 +474,7 @@ describe("POST /users/:id/approve", () => {
     };
     expect(call.where).toEqual({ id: "pending-1" });
     expect(call.data.accountStatus).toBe("ACTIVE");
-    expect(call.data.reviewedById).toBe("admin-1");
+    expect(call.data.reviewedBy).toEqual({ connect: { id: "admin-1" } });
     expect(call.data.reviewedAt).toBeInstanceOf(Date);
     // The request carries no role, so approving without one must not invent a
     // change: the account keeps the STAFF role the request asked as.

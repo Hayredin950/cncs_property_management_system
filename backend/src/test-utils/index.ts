@@ -15,6 +15,7 @@ import jwt from "jsonwebtoken";
 
 export type TestRole =
   | "SYSTEM_ADMIN"
+  | "ACCOUNT_ADMIN"
   | "PROPERTY_OFFICER"
   | "DEPARTMENT_HEAD"
   | "STAFF"
@@ -82,9 +83,9 @@ export function makeOfficer(overrides: Partial<TestUser> = {}): TestUser {
 export function makeAdmin(overrides: Partial<TestUser> = {}): TestUser {
   return makeUser({
     id: "admin-1",
-    fullName: "System Admin",
+    fullName: "Account Admin",
     email: "admin@cncs.aau.edu.et",
-    role: "SYSTEM_ADMIN",
+    role: "ACCOUNT_ADMIN",
     ...overrides,
   });
 }

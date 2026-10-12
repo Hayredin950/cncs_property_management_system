@@ -454,8 +454,29 @@ describe("GET /requests/:id", () => {
 });
 
 describe("POST /requests/:id/approve", () => {
-  it("moves the item, logs one row per changed field, and notifies the requester", async () => {
-    primeDecision();
+  it("moves the item, logs one row per changed field, and notifies the requester (stage 2 approval)", async () => {
+    // First, approve stage 1
+    await request(app)
+      .post("/requests/req-1/approve")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    // Then approve stage 2 (final approval)
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({
+        status: "PENDING_STAGE2",
+        reviewedById: "officer-1",
+        stage1ApprovedById: "officer-1",
+        stage1ApprovedAt: new Date("2026-09-02T10:00:00.000Z"),
+      }) as never,
+    );
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
+    vi.mocked(prisma.item.findUnique).mockResolvedValueOnce(makeItem() as never);
+    vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+    vi.mocked(prisma.item.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+    vi.mocked(prisma.itemEditLog.createMany).mockResolvedValueOnce({ count: 2 } as never);
+    vi.mocked(prisma.notification.create).mockResolvedValueOnce({} as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
+    vi.mocked(prisma.item.findUnique).mockResolvedValueOnce(makeItem() as never);
 
     const res = await request(app)
       .post("/requests/req-1/approve")
@@ -469,8 +490,8 @@ describe("POST /requests/:id/approve", () => {
     expect(res.body.notification.code).toBe("REQUEST_APPROVED");
 
     expect(prisma.request.updateMany).toHaveBeenCalledWith({
-      where: { id: "req-1", status: "PENDING" },
-      data: { status: "APPROVED", reviewedById: "officer-1", decidedAt: expect.any(Date) },
+      where: { id: "req-1", status: "PENDING_STAGE2" },
+      data: { status: "APPROVED", reviewedById: "officer-1", decidedAt: expect.any(Date), stage2ApprovedById: "officer-1", stage2ApprovedAt: expect.any(Date) },
     });
     expect(prisma.item.updateMany).toHaveBeenCalledWith({
       where: { id: "item-1", status: "ACTIVE" },
@@ -519,6 +540,23 @@ describe("POST /requests/:id/approve", () => {
 
   it("shares one exact instant across the request, the log rows and the notification", async () => {
     primeDecision();
+    // Set up for stage 2 approval
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({
+        status: "PENDING_STAGE2",
+        reviewedById: "officer-1",
+        stage1ApprovedById: "officer-1",
+        stage1ApprovedAt: new Date("2026-09-02T10:00:00.000Z"),
+      }) as never,
+    );
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
+    vi.mocked(prisma.item.findUnique).mockResolvedValueOnce(makeItem() as never);
+    vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+    vi.mocked(prisma.item.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+    vi.mocked(prisma.itemEditLog.createMany).mockResolvedValueOnce({ count: 2 } as never);
+    vi.mocked(prisma.notification.create).mockResolvedValueOnce({} as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
+    vi.mocked(prisma.item.findUnique).mockResolvedValueOnce(makeItem() as never);
 
     const res = await request(app)
       .post("/requests/req-1/approve")

@@ -46,6 +46,8 @@ export type Capability =
   | "TRANSFER_APPROVE_STAGE2"
   /** Approve a disposal request (property officer only). */
   | "DISPOSAL_APPROVE"
+  /** Approve a loan request (property officer only). */
+  | "LOAN_APPROVE"
   /** Read every request, not only your own (spec 5.1.7). */
   | "REQUEST_READ_ALL"
   /** Read college-wide reports. */
@@ -83,6 +85,7 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
     "DISPOSAL_APPROVE",
+    "LOAN_APPROVE",
     "REQUEST_READ_ALL",
     "REPORT_VIEW_ALL",
     "AUDIT_VIEW",

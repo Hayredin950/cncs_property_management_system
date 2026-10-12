@@ -151,8 +151,8 @@ export function makeItem(overrides: Partial<TestItem> = {}): TestItem {
 
 export interface TestRequest {
   id: string;
-  type: "TRANSFER" | "DISPOSAL";
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  type: "TRANSFER" | "DISPOSAL" | "LOAN";
+  status: "PENDING" | "PENDING_STAGE1" | "PENDING_STAGE2" | "APPROVED" | "REJECTED" | "WAITLISTED";
   reason: string;
   rejectionReason: string | null;
   itemId: string;
@@ -166,6 +166,13 @@ export interface TestRequest {
   decidedAt: Date | null;
   item: TestItem;
   requestedBy: { id: string; fullName: string; email: string };
+  reviewedBy: { id: string; fullName: string; email: string } | null;
+  stage1ApprovedById: string | null;
+  stage1ApprovedAt: Date | null;
+  stage2ApprovedById: string | null;
+  stage2ApprovedAt: Date | null;
+  loanReturnedAt: Date | null;
+  loanReturnedById: string | null;
 }
 
 export function makeRequest(overrides: Partial<TestRequest> = {}): TestRequest {
@@ -186,6 +193,13 @@ export function makeRequest(overrides: Partial<TestRequest> = {}): TestRequest {
     createdAt: new Date("2026-09-02T08:00:00.000Z"),
     decidedAt: null,
     requestedBy: { id: "staff-1", fullName: "Demo Staff", email: "staff@cncs.aau.edu.et" },
+    reviewedBy: null,
+    stage1ApprovedById: null,
+    stage1ApprovedAt: null,
+    stage2ApprovedById: null,
+    stage2ApprovedAt: null,
+    loanReturnedAt: null,
+    loanReturnedById: null,
     ...overrides,
     item,
   };

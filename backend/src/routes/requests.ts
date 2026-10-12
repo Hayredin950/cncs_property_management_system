@@ -26,6 +26,7 @@ import {
 } from "../services/notifications.js";
 import {
   applyDecision,
+  returnLoan,
   ERROR_DANGLING_OWNER,
   ERROR_ITEM_DISPOSED,
   ERROR_ITEM_HAS_PENDING,
@@ -523,6 +524,42 @@ requestsRouter.post(
     try {
       const body = validatedBody<RejectBody>(req);
       await decide(req, res, "REJECTED", body.rejectionReason);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+const returnLoanSchema = z.object({
+  condition: z.string().trim().min(1, "Condition is required"),
+  notes: z.string().trim().max(1000).nullable().optional(),
+});
+
+/**
+ * POST /api/v1/requests/:id/return
+ * Borrower / releasing head / property officer — mark a loan as returned.
+ * Updates item status to ACTIVE, records return condition and notes.
+ */
+requestsRouter.post(
+  "/:id/return",
+  authenticate,
+  validateBody(returnLoanSchema),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = req.params.id as string;
+      if (!id) {
+        res.status(400).json({ error: "Request ID is required" });
+        return;
+      }
+      const body = validatedBody<{ condition: string; notes?: string | null }>(req);
+      const result = await returnLoan(prisma, {
+        requestId: id,
+        returnerId: req.user!.id,
+        condition: body.condition,
+        notes: body.notes ?? null,
+        decidedAt: new Date(),
+      });
+      res.status(200).json({ requestId: result.requestId, itemId: result.itemId });
     } catch (err) {
       next(err);
     }

@@ -18,9 +18,13 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-/** A user row as `authenticate` reads it (role + tokenVersion only). */
+/**
+ * A user row as `authenticate` reads it: role, tokenVersion, and the account status
+ * the middleware now checks (spec 3.1.2) — a session may only be held by an ACTIVE
+ * account.
+ */
 function authRow(tokenVersion: number, role: "ADMIN" | "STAFF" = "STAFF") {
-  return { role, tokenVersion };
+  return { role, tokenVersion, accountStatus: "ACTIVE" };
 }
 
 describe("token revocation (`ver` vs User.tokenVersion)", () => {

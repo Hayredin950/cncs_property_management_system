@@ -143,10 +143,44 @@ export const ME_RESPONSE: MeResponse = { user: OFFICER_USER };
  * account — and the "you cannot do this to yourself" affordances only exist when
  * its own row is rendered.
  */
-export const OFFICER_ACCOUNT: UserSummary = { ...OFFICER_USER, itemCount: 3 };
-export const STAFF_ACCOUNT: UserSummary = { ...STAFF_USER, itemCount: 0 };
-export const SYSTEM_ADMIN_ACCOUNT: UserSummary = { ...SYSTEM_ADMIN_USER, itemCount: 0 };
+const ACTIVE_ACCOUNT_FIELDS = {
+  accountStatus: "ACTIVE" as const,
+  reviewedAt: null,
+  reviewNote: null,
+};
+
+export const OFFICER_ACCOUNT: UserSummary = {
+  ...OFFICER_USER,
+  itemCount: 3,
+  ...ACTIVE_ACCOUNT_FIELDS,
+};
+export const STAFF_ACCOUNT: UserSummary = {
+  ...STAFF_USER,
+  itemCount: 0,
+  ...ACTIVE_ACCOUNT_FIELDS,
+};
+export const SYSTEM_ADMIN_ACCOUNT: UserSummary = {
+  ...SYSTEM_ADMIN_USER,
+  itemCount: 0,
+  ...ACTIVE_ACCOUNT_FIELDS,
+};
 export const ACCOUNTS: UserSummary[] = [OFFICER_ACCOUNT, STAFF_ACCOUNT, SYSTEM_ADMIN_ACCOUNT];
+
+/**
+ * `GET /users/approvals` — a row waiting for a decision. Oldest-first ordering is
+ * the API's job; a single fixture is enough for the queue screen's rendering.
+ */
+export const PENDING_ACCOUNT: UserSummary = {
+  id: "00000000-0000-4000-8000-000000000099",
+  fullName: "Pending Person",
+  email: "pending@cncs.aau.edu.et",
+  role: "STAFF",
+  createdAt: "2026-09-15T10:00:00.000Z",
+  itemCount: 0,
+  accountStatus: "PENDING_APPROVAL",
+  reviewedAt: null,
+  reviewNote: null,
+};
 
 export const PENDING_COUNT: PendingCountResponse = { pendingCount: 2 };
 

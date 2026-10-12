@@ -37,9 +37,24 @@ function adminUserRow(overrides: Record<string, unknown> = {}) {
     email: "staff@cnus.aau.edu.et",
     role: "STAFF",
     createdAt: new Date("2026-09-01T00:00:00.000Z"),
+    accountStatus: "ACTIVE",
+    reviewedAt: null,
+    reviewNote: null,
     _count: { ownedItems: 2 },
     ...overrides,
   };
+}
+
+/** A row as it comes back from `POST /auth/account-requests`: nobody decided it yet. */
+function pendingUserRow(overrides: Record<string, unknown> = {}) {
+  return adminUserRow({
+    id: "pending-1",
+    fullName: "Hanna Tesfaye",
+    email: "hanna@cncs.aau.edu.et",
+    accountStatus: "PENDING_APPROVAL",
+    _count: { ownedItems: 0 },
+    ...overrides,
+  });
 }
 
 beforeEach(() => {
@@ -388,5 +403,210 @@ describe("DELETE /users/:id", () => {
     expect(res.body.deleted).toBe(true);
     expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
     expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: "user-1" } });
+  });
+});
+
+/**
+ * The account-approval queue (spec 3.1.2).
+ *
+ * The flow the supervisor flagged as the biggest issue on record: a person asks for
+ * an account, an administrator decides, and nobody becomes active by their own
+ * action. `POST /auth/account-requests` is covered in auth.test.ts; these are the
+ * administrator's side, and the two self-review tests below are the ones that prove
+ * the rule lives on the server rather than in the queue screen.
+ */
+describe("GET /users/approvals", () => {
+  it("returns 403 for a caller who may not administer accounts", async () => {
+    const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
+
+    const res = await request(app)
+      .get("/users/approvals")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    // `USER_READ` is what fills the custodian picker, and it is not this: who is
+    // waiting to join the system is nobody else's list.
+    expect(res.status).toBe(403);
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it("lists only the pending accounts, oldest first", async () => {
+    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([pendingUserRow()] as never);
+
+    const res = await request(app)
+      .get("/users/approvals")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].accountStatus).toBe("PENDING_APPROVAL");
+    expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+
+    // Worked from the tail: the person who has waited longest is the overdue one.
+    expect(prisma.user.findMany).toHaveBeenCalledWith({
+      where: { accountStatus: "PENDING_APPROVAL" },
+      orderBy: { createdAt: "asc" },
+      select: expect.any(Object),
+    });
+  });
+});
+
+describe("POST /users/:id/approve", () => {
+  it("activates the account and records who decided it", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "pending-1",
+      accountStatus: "PENDING_APPROVAL",
+    } as never);
+    vi.mocked(prisma.user.update).mockResolvedValueOnce(
+      pendingUserRow({ accountStatus: "ACTIVE" }) as never,
+    );
+
+    const res = await request(app)
+      .post("/users/pending-1/approve")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.accountStatus).toBe("ACTIVE");
+
+    const call = vi.mocked(prisma.user.update).mock.calls[0]?.[0] as {
+      where: { id: string };
+      data: Record<string, unknown>;
+    };
+    expect(call.where).toEqual({ id: "pending-1" });
+    expect(call.data.accountStatus).toBe("ACTIVE");
+    expect(call.data.reviewedById).toBe("admin-1");
+    expect(call.data.reviewedAt).toBeInstanceOf(Date);
+    // The request carries no role, so approving without one must not invent a
+    // change: the account keeps the STAFF role the request asked as.
+    expect(call.data).not.toHaveProperty("role");
+  });
+
+  it("assigns the real role at approval time, and revokes any session", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "pending-1",
+      accountStatus: "PENDING_APPROVAL",
+    } as never);
+    vi.mocked(prisma.user.update).mockResolvedValueOnce(
+      pendingUserRow({ accountStatus: "ACTIVE", role: "AUDITOR" }) as never,
+    );
+
+    const res = await request(app)
+      .post("/users/pending-1/approve")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ role: "AUDITOR" });
+
+    expect(res.status).toBe(200);
+    const call = vi.mocked(prisma.user.update).mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(call.data.role).toBe("AUDITOR");
+    expect(call.data.tokenVersion).toEqual({ increment: 1 });
+  });
+
+  it("refuses an administrator approving their own account (403, server-side)", async () => {
+    // The account under decision IS the caller. Nothing about this request needs
+    // the queue screen to have hidden a button.
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "admin-1",
+      accountStatus: "PENDING_APPROVAL",
+    } as never);
+
+    const res = await request(app)
+      .post("/users/admin-1/approve")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("You cannot approve or reject your own account");
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a decision on an account that is not waiting (409)", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "user-1",
+      accountStatus: "ACTIVE",
+    } as never);
+
+    const res = await request(app)
+      .post("/users/user-1/approve")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("This account is not waiting for approval");
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for an unknown account", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
+
+    const res = await request(app)
+      .post("/users/ghost/approve")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 403 for a STAFF caller", async () => {
+    const res = await request(app)
+      .post("/users/pending-1/approve")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({});
+
+    expect(res.status).toBe(403);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /users/:id/reject", () => {
+  it("declines the request with the reason the person will read", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "pending-1",
+      accountStatus: "PENDING_APPROVAL",
+    } as never);
+    vi.mocked(prisma.user.update).mockResolvedValueOnce(
+      pendingUserRow({ accountStatus: "REJECTED", reviewNote: "No matching staff record" }) as never,
+    );
+
+    const res = await request(app)
+      .post("/users/pending-1/reject")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ reason: "No matching staff record" });
+
+    expect(res.status).toBe(200);
+    const call = vi.mocked(prisma.user.update).mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(call.data.accountStatus).toBe("REJECTED");
+    expect(call.data.reviewNote).toBe("No matching staff record");
+    expect(call.data.reviewedById).toBe("admin-1");
+  });
+
+  it("requires a reason long enough to be one (F6.2's rule, applied here)", async () => {
+    const res = await request(app)
+      .post("/users/pending-1/reject")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ reason: "no" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("A reason of 3 to 500 characters is required");
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses an administrator rejecting their own account (403, server-side)", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "admin-1",
+      accountStatus: "PENDING_APPROVAL",
+    } as never);
+
+    const res = await request(app)
+      .post("/users/admin-1/reject")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ reason: "Never mind" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("You cannot approve or reject your own account");
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

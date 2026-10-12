@@ -231,3 +231,7 @@ dmypy.json
 *.seed
 dump.rdb
 generated
+
+# Obsidian vault-local editor state (the docs folder is viewed in Obsidian but
+# its appearance/workspace files are machine-specific, not project content)
+.obsidian/

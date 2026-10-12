@@ -1,10 +1,35 @@
 import { apiClient } from "../lib/apiClient";
 import type { Role } from "../types/enums";
-import type { LoginRequest, LoginResponse, MeResponse, AuthUser } from "../types/user";
+import type {
+  AccountRequestResponse,
+  LoginRequest,
+  LoginResponse,
+  MeResponse,
+  AuthUser,
+} from "../types/user";
 
 /** `POST /auth/login` — public. See types/user.ts for why only `.user` is read back out. */
 export function login(payload: LoginRequest): Promise<LoginResponse> {
   return apiClient.post<LoginResponse>("/auth/login", payload);
+}
+
+/** Body of `POST /auth/account-requests` — asking for an account (spec 3.1.2). */
+export interface AccountRequestPayload {
+  fullName: string;
+  email: string;
+  password: string;
+}
+
+/**
+ * `POST /auth/account-requests` — public: anyone may ask, and nobody gets in by
+ * asking. The response carries no token, because the account is `PENDING_APPROVAL`
+ * and cannot sign in until a SYSTEM_ADMIN decides it from the queue.
+ *
+ * There is no `role` field on purpose: the request always lands as STAFF, and the
+ * approver assigns the real role.
+ */
+export function requestAccount(payload: AccountRequestPayload): Promise<AccountRequestResponse> {
+  return apiClient.post<AccountRequestResponse>("/auth/account-requests", payload);
 }
 
 /** `GET /auth/me` — rehydrates a stored token into a user on boot. */

@@ -7,6 +7,7 @@ import { AuditReportPage } from "../features/audits/AuditReportPage";
 import { AuditScanPage } from "../features/audits/AuditScanPage";
 import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
 import { LoginPage } from "../features/auth/LoginPage";
+import { RequestAccountPage } from "../features/auth/RequestAccountPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { ItemFormPage } from "../features/items/ItemFormPage";
 import { ItemStaffPage } from "../features/items/ItemStaffPage";
@@ -33,8 +34,8 @@ import { SmartLayout } from "./SmartLayout";
  * The route map from `frontend-plan.md` §6. Two shells, exactly as
  * `frontend-design-system.md` §9 describes them:
  *
- * - **Shell A** (`PublicLayout`) — `/`, `/map`, `/login` and `*`: open to
- *   everyone, including anonymous visitors.
+ * - **Shell A** (`PublicLayout`) — `/`, `/map`, `/login`, `/request-account` and
+ *   `*`: open to everyone, including anonymous visitors.
  * - **Shell B/C** (`AppLayout` behind `RequireAuth`) — everything staff/admin:
  *   dashboard, item management, requests, notifications, and a nested
  *   ADMIN-only guard for the `/admin/*` screens.
@@ -84,6 +85,7 @@ export const appRoutes: RouteObject[] = [
           { path: "/", element: <LandingPage /> },
           { path: "/map", element: <MapPage /> },
           { path: "/login", element: <LoginPage /> },
+          { path: "/request-account", element: <RequestAccountPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

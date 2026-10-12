@@ -1,4 +1,4 @@
-import type { Role } from "./enums";
+import type { AccountStatus, Role } from "./enums";
 
 export interface AuthUser {
   id: string;
@@ -21,6 +21,31 @@ export interface AuthUser {
  */
 export interface UserSummary extends AuthUser {
   itemCount: number;
+  /**
+   * The account lifecycle (spec 3.1.2). Only `ACTIVE` accounts can sign in, and a
+   * `PENDING_APPROVAL` one is what the approval queue is made of.
+   */
+  accountStatus: AccountStatus;
+  /** When an administrator decided it, or null for a row nobody had to review. */
+  reviewedAt: string | null;
+  /** The rejection reason, shown next to a declined row. */
+  reviewNote: string | null;
+}
+
+/**
+ * `POST /auth/account-requests` — what a person gets back after asking for an
+ * account. Deliberately not a user object: there is no session, no role to render,
+ * and the only thing to show is that the request is in and who to ask.
+ */
+export interface AccountRequestResponse {
+  message: string;
+  request: {
+    id: string;
+    fullName: string;
+    email: string;
+    accountStatus: AccountStatus;
+    requestedAt: string;
+  };
 }
 
 /**

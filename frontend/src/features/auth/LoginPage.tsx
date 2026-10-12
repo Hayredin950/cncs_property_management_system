@@ -20,10 +20,10 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 /**
- * `POST /auth/login` — public. There is no sign-up; account creation is
- * admin-only (`/admin/users`, Phase 2). A single "Email" field is enough for
- * every real account today, even though the backend also matches a custom `id`
- * (frontend-plan.md §4/§7).
+ * `POST /auth/login` — public. Self-service sign-up is a request only
+ * (`/request-account`); access still needs a system administrator's approval.
+ * A single "Email" field is enough for every real account today, even though the
+ * backend also matches a custom `id` (frontend-plan.md §4/§7).
  *
  * Wrapped in the portal's page banner so the sign-in screen reads as part of the
  * same AAU application as the pages behind it, rather than as a bare form
@@ -104,12 +104,14 @@ export function LoginPage() {
         </form>
       </Card>
 
-      {/* There is no sign-up route, so saying so beats leaving the question open. */}
       <p className="flex items-start gap-2 rounded-sm border border-aau-gray-200 bg-aau-gray-100 px-3 py-2 text-xs text-aau-gray-600">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
         <span>
-          Accounts are created by a system administrator — there is no self-service sign-up.
-          Ask the property office if you need access.
+          Need access?{" "}
+          <Link to="/request-account" className="font-medium text-brand-700 underline-offset-4 hover:underline">
+            Request an account
+          </Link>
+          . A system administrator must approve before you can sign in.
         </span>
       </p>
 

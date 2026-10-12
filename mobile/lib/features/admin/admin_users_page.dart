@@ -69,6 +69,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
   @override
   Widget build(BuildContext context) {
     final users = ref.watch(usersProvider);
+    final approvals = ref.watch(approvalsProvider);
     final currentUserId = ref.watch(currentUserProvider)?.id;
 
     return PageScaffold(
@@ -77,9 +78,52 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
       maxWidth: 900,
       onRefresh: () async {
         ref.invalidate(usersProvider);
-        await ref.read(usersProvider.future);
+        ref.invalidate(approvalsProvider);
+        await Future.wait([
+          ref.read(usersProvider.future),
+          ref.read(approvalsProvider.future),
+        ]);
       },
       children: [
+        approvals.when(
+          loading: () => const SkeletonList(count: 2, height: 72),
+          error: (error, _) => InlineError(
+            error: error,
+            onRetry: () => ref.invalidate(approvalsProvider),
+          ),
+          data: (pending) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SectionHeader(
+                title: pending.isEmpty
+                    ? 'Waiting for approval'
+                    : 'Waiting for approval (${pending.length})',
+                subtitle: 'Oldest requests first. Approve assigns the real role; '
+                    'reject needs a reason.',
+              ),
+              if (pending.isEmpty)
+                const AppCard(
+                  child: Text(
+                    'No account requests waiting.',
+                    style: TextStyle(fontSize: 13.5, color: AppColors.aauGray500),
+                  ),
+                )
+              else
+                for (final account in pending) ...[
+                  _PendingRow(
+                    account: account,
+                    isSelf: account.id == currentUserId,
+                    busy: _busyUserId == account.id,
+                    onApprove: () => _approve(account),
+                    onReject: () => _reject(account),
+                  ),
+                  const SizedBox(height: AppSpace.s2),
+                ],
+              const SizedBox(height: AppSpace.s6),
+            ],
+          ),
+        ),
+
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -251,6 +295,94 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
     } finally {
       if (mounted) setState(() => _creating = false);
     }
+  }
+
+  Future<void> _approve(UserSummary account) async {
+    final role = await _pickApproveRole(account);
+    if (role == null || !mounted) return;
+
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Approve ${account.fullName}?',
+      body: '${account.fullName} (${account.email}) will be able to sign in as '
+          '${role.label}. The request itself always asks as Staff — this is where '
+          'the real role is assigned.',
+      confirmLabel: 'Approve as ${role.label}',
+      icon: Icons.check_circle_outline,
+    );
+    if (!confirmed || !mounted) return;
+
+    await _guard(account, () async {
+      await ref.read(userActionsProvider).approve(account.id, role: role.wire);
+      if (mounted) {
+        showAppToast(
+          context,
+          message: '${account.fullName} can now sign in.',
+          tone: ToastTone.success,
+        );
+      }
+    });
+  }
+
+  Future<Role?> _pickApproveRole(UserSummary account) => showAppSheet<Role>(
+        context,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.s4,
+                AppSpace.s4,
+                AppSpace.s4,
+                AppSpace.s2,
+              ),
+              child: Text(
+                'Role for ${account.fullName}',
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.aauGray900,
+                ),
+              ),
+            ),
+            for (final role in Role.selectable)
+              ListTile(
+                title: Text(role.label),
+                subtitle: Text(_roleDescription(role)),
+                trailing: role == Role.staff
+                    ? const Icon(Icons.check, size: 18, color: AppColors.brand600)
+                    : null,
+                onTap: () => Navigator.of(context).pop(role),
+              ),
+            const SizedBox(height: AppSpace.s2),
+          ],
+        ),
+      );
+
+  Future<void> _reject(UserSummary account) async {
+    final reason = await showPromptDialog(
+      context,
+      title: 'Reject ${account.fullName}?',
+      label: 'Rejection reason',
+      body: '3–500 characters. ${account.fullName} will not be able to sign in, '
+          'and the same address cannot ask again into a void.',
+      confirmLabel: 'Reject',
+      minLength: 3,
+      maxLength: 500,
+    );
+    if (reason == null || !mounted) return;
+
+    await _guard(account, () async {
+      await ref.read(userActionsProvider).reject(account.id, reason);
+      if (mounted) {
+        showAppToast(
+          context,
+          message: "${account.fullName}'s request was declined.",
+          tone: ToastTone.info,
+        );
+      }
+    });
   }
 
   Future<void> _edit(UserSummary account) async {
@@ -432,6 +564,124 @@ String _roleDescription(Role role) => switch (role) {
       Role.auditor => 'Runs audit sessions and reads reports.',
       _ => 'Unrecognised role.',
     };
+
+class _PendingRow extends StatelessWidget {
+  const _PendingRow({
+    required this.account,
+    required this.isSelf,
+    required this.busy,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final UserSummary account;
+  final bool isSelf;
+  final bool busy;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpace.s3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              InitialsAvatar(
+                initial: account.fullName.isEmpty ? '?' : account.fullName.substring(0, 1),
+                id: account.id,
+              ),
+              const SizedBox(width: AppSpace.s3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            account.fullName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.aauGray900,
+                            ),
+                          ),
+                        ),
+                        if (isSelf) ...[
+                          const SizedBox(width: AppSpace.s2),
+                          const Text(
+                            '(you)',
+                            style: TextStyle(fontSize: 12, color: AppColors.aauGray500),
+                          ),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      account.email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12.5, color: AppColors.aauGray600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Requested ${formatDateUtc(account.createdAt) ?? ''}',
+                      style: const TextStyle(fontSize: 12, color: AppColors.aauGray400),
+                    ),
+                  ],
+                ),
+              ),
+              if (busy)
+                const Padding(
+                  padding: EdgeInsets.all(AppSpace.s2),
+                  child: InlineSpinner(size: 18),
+                ),
+            ],
+          ),
+          if (isSelf)
+            const Padding(
+              padding: EdgeInsets.only(top: AppSpace.s2),
+              child: Text(
+                'You cannot approve your own account',
+                style: TextStyle(fontSize: 11.5, color: AppColors.aauGray500),
+              ),
+            )
+          else if (!busy) ...[
+            const SizedBox(height: AppSpace.s3),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    label: 'Approve',
+                    icon: Icons.check,
+                    size: AppButtonSize.sm,
+                    expand: true,
+                    onPressed: onApprove,
+                  ),
+                ),
+                const SizedBox(width: AppSpace.s2),
+                Expanded(
+                  child: AppButton(
+                    label: 'Reject',
+                    icon: Icons.close,
+                    variant: AppButtonVariant.outline,
+                    size: AppButtonSize.sm,
+                    expand: true,
+                    onPressed: onReject,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
 
 class _AccountRow extends StatelessWidget {
   const _AccountRow({

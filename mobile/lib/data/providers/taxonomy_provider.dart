@@ -39,6 +39,15 @@ final usersProvider = AsyncNotifierProvider<UserListNotifier, List<UserSummary>>
   UserListNotifier.new,
 );
 
+class ApprovalsListNotifier extends AsyncNotifier<List<UserSummary>> {
+  @override
+  Future<List<UserSummary>> build() => ref.watch(usersApiProvider).listApprovals();
+}
+
+/// `GET /users/approvals` — the System Admin's decision queue.
+final approvalsProvider =
+    AsyncNotifierProvider<ApprovalsListNotifier, List<UserSummary>>(ApprovalsListNotifier.new);
+
 /// Admin-only account mutations. Every one of these is **Admin only**, enforced
 /// server-side; this class does not check the role, because a client-side role
 /// check is theatre — the screen's job is simply not to *offer* the action to a
@@ -79,6 +88,23 @@ class UserActions {
   Future<UserSummary> promote(String id, String role) async {
     final user = await _ref.read(usersApiProvider).promote(id, role);
     _ref.invalidate(usersProvider);
+    return user;
+  }
+
+  /// `POST /users/:id/approve` — let a requested account sign in, optionally as the
+  /// role the approver assigns. Both lists the queue lives on are invalidated.
+  Future<UserSummary> approve(String id, {String? role}) async {
+    final user = await _ref.read(usersApiProvider).approve(id, role: role);
+    _ref.invalidate(usersProvider);
+    _ref.invalidate(approvalsProvider);
+    return user;
+  }
+
+  /// `POST /users/:id/reject` — decline the request. The row stays, as `REJECTED`.
+  Future<UserSummary> reject(String id, String reason) async {
+    final user = await _ref.read(usersApiProvider).reject(id, reason);
+    _ref.invalidate(usersProvider);
+    _ref.invalidate(approvalsProvider);
     return user;
   }
 

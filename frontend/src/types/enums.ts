@@ -29,7 +29,15 @@ export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 export const CONDITIONS = ["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"] as const;
 export type Condition = (typeof CONDITIONS)[number];
 
-export const ITEM_STATUSES = ["ACTIVE", "DISPOSED"] as const;
+export const ITEM_STATUSES = [
+  "ACTIVE",
+  "PENDING_CLAIM",
+  "REVERTED_UNVERIFIED",
+  "LOANED",
+  "LOST",
+  "DISPOSED",
+  "VOIDED",
+] as const;
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 export const REQUEST_TYPES = ["TRANSFER", "DISPOSAL"] as const;
@@ -59,7 +67,12 @@ export const CONDITION_LABELS: Record<Condition, string> = {
 
 export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
   ACTIVE: "In service",
+  PENDING_CLAIM: "Waiting for claim",
+  REVERTED_UNVERIFIED: "Returned unverified",
+  LOANED: "On loan",
+  LOST: "Lost",
   DISPOSED: "Disposed",
+  VOIDED: "Voided",
 };
 
 export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {

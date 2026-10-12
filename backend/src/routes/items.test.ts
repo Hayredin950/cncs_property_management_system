@@ -472,6 +472,7 @@ describe("PUT /items/:id", () => {
     expect(vi.mocked(prisma.item.updateMany).mock.calls[0]?.[0]?.where).toEqual({
       id: "item-1",
       status: "ACTIVE",
+      version: 0,
     });
     const updateOrder = vi.mocked(prisma.item.updateMany).mock.invocationCallOrder[0] ?? -1;
     const logOrder = vi.mocked(prisma.itemEditLog.createMany).mock.invocationCallOrder[0] ?? -1;
@@ -488,7 +489,7 @@ describe("PUT /items/:id", () => {
       .send({ condition: "FAIR" });
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: "Item is already disposed" });
+    expect(res.body).toEqual({ error: "Item is already disposed or was modified" });
     // Thrown inside the transaction, so the item write is rolled back too — the
     // assertion that matters is that no history row claims a change happened.
     expect(prisma.itemEditLog.createMany).not.toHaveBeenCalled();

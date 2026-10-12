@@ -29,6 +29,12 @@ export interface PublicItemFields {
   condition: Condition;
   status: ItemStatus;
   registeredAt: string;
+  /** Holder model (spec 4.1) — who the item is with. */
+  holderType?: string | null;
+  holderId?: string | null;
+  /** Claim handshake (spec 4.4) — when the item was claimed and when claim expires. */
+  claimedAt?: string | null;
+  claimDueAt?: string | null;
 }
 
 /**

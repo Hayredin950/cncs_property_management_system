@@ -105,7 +105,9 @@ const createItemSchema = z.object({
   notes: z.string().trim().optional().nullable(),
 });
 
-const updateItemSchema = createItemSchema.partial();
+const updateItemSchema = createItemSchema.partial().extend({
+  version: z.number().int().nonnegative("Version must be a non-negative integer").optional().default(0),
+});
 
 /**
  * `parentItemId` is deliberately absent from both schemas above.
@@ -585,7 +587,19 @@ itemsRouter.put(
         return;
       }
 
-      const updates = cleanDefined(parsed.data);
+      const { version, ...updates } = cleanDefined(parsed.data);
+
+      /**
+       * Optimistic locking: the client must send the version it read.
+       * If the version doesn't match, another edit has intervened.
+       */
+      if (version !== undefined && version !== existingItem.version) {
+        res.status(409).json({
+          error: "Item was modified by another user. Please reload and try again.",
+          currentVersion: existingItem.version,
+        });
+        return;
+      }
 
       /**
        * Field-level rule from spec 4.7: a custodian edits condition and notes; the
@@ -690,11 +704,14 @@ itemsRouter.put(
            * Throwing rolls the transaction back, so no log row survives either.
            */
           const applied = await tx.item.updateMany({
-            where: { id, status: "ACTIVE" },
-            data: updates as Prisma.ItemUncheckedUpdateInput,
+            where: { id, status: "ACTIVE", version: existingItem.version },
+            data: {
+              ...updates,
+              version: { increment: 1 },
+            } as Prisma.ItemUncheckedUpdateInput,
           });
           if (applied.count === 0) {
-            throw httpError(409, "Item is already disposed");
+            throw httpError(409, "Item is already disposed or was modified");
           }
 
           await writeEditLogRows(tx, editLogRows);

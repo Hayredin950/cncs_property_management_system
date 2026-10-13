@@ -16,6 +16,7 @@ import { canDecideRequests } from "../../lib/permissions";
 import { formatDateTimeUTC, formatRelativeTime } from "../../lib/formatters";
 import { ApiError, NetworkError } from "../../types/api";
 import { REQUEST_STATUS_LABELS } from "../../types/enums";
+import type { DecideRequestResponse } from "../../types/request";
 
 /**
  * `/requests/:id` — the decision screen (F6.2/F7.2). Staff see their own
@@ -28,6 +29,9 @@ export function RequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const canDecide = canDecideRequests(user?.role);
+
+  // After a decision, show what changed (if the decision mutation completed successfully)
+  const [decisionResult, setDecisionResult] = useState<DecideRequestResponse | null>(null);
 
   const requestQuery = useQuery({
     queryKey: ["requests", "detail", id],
@@ -127,7 +131,19 @@ export function RequestDetailPage() {
         )}
       </Card>
 
-      {canDecide && !decided && <DecisionPanel requestId={request.id} itemLabel={`${request.item.name} (${request.item.tagId})`} />}
+      {canDecide && !decided && <DecisionPanel requestId={request.id} itemLabel={`${request.item.name} (${request.item.tagId})`} onDecisionComplete={setDecisionResult} />}
+
+      {decisionResult && (
+        <Card className="border-brand-200 bg-brand-50">
+          <h3 className="text-sm font-semibold text-brand-900">What changed</h3>
+          <p className="mt-2 text-sm text-brand-700">
+            {decisionResult.editLogRowCount} change{decisionResult.editLogRowCount === 1 ? "" : "s"} written to item history.
+            {decisionResult.cascadedItemIds.length > 0 && (
+              <> {decisionResult.cascadedItemIds.length} accessorie{decisionResult.cascadedItemIds.length === 1 ? "y" : "s"} updated.</>
+            )}
+          </p>
+        </Card>
+      )}
 
       {!canDecide && !decided && (
         <p className="text-sm text-slate-500">
@@ -143,10 +159,28 @@ export function RequestDetailPage() {
   );
 }
 
-function DecisionPanel({ requestId, itemLabel }: { requestId: string; itemLabel: string }) {
+function DecisionPanel({ requestId, itemLabel, onDecisionComplete }: { requestId: string; itemLabel: string; onDecisionComplete: (result: DecideRequestResponse) => void }) {
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const decide = useDecideRequest(requestId);
+
+  const handleApprove = () => {
+    decide.mutate({ decision: "APPROVED" }, {
+      onSuccess: (data) => {
+        setApproveOpen(false);
+        onDecisionComplete(data);
+      },
+    });
+  };
+
+  const handleReject = (reason: string) => {
+    decide.mutate({ decision: "REJECTED", rejectionReason: reason }, {
+      onSuccess: (data) => {
+        setRejectOpen(false);
+        onDecisionComplete(data);
+      },
+    });
+  };
 
   return (
     <>
@@ -162,7 +196,7 @@ function DecisionPanel({ requestId, itemLabel }: { requestId: string; itemLabel:
       <ConfirmDialog
         open={approveOpen}
         onClose={() => setApproveOpen(false)}
-        onConfirm={() => decide.mutate({ decision: "APPROVED" }, { onSettled: () => setApproveOpen(false) })}
+        onConfirm={handleApprove}
         title="Approve this request?"
         loading={decide.isPending}
         confirmLabel="Approve"
@@ -179,7 +213,7 @@ function DecisionPanel({ requestId, itemLabel }: { requestId: string; itemLabel:
       <RejectDialog
         open={rejectOpen}
         onClose={() => setRejectOpen(false)}
-        onSubmit={(reason) => decide.mutate({ decision: "REJECTED", rejectionReason: reason }, { onSettled: () => setRejectOpen(false) })}
+        onSubmit={handleReject}
         loading={decide.isPending}
         itemLabel={itemLabel}
       />

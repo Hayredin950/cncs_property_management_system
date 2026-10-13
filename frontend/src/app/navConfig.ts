@@ -52,7 +52,7 @@ export const CURRENT_PHASE = 3;
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 1 },
   { label: "Scan a Tag", to: "/scan", icon: ScanLine, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"], phase: 1, emphasized: true },
-  { label: "Browse Items", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER"], phase: 1 },
+  { label: "Browse Items", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"], phase: 1 },
   { label: "My Items", to: "/items?mine=true", icon: Package, roles: ["STAFF", "DEPARTMENT_HEAD"], phase: 1 },
   { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["PROPERTY_OFFICER"], phase: 2, badge: "pending-count" },
   { label: "Department Requests", to: "/requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
@@ -62,7 +62,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "New item", to: "/items/new", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
   { label: "Active Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["AUDITOR"], phase: 3 },
   { label: "Audit history", to: "/audits", icon: History, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
-  { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER"], phase: 3 },
+  { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"], phase: 3 },
   { label: "Account Admins", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN"], phase: 2 },
   { label: "System Config", to: "/admin/system", icon: Settings, roles: ["SYSTEM_ADMIN"], phase: 2 },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },

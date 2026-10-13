@@ -73,7 +73,9 @@ describe("workbench shell", () => {
     expect(await screen.findByText("Navigation")).toBeInTheDocument();
 
     // Click *inside the rail*, not a header/mobile link with the same label.
-    await user.click(within(rail()).getByText("Items"));
+    // Staff sees "My Items", Property Officer sees "Browse Items"
+    const itemLink = within(rail()).queryByText("Items") || within(rail()).queryByText("My Items") || within(rail()).queryByText("Browse Items");
+    await user.click(itemLink!);
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/items"));
     expect(await screen.findByRole("heading", { name: "Browse items" })).toBeInTheDocument();
@@ -132,8 +134,10 @@ describe("workbench shell", () => {
     ).toBeInTheDocument();
     // ...but each destination keeps its accessible name (`sr-only`, not a
     // conditional render), so the nav is still operable and still announced.
-    expect(within(rail()).getByText("Items")).toBeInTheDocument();
-    expect(within(rail()).getByRole("link", { name: "Scan", hidden: true })).toBeInTheDocument();
+    // Check for any of the item-related nav labels
+    const itemLink = within(rail()).queryByText("Items") || within(rail()).queryByText("My Items") || within(rail()).queryByText("Browse Items");
+    expect(itemLink).toBeInTheDocument();
+    expect(within(rail()).getByRole("link", { name: "Scan a Tag", hidden: true })).toBeInTheDocument();
     expect(getSidebarCollapsed()).toBe(true);
   });
 

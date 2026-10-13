@@ -1,5 +1,6 @@
 import {
   Bell,
+  Building2,
   ClipboardCheck,
   ClipboardList,
   FileBarChart,
@@ -7,6 +8,7 @@ import {
   LayoutDashboard,
   Package,
   ScanLine,
+  Settings,
   ShieldCheck,
   Tag,
   type LucideIcon,
@@ -48,18 +50,21 @@ export const CURRENT_PHASE = 3;
  * Notifications and Accounts — not Items or Scan.
  */
 export const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN", "ACCOUNT_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 1 },
-  { label: "Scan", to: "/scan", icon: ScanLine, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD", "AUDITOR"], phase: 1, emphasized: true },
-  { label: "Items", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD", "AUDITOR"], phase: 1 },
-  { label: "My Items", to: "/items?mine=true", icon: Package, roles: ["STAFF"], phase: 1 },
-  { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD", "AUDITOR"], phase: 2, badge: "pending-count" },
+  { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 1 },
+  { label: "Scan a Tag", to: "/scan", icon: ScanLine, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"], phase: 1, emphasized: true },
+  { label: "Browse Items", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER"], phase: 1 },
+  { label: "My Items", to: "/items?mine=true", icon: Package, roles: ["STAFF", "DEPARTMENT_HEAD"], phase: 1 },
+  { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["PROPERTY_OFFICER"], phase: 2, badge: "pending-count" },
+  { label: "Department Requests", to: "/requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
   { label: "My Requests", to: "/requests?mine=true", icon: ClipboardList, roles: ["STAFF"], phase: 2 },
-  { label: "Notifications", to: "/notifications", icon: Bell, roles: ["SYSTEM_ADMIN", "ACCOUNT_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 2, badge: "unread-notifications" },
+  { label: "Notifications", to: "/notifications", icon: Bell, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 2, badge: "unread-notifications" },
+  { label: "Buildings", to: "/buildings", icon: Building2, roles: ["PROPERTY_OFFICER"], phase: 2 },
   { label: "New item", to: "/items/new", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
-  { label: "Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["AUDITOR"], phase: 3 },
+  { label: "Active Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["AUDITOR"], phase: 3 },
   { label: "Audit history", to: "/audits", icon: History, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
-  { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD", "AUDITOR"], phase: 3 },
-  { label: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["ACCOUNT_ADMIN"], phase: 2 },
+  { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER"], phase: 3 },
+  { label: "Account Admins", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN"], phase: 2 },
+  { label: "System Config", to: "/admin/system", icon: Settings, roles: ["SYSTEM_ADMIN"], phase: 2 },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
 ];
 

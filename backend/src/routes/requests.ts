@@ -104,10 +104,26 @@ const createRequestSchema = z
 
 type CreateRequestBody = z.infer<typeof createRequestSchema>;
 
+/**
+ * GET /api/v1/requests?window=&type=&status=&mine=&limit=&offset=
+ * Staff/Admin — time-windowed, typed request list.
+ *
+ * The window parameter controls the time window:
+ * - "this-week": requests created this week (Mon-Sun)
+ * - "this-month": requests created this month
+ * - "last-30-days": last 30 days
+ * - "custom": requires fromDate and toDate query params
+ * Default: "this-week"
+ *
+ * The totals endpoint returns aggregated counts by status and type.
+ */
 const listQuerySchema = z.object({
   status: z.enum(REQUEST_STATUSES).optional(),
   type: z.enum(REQUEST_TYPES).optional(),
   mine: z.enum(["true", "false"]).optional(),
+  window: z.enum(["this-week", "this-month", "last-30-days", "custom"]).default("this-week"),
+  fromDate: z.coerce.date().optional(),
+  toDate: z.coerce.date().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -394,6 +410,118 @@ requestsRouter.get(
         where: { ...scopeToViewer(user), status: "PENDING" },
       });
       res.status(200).json({ pendingCount });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * GET /api/v1/requests/totals
+ * Staff/Admin — aggregated totals by status and type for reports.
+ * Returns aggregated counts by status and type, not individual requests.
+ */
+requestsRouter.get(
+  "/totals",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const user = requireUser(req);
+      const where = scopeToViewer(user);
+
+      const [byStatus, byType, total] = await Promise.all([
+        prisma.request.groupBy({
+          by: ["status"],
+          where,
+          _count: { _all: true },
+        }),
+        prisma.request.groupBy({
+          by: ["type"],
+          where,
+          _count: { _all: true },
+        }),
+        prisma.request.count({ where }),
+      ]);
+
+      res.status(200).json({
+        byStatus: byStatus.map((row) => ({ status: row.status, count: row._count._all })),
+        byType: byType.map((row) => ({ type: row.type, count: row._count._all })),
+        total,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * GET /api/v1/requests?window=&type=&status=&mine=&limit=&offset=&fromDate=&toDate=
+ * Staff/Admin — time-windowed, typed request list.
+ *
+ * The window parameter controls the time window:
+ * - "this-week": requests created this week (Mon-Sun)
+ * - "this-month": requests created this month
+ * - "last-30-days": last 30 days
+ * - "custom": requires fromDate and toDate query params
+ * Default: "this-week"
+ *
+ * The totals endpoint returns aggregated counts by status and type.
+ */
+requestsRouter.get(
+  "/",
+  authenticate,
+  validateQuery(listQuerySchema),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = requireUser(req);
+      const query = validatedQuery<ListQuery>(req);
+
+      const where: { createdAt?: { gte?: Date; lte?: Date }; [key: string]: unknown } = {
+        ...scopeToViewer(user),
+        ...(query.mine === "true" ? { requestedById: user.id } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.type ? { type: query.type } : {}),
+      };
+
+      // Time window filtering
+      const now = new Date();
+      let fromDate: Date | undefined;
+      let toDate: Date | undefined;
+
+      if (query.window === "custom") {
+        fromDate = query.fromDate;
+        toDate = query.toDate;
+      } else if (query.window === "this-week") {
+        const day = now.getDay();
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
+        fromDate = new Date(now.setDate(diff));
+        fromDate.setHours(0, 0, 0, 0);
+        toDate = new Date(fromDate);
+        toDate.setDate(toDate.getDate() + 6);
+        toDate.setHours(23, 59, 59, 999);
+      } else if (query.window === "this-month") {
+        fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        toDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      } else if (query.window === "last-30-days") {
+        fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        toDate = new Date(now);
+      }
+
+      if (fromDate) where.createdAt = { ...where.createdAt, gte: fromDate };
+      if (toDate) where.createdAt = { ...where.createdAt, lte: toDate };
+
+      const [requests, total] = await Promise.all([
+        prisma.request.findMany({
+          where,
+          select: REQUEST_LIST_SELECT,
+          orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+          take: query.limit,
+          skip: query.offset,
+        }),
+        prisma.request.count({ where }),
+      ]);
+
+      res.status(200).json({ requests, total, limit: query.limit, offset: query.offset });
     } catch (err) {
       next(err);
     }

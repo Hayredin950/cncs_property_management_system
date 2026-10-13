@@ -1,4 +1,4 @@
-import { ClipboardList, Package, ScanLine } from "lucide-react";
+import { ClipboardList, Package, ScanLine, Users, Activity } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { PortalPageHeader, PortalTile } from "../../components/aau/PortalPageHeader";
@@ -11,7 +11,7 @@ import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBad
 import { StatCard } from "../../components/StatCard";
 import { usePendingCount, useRequests } from "../../hooks/useRequests";
 import { formatRelativeTime } from "../../lib/formatters";
-import { canDecideRequests, canViewOwnRequests } from "../../lib/permissions";
+import { canDecideRequests, canViewOwnRequests, canManageAccounts } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
 
 /**
@@ -33,6 +33,9 @@ export function DashboardPage() {
   const { user } = useAuth();
   const canDecide = canDecideRequests(user?.role);
   const canViewOwn = canViewOwnRequests(user?.role);
+  const isAccountAdmin = user?.role === "ACCOUNT_ADMIN";
+  const isSystemAdmin = user?.role === "SYSTEM_ADMIN";
+  const canManageAcc = canManageAccounts(user?.role);
 
   const pendingQuery = usePendingCount();
   const requestsQuery = useRequests({ limit: 5 });
@@ -74,6 +77,42 @@ export function DashboardPage() {
           description="Search the register by name, tag ID, department or building."
         />
       </div>
+
+      {/* System Admin / Account Admin specific section */}
+      {(isSystemAdmin || isAccountAdmin) && canManageAcc && (
+        <Card className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-slate-900">
+              {isSystemAdmin ? "System Administration" : "Account Administration"}
+            </h2>
+            <Link
+              to="/admin/users"
+              className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
+            >
+              View all \u2192
+            </Link>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <StatCard
+              label="Pending approvals"
+              value={pendingQuery.data?.pendingCount ?? "\u2014"}
+              icon={<ClipboardList className="h-5 w-5" />}
+              tone="warning"
+              to="/admin/users"
+              className="w-full"
+            />
+            <StatCard
+              label={isSystemAdmin ? "System health" : "Active accounts"}
+              value="\u2014"
+              icon={isSystemAdmin ? <Activity className="h-5 w-5" /> : <Users className="h-5 w-5" />}
+              tone="neutral"
+              to="/admin/users"
+              className="w-full"
+            />
+          </div>
+        </Card>
+      )}
 
       {canViewOwn && (
         <Card className="flex flex-col gap-4">

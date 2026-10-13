@@ -106,6 +106,16 @@ export function AppLayout() {
   */
   const unreadNotifications = useUnreadNotificationCount();
 
+  // Update browser tab title with badge when there are pending requests or unread notifications
+  useEffect(() => {
+    const baseTitle = "CNCS Property Management";
+    const badges: string[] = [];
+    if (pendingCount > 0) badges.push(`${pendingCount} pending`);
+    if (unreadNotifications > 0) badges.push(`${unreadNotifications} unread`);
+    const title = badges.length > 0 ? `(${badges.join(", ")}) ${baseTitle}` : baseTitle;
+    document.title = title;
+  }, [pendingCount, unreadNotifications]);
+
   // RequireAuth already guarantees a user here; this just narrows the type.
   if (!user) return null;
 

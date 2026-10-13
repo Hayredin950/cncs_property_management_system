@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { approveRequest, createRequest, rejectRequest } from "../api/requests";
 import { toast } from "../lib/toast";
 import { REQUEST_TYPE_LABELS } from "../types/enums";
-import type { CreateRequestPayload, CreateRequestResponse } from "../types/request";
+import type { CreateRequestPayload, CreateRequestResponse, DecideRequestResponse } from "../types/request";
 
 export function useCreateRequest() {
   const queryClient = useQueryClient();
@@ -22,7 +22,7 @@ export function useCreateRequest() {
 
 export function useDecideRequest(requestId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutation<DecideRequestResponse, Error, { decision: "APPROVED" | "REJECTED"; rejectionReason?: string }>({
     mutationFn: ({ decision, rejectionReason }: { decision: "APPROVED" | "REJECTED"; rejectionReason?: string }) =>
       decision === "APPROVED" ? approveRequest(requestId) : rejectRequest(requestId, rejectionReason ?? ""),
     onSuccess: (result) => {

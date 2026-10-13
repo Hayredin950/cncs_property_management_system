@@ -5,6 +5,7 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { accessoriesRouter } from "./routes/accessories.js";
 import { auditsRouter } from "./routes/audits.js";
 import authRouter from "./routes/auth.js";
+import { buildingsRouter } from "./routes/buildings.js";
 import { categoriesRouter } from "./routes/categories.js";
 import { departmentsRouter } from "./routes/departments.js";
 import { itemHistoryRouter } from "./routes/itemHistory.js";
@@ -12,6 +13,7 @@ import { itemsRouter } from "./routes/items.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { reportsRouter } from "./routes/reports.js";
 import { requestsRouter } from "./routes/requests.js";
+import { systemConfigRouter } from "./routes/systemConfig.js";
 import { uploadsRouter } from "./routes/uploads.js";
 import { usersRouter } from "./routes/users.js";
 import { tagsRouter } from "./routes/tags.js";
@@ -99,6 +101,7 @@ app.get(["/api/v1/health", "/health"], (req: Request, res: Response) => {
  */
 app.use(["/api/v1/audits", "/audits"], auditsRouter);
 app.use(["/api/v1/auth", "/auth"], authRouter);
+app.use(["/api/v1/buildings", "/buildings"], buildingsRouter);
 app.use(["/api/v1/categories", "/categories"], categoriesRouter);
 app.use(["/api/v1/departments", "/departments"], departmentsRouter);
 app.use(["/api/v1/items", "/items"], accessoriesRouter);
@@ -108,6 +111,7 @@ app.use(["/api/v1/items", "/items"], itemsRouter);
 app.use(["/api/v1/notifications", "/notifications"], notificationsRouter);
 app.use(["/api/v1/reports", "/reports"], reportsRouter);
 app.use(["/api/v1/requests", "/requests"], requestsRouter);
+app.use(["/api/v1/system", "/system"], systemConfigRouter);
 app.use(["/api/v1/uploads", "/uploads"], uploadsRouter);
 app.use(["/api/v1/users", "/users"], usersRouter);
 

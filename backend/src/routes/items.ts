@@ -249,7 +249,7 @@ itemsRouter.get(
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
       const skip = (page - 1) * limit;
 
-      const { search, categoryId, department } = req.query;
+      const { search, categoryId, department, mine } = req.query;
 
       const filters: Prisma.ItemWhereInput = {};
 
@@ -266,6 +266,24 @@ itemsRouter.get(
 
       if (typeof department === "string") {
         filters.department = { contains: department, mode: "insensitive" };
+      }
+
+      // Handle mine=true for "My Items" view
+      if (mine === "true" && req.user) {
+        const user = req.user;
+        if (user.role === "STAFF") {
+          // Staff sees only their own items
+          filters.OR = [
+            { holderType: "STAFF", holderId: user.id },
+            { ownerId: user.id },
+          ];
+        } else if (user.role === "DEPARTMENT_HEAD") {
+          // Department head's "My Items" = items they personally hold (not department items)
+          filters.OR = [
+            { holderType: "STAFF", holderId: user.id },
+            { ownerId: user.id },
+          ];
+        }
       }
 
       /**

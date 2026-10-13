@@ -88,4 +88,5 @@ export interface ItemsListQuery {
   search?: string;
   categoryId?: string;
   department?: string;
+  mine?: boolean;
 }

@@ -1,6 +1,6 @@
 import { LogOut, MoreHorizontal, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, type NavLinkProps, type NavLinkRenderProps } from "react-router-dom";
 import { AauHeader } from "../components/aau/AauHeader";
 import { HeaderAccountBlock } from "../components/aau/HeaderAccountBlock";
 import { Button } from "../components/Button";
@@ -16,6 +16,37 @@ import { staffNav } from "./aauNav";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { useAuth } from "./AuthContext";
 import { visibleNavItems, type NavItem } from "./navConfig";
+
+/**
+ * Custom NavLink that matches exact path + search params (not just path prefix).
+ * React Router's NavLink only matches on pathname, so /items?mine=true matches /items.
+ */
+function ExactNavLink({
+  to,
+  children,
+  className,
+  onClick,
+}: NavLinkProps) {
+  const location = useLocation();
+  const toString = typeof to === "string" ? to : (to.pathname ?? "");
+  const targetUrl = new URL(toString, window.location.origin);
+  const currentUrl = new URL(location.pathname + location.search, window.location.origin);
+  const isActive = targetUrl.pathname === currentUrl.pathname && targetUrl.search === currentUrl.search;
+
+  const renderProps: NavLinkRenderProps = { isActive, isPending: false, isTransitioning: false };
+
+  const resolvedClassName = typeof className === "function" ? (className(renderProps) ?? "") : (className ?? "");
+
+  return (
+    <NavLink
+      to={to}
+      className={resolvedClassName}
+      onClick={onClick}
+    >
+      {typeof children === "function" ? children(renderProps) : children}
+    </NavLink>
+  );
+}
 
 /**
  * Shell B/C (frontend-design-system.md §5.5/§9): the authenticated "workbench".
@@ -239,7 +270,7 @@ export function AppLayout() {
                   const badge = badgeFor(item);
                   return (
                     <li key={item.to} className="border-b border-aau-gray-200 last:border-b-0">
-                      <NavLink
+                      <ExactNavLink
                         to={item.to}
                         // The label is still the accessible name when the rail is
                         // folded (`sr-only`, below) — `title` is only the hover
@@ -287,7 +318,7 @@ export function AppLayout() {
                               ))}
                           </>
                         )}
-                      </NavLink>
+                      </ExactNavLink>
                     </li>
                   );
                 })}                </ul>
@@ -357,7 +388,7 @@ export function AppLayout() {
         {mobilePrimary.map((item) => {
           const badge = badgeFor(item);
           return (
-            <NavLink
+            <ExactNavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
@@ -389,7 +420,7 @@ export function AppLayout() {
                   {item.label}
                 </>
               )}
-            </NavLink>
+            </ExactNavLink>
           );
         })}
 
@@ -413,7 +444,7 @@ export function AppLayout() {
           {mobileOverflow.map((item) => {
             const badge = badgeFor(item);
             return (
-              <NavLink
+              <ExactNavLink
                 key={item.to}
                 to={item.to}
                 onClick={() => setMoreOpen(false)}
@@ -437,7 +468,7 @@ export function AppLayout() {
                     {badge.count}
                   </span>
                 )}
-              </NavLink>
+              </ExactNavLink>
             );
           })}
           <Button

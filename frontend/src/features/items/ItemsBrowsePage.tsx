@@ -29,6 +29,7 @@ export function ItemsBrowsePage() {
   const search = searchParams.get("search") ?? "";
   const categoryId = searchParams.get("categoryId") ?? "";
   const department = searchParams.get("department") ?? "";
+  const mine = searchParams.get("mine") === "true";
   const hasFilters = Boolean(search || categoryId || department);
 
   const categoriesQuery = useCategories();
@@ -38,6 +39,7 @@ export function ItemsBrowsePage() {
     ...(search ? { search } : {}),
     ...(categoryId ? { categoryId } : {}),
     ...(department ? { department } : {}),
+    ...(mine ? { mine: true } : {}),
   });
 
   function updateParam(key: string, value: string) {

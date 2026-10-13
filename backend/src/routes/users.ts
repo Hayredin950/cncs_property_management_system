@@ -16,6 +16,7 @@ import {
   ERROR_REJECTION_REASON,
   type AccountStatusValue,
 } from "../services/accountApproval.js";
+import { canDecide, resolveApprover, getUnitScope } from "../services/approvers.js";
 
 export const usersRouter: Router = Router();
 
@@ -125,21 +126,34 @@ function toAdminUser(user: {
 usersRouter.get(
   "/approvals",
   authenticate,
-  requireCapability("ACCOUNT_MANAGE"),
+  requireCapability("ACCOUNT_APPROVE_ANY"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const user = req.user!;
       let where: Prisma.UserWhereInput = { accountStatus: "PENDING_APPROVAL" };
 
-      // DEPARTMENT_HEAD only sees staff requests in their department
-      if (user.role === "DEPARTMENT_HEAD") {
+      // SYSTEM_ADMIN sees everything: escalated, headless-unit, and stale requests
+      if (user.role === "SYSTEM_ADMIN") {
+        // No additional filter - sees all PENDING_APPROVAL
+      } else if (user.role === "DEPARTMENT_HEAD") {
+        // DEPARTMENT_HEAD only sees staff requests in their unit scope
+        if (!user.orgUnitId) {
+          res.status(403).json({ error: "You are not assigned to a department" });
+          return;
+        }
+        const unitScope = await getUnitScope(user.orgUnitId);
         where = {
           ...where,
           role: "STAFF",
-          departmentId: user.departmentId ?? null,
+          orgUnitId: { in: unitScope },
+          // Exclude escalated requests
+          reviewNote: { not: { contains: "[ESCALATED]" } },
         };
+      } else {
+        // Other roles with ACCOUNT_APPROVE_ANY (should not happen)
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
       }
-      // ACCOUNT_ADMIN sees everything (no additional filter)
 
       const pending = await prisma.user.findMany({
         where,
@@ -161,18 +175,17 @@ usersRouter.get(
  * assigned by `POST /auth/account-requests`). It is here because approving is the
  * moment an administrator knows who this person is.
  *
- * Authorization rules (spec 3.1.4):
- * - ACCOUNT_ADMIN can approve privileged roles (DEPARTMENT_HEAD, PROPERTY_OFFICER,
- *   AUDITOR, ACCOUNT_ADMIN) and staff
- * - DEPARTMENT_HEAD can only approve STAFF in their department
- * - SYSTEM_ADMIN cannot approve (technical role only)
+ * Authorization rules:
+ * - SYSTEM_ADMIN (with ACCOUNT_APPROVE_ANY) can approve any role except SYSTEM_ADMIN
+ * - DEPARTMENT_HEAD (with ACCOUNT_APPROVE_OWN_UNIT) can only approve STAFF in their unit scope
+ * - Self-approval is never allowed
  *
  * Changing the role also bumps `tokenVersion`, the same way `promote` does.
  */
 usersRouter.post(
   "/:id/approve",
   authenticate,
-  requireCapability("ACCOUNT_MANAGE"),
+  requireCapability("ACCOUNT_APPROVE_ANY"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -196,32 +209,40 @@ usersRouter.post(
         return;
       }
 
-      // No self-approval
-      assertCanReview({
-        targetId: existing.id,
-        targetStatus: existing.accountStatus,
-        reviewerId: req.user!.id,
+      const reviewer = req.user!;
+
+      // Check if reviewer can decide on this request
+      const decision = await canDecide(reviewer, {
+        id: existing.id,
+        userId: existing.id,
+        requestedUnitId: existing.orgUnitId ?? "",
+        status: existing.accountStatus,
       });
 
-      const reviewer = req.user!;
+      if (!decision.allowed) {
+        res.status(404).json({ error: decision.reason ?? "Not authorized to approve this request" });
+        return;
+      }
+
+      // No self-approval
+      if (reviewer.id === existing.id) {
+        res.status(403).json({ error: "You cannot approve your own account request" });
+        return;
+      }
+
       const hasExplicitRole = parsed.data.role !== undefined;
       const requestedRole = parsed.data.role ?? existing.role;
 
-      // Authorization: validate the reviewer can assign this role
+      // SYSTEM_ADMIN can assign any role except SYSTEM_ADMIN
       if (reviewer.role === "SYSTEM_ADMIN") {
-        // SYSTEM_ADMIN (merged with ACCOUNT_ADMIN per 12 Oct decision) can approve any role except SYSTEM_ADMIN
         if (requestedRole === "SYSTEM_ADMIN") {
           res.status(403).json({ error: "Cannot create SYSTEM_ADMIN accounts" });
           return;
         }
       } else if (reviewer.role === "DEPARTMENT_HEAD") {
-        // DEPARTMENT_HEAD can only approve STAFF in their department
+        // DEPARTMENT_HEAD can only assign STAFF role
         if (requestedRole !== "STAFF") {
           res.status(403).json({ error: "Department heads can only approve staff accounts" });
-          return;
-        }
-        if (!reviewer.departmentId || existing.departmentId !== reviewer.departmentId) {
-          res.status(403).json({ error: "This account is not in your department" });
           return;
         }
       }
@@ -233,6 +254,7 @@ usersRouter.post(
         reviewNote: null,
         ...(hasExplicitRole ? { role: requestedRole } : {}),
         ...(hasExplicitRole ? { tokenVersion: { increment: 1 } } : {}),
+        orgUnitId: existing.orgUnitId, // Confirm the unit
       };
 
       const approved = await prisma.user.update({
@@ -260,7 +282,7 @@ usersRouter.post(
 usersRouter.post(
   "/:id/reject",
   authenticate,
-  requireCapability("ACCOUNT_MANAGE"),
+  requireCapability("ACCOUNT_APPROVE_ANY"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -283,25 +305,24 @@ usersRouter.post(
 
       const reviewer = req.user!;
 
-      // Same authorization as approve: DEPARTMENT_HEAD can only reject staff in their dept
-      if (reviewer.role === "SYSTEM_ADMIN") {
-        // SYSTEM_ADMIN can reject any account
-      } else if (reviewer.role === "DEPARTMENT_HEAD") {
-        if (existing.role !== "STAFF") {
-          res.status(403).json({ error: "Department heads can only reject staff accounts" });
-          return;
-        }
-        if (!reviewer.departmentId || existing.departmentId !== reviewer.departmentId) {
-          res.status(403).json({ error: "This account is not in your department" });
-          return;
-        }
+      // Check if reviewer can decide on this request
+      const decision = await canDecide(reviewer, {
+        id: existing.id,
+        userId: existing.id,
+        requestedUnitId: existing.orgUnitId ?? "",
+        status: existing.accountStatus,
+      });
+
+      if (!decision.allowed) {
+        res.status(404).json({ error: decision.reason ?? "Not authorized to reject this request" });
+        return;
       }
 
-      assertCanReview({
-        targetId: existing.id,
-        targetStatus: existing.accountStatus,
-        reviewerId: req.user!.id,
-      });
+      // No self-rejection
+      if (reviewer.id === existing.id) {
+        res.status(403).json({ error: "You cannot reject your own account request" });
+        return;
+      }
 
       const rejected = await prisma.user.update({
         where: { id },
@@ -315,6 +336,72 @@ usersRouter.post(
       });
 
       res.status(200).json(toAdminUser(rejected));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * `POST /users/:id/escalate` — mark a request as "Not in my department".
+ *
+ * Only the DEPARTMENT_HEAD in scope for the request can escalate.
+ * The request moves to the SYSTEM_ADMIN queue.
+ */
+usersRouter.post(
+  "/:id/escalate",
+  authenticate,
+  requireCapability("ACCOUNT_APPROVE_OWN_UNIT"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Account ID is required" });
+        return;
+      }
+
+      const existing = await prisma.user.findUnique({ where: { id } });
+      if (!existing) {
+        res.status(404).json({ error: ERROR_APPROVE_NOT_FOUND });
+        return;
+      }
+
+      const reviewer = req.user!;
+
+      // Check if reviewer can decide on this request (must be DEPARTMENT_HEAD in scope)
+      if (reviewer.role !== "DEPARTMENT_HEAD") {
+        res.status(403).json({ error: "Only department heads can escalate requests" });
+        return;
+      }
+
+      const decision = await canDecide(reviewer, {
+        id: existing.id,
+        userId: existing.id,
+        requestedUnitId: existing.orgUnitId ?? "",
+        status: existing.accountStatus,
+      });
+
+      if (!decision.allowed) {
+        res.status(404).json({ error: decision.reason ?? "This request is not in your department scope" });
+        return;
+      }
+
+      // No self-escalation
+      if (reviewer.id === existing.id) {
+        res.status(403).json({ error: "You cannot escalate your own account request" });
+        return;
+      }
+
+      const escalated = await prisma.user.update({
+        where: { id },
+        data: {
+          accountStatus: "PENDING_APPROVAL", // Keep as pending but mark for SYSTEM_ADMIN
+          reviewNote: (existing.reviewNote ?? "") + "\n[ESCALATED] Not in my department",
+        },
+        select: userListSelect,
+      });
+
+      res.status(200).json(toAdminUser(escalated));
     } catch (err) {
       next(err);
     }

@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircle2, Info } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, Navigate } from "react-router-dom";
 import { z } from "zod";
@@ -13,7 +13,7 @@ import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
 import { ApiError } from "../../types/api";
 import type { AccountRequestResponse } from "../../types/user";
-import { DEPARTMENT_OPTIONS } from "../../lib/departments";
+import type { DepartmentOption } from "../../api/departments";
 
 const requestSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
@@ -33,6 +33,8 @@ export function RequestAccountPage() {
   const { user } = useAuth();
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<AccountRequestResponse | null>(null);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(true);
 
   const {
     register,
@@ -43,6 +45,23 @@ export function RequestAccountPage() {
   if (user) {
     return <Navigate to={user.mustChangePassword ? "/change-password" : "/dashboard"} replace />;
   }
+
+  useEffect(() => {
+    async function loadDepartments() {
+      try {
+        const res = await fetch("/api/v1/departments");
+        if (res.ok) {
+          const data = await res.json();
+          setDepartments(data);
+        }
+      } catch {
+        // Silently fail - form will show empty select
+      } finally {
+        setDepartmentsLoading(false);
+      }
+    }
+    loadDepartments();
+  }, []);
 
   async function onSubmit(values: RequestFormValues) {
     setFormError(null);
@@ -102,14 +121,23 @@ export function RequestAccountPage() {
               {...register("email")}
               required
             />
-            <Select
-              label="Department"
-              options={DEPARTMENT_OPTIONS}
-              placeholder="Select your department"
-              error={errors.department?.message}
-              {...register("department")}
-              required
-            />
+            {departmentsLoading ? (
+              <Input
+                label="Department"
+                placeholder="Loading departments..."
+                disabled
+                required
+              />
+            ) : (
+              <Select
+                label="Department"
+                options={departments.map((d) => ({ value: d.id, label: d.name }))}
+                placeholder="Select your department"
+                error={errors.department?.message}
+                {...register("department")}
+                required
+              />
+            )}
             <Input
               label="Password"
               type="password"

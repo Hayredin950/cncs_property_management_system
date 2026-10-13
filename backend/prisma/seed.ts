@@ -4,6 +4,7 @@ import {
   ItemStatus,
   RequestStatus,
   RequestType,
+  OrgUnitType,
 } from "../src/generated/prisma/client.js";
 import { prisma } from "../src/lib/prisma.js";
 import argon2 from "argon2";
@@ -20,7 +21,7 @@ const SEED_USERS = {
 };
 
 /**
- * Phase 2 workflow demo fixtures. Approval is ADMIN-only, so the two users above
+ * Phase 2 workflow demo fixtures. Approval is SYSTEM_ADMIN-only, so the two users above
  * are all the walkthrough needs: staff files, admin decides, and staff trying to
  * decide their own request is the 403 case.
  *
@@ -46,6 +47,73 @@ async function main() {
   );
   const byName = Object.fromEntries(categories.map((c) => [c.name, c]));
 
+  console.log("Seeding OrgUnits (College + Departments)...");
+  // College
+  const college = await prisma.orgUnit.upsert({
+    where: { name: "CNCS" },
+    update: {},
+    create: {
+      name: "CNCS",
+      code: "CNCS",
+      type: OrgUnitType.COLLEGE,
+      isActive: true,
+      acceptsSelfReg: false,
+    },
+  });
+
+  // Departments
+  const csDept = await prisma.orgUnit.upsert({
+    where: { name: "Computer Science" },
+    update: {},
+    create: {
+      name: "Computer Science",
+      code: "CS",
+      type: OrgUnitType.DEPARTMENT,
+      isActive: true,
+      acceptsSelfReg: true,
+      parentId: college.id,
+    },
+  });
+
+  const bioDept = await prisma.orgUnit.upsert({
+    where: { name: "Biology" },
+    update: {},
+    create: {
+      name: "Biology",
+      code: "BIO",
+      type: OrgUnitType.DEPARTMENT,
+      isActive: true,
+      acceptsSelfReg: true,
+      parentId: college.id,
+    },
+  });
+
+  const chemDept = await prisma.orgUnit.upsert({
+    where: { name: "Chemistry" },
+    update: {},
+    create: {
+      name: "Chemistry",
+      code: "CHEM",
+      type: OrgUnitType.DEPARTMENT,
+      isActive: true,
+      acceptsSelfReg: true,
+      parentId: college.id,
+    },
+  });
+
+  const physDept = await prisma.orgUnit.upsert({
+    where: { name: "Physics" },
+    update: {},
+    create: {
+      name: "Physics",
+      code: "PHYS",
+      type: OrgUnitType.DEPARTMENT,
+      isActive: true,
+      acceptsSelfReg: true,
+      parentId: college.id,
+    },
+  });
+
   console.log("Seeding users...");
   await prisma.user.upsert({
     where: { email: SEED_USERS.admin.email },
@@ -69,25 +137,120 @@ async function main() {
     },
   });
 
-  const staff = await prisma.user.upsert({
-    where: { email: SEED_USERS.staff.email },
+  // CS Department Head
+  const csHead = await prisma.user.upsert({
+    where: { email: "head.cs@cncs.aau.edu.et" },
     update: {},
     create: {
-      fullName: "Demo Staff",
-      email: SEED_USERS.staff.email,
-      passwordHash: await argon2.hash(SEED_USERS.staff.password, { type: argon2.argon2id }),
-      role: Role.STAFF,
+      fullName: "CS Department Head",
+      email: "head.cs@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("HeadCS123!", { type: argon2.argon2id }),
+      role: Role.DEPARTMENT_HEAD,
+      orgUnitId: csDept.id,
+      accountStatus: "ACTIVE",
     },
   });
 
-  const deptHead = await prisma.user.upsert({
-    where: { email: SEED_USERS.deptHead.email },
+  // Biology Department Head
+  const bioHead = await prisma.user.upsert({
+    where: { email: "head.bio@cncs.aau.edu.et" },
     update: {},
     create: {
-      fullName: "Department Head Test",
-      email: SEED_USERS.deptHead.email,
-      passwordHash: await argon2.hash(SEED_USERS.deptHead.password, { type: argon2.argon2id }),
+      fullName: "Biology Department Head",
+      email: "head.bio@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("HeadBIO123!", { type: argon2.argon2id }),
       role: Role.DEPARTMENT_HEAD,
+      orgUnitId: bioDept.id,
+      accountStatus: "ACTIVE",
+    },
+  });
+
+  // Chemistry Department Head
+  const chemHead = await prisma.user.upsert({
+    where: { email: "head.chem@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "Chemistry Department Head",
+      email: "head.chem@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("HeadCHEM123!", { type: argon2.argon2id }),
+      role: Role.DEPARTMENT_HEAD,
+      orgUnitId: chemDept.id,
+      accountStatus: "ACTIVE",
+    },
+  });
+
+  // Physics has NO head (vacant) - for testing fallback
+
+  // CS Staff
+  const csStaff1 = await prisma.user.upsert({
+    where: { email: "staff.cs1@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "CS Staff 1",
+      email: "staff.cs1@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("StaffCS123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: csDept.id,
+      accountStatus: "ACTIVE",
+      staffId: "STAFF-CS-001",
+    },
+  });
+
+  const csStaff2 = await prisma.user.upsert({
+    where: { email: "staff.cs2@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "CS Staff 2",
+      email: "staff.cs2@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("StaffCS123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: csDept.id,
+      accountStatus: "ACTIVE",
+      staffId: "STAFF-CS-002",
+    },
+  });
+
+  // Biology Staff
+  const bioStaff1 = await prisma.user.upsert({
+    where: { email: "staff.bio1@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "Biology Staff 1",
+      email: "staff.bio1@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("StaffBIO123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: bioDept.id,
+      accountStatus: "ACTIVE",
+      staffId: "STAFF-BIO-001",
+    },
+  });
+
+  const bioStaff2 = await prisma.user.upsert({
+    where: { email: "staff.bio2@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "Biology Staff 2",
+      email: "staff.bio2@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("StaffBIO123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: bioDept.id,
+      accountStatus: "ACTIVE",
+      staffId: "STAFF-BIO-002",
+    },
+  });
+
+  // Chemistry Staff
+  const chemStaff1 = await prisma.user.upsert({
+    where: { email: "staff.chem1@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "Chemistry Staff 1",
+      email: "staff.chem1@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("StaffCHEM123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: chemDept.id,
+      accountStatus: "ACTIVE",
+      staffId: "STAFF-CHEM-001",
     },
   });
 
@@ -102,29 +265,34 @@ async function main() {
     },
   });
 
+  // Set department heads
+  await prisma.orgUnit.update({
+    where: { id: csDept.id },
+    data: { headId: csHead.id },
+  });
+  await prisma.orgUnit.update({
+    where: { id: bioDept.id },
+    data: { headId: bioHead.id },
+  });
+  await prisma.orgUnit.update({
+    where: { id: chemDept.id },
+    data: { headId: chemHead.id },
+  });
+
   console.log("Seeding sample items + QR tags...");
   // tagId values are fixed/deterministic on purpose (not random) so this script
   // stays idempotent across re-runs.
-  //
-  // They deliberately do NOT match the shape `POST /items` generates
-  // (`CNCS-` + 8 hex, from crypto.randomBytes(4) — see routes/items.ts). That
-  // was flagged here as a follow-up before the Items track landed; the decision
-  // now it has is to keep `CNCS-DEMO-000n`, because nothing reads the format —
-  // lookup is an equality match on the column, and the QR payload is a URL
-  // built around whatever the tagId is — while the walkthrough in
-  // docs/phase-2.md is copy-pasted by hand, where "DEMO-0001" is legible and
-  // "CNCS-8F2A91C4" is a typo waiting to happen. Recorded in docs/phase-2.md
-  // so it isn't reopened as an oversight.
   const sampleItems = [
+    // CS items
     {
       tagId: "CNCS-DEMO-0001",
       name: "Dell Latitude Laptop",
       categoryId: byName["Electronics"].id,
-      department: "Computer Science",
+      orgUnitId: csDept.id,
       building: "CNCS Building",
       floor: "3",
       room: "312",
-      ownerId: staff.id,
+      ownerId: csStaff1.id,
       purchaseCost: 45000,
       condition: Condition.GOOD,
       brand: "Dell",
@@ -135,29 +303,62 @@ async function main() {
       tagId: "CNCS-DEMO-0002",
       name: "Office Desk",
       categoryId: byName["Furniture"].id,
-      department: "Administration",
+      orgUnitId: csDept.id,
       building: "CNCS Building",
       floor: "1",
       room: "101",
-      ownerId: deptHead.id,
+      ownerId: csHead.id,
       purchaseCost: 8000,
       condition: Condition.NEW,
       photoUrl: "/photos/desk.jpg",
     },
+    // Biology items
     {
       tagId: "CNCS-DEMO-0003",
       name: "Microscope",
       categoryId: byName["Lab Equipment"].id,
-      department: "Biology",
+      orgUnitId: bioDept.id,
       building: "Science Complex",
       floor: "2",
       room: "204",
-      ownerId: staff.id,
+      ownerId: bioStaff1.id,
       purchaseCost: 120000,
       condition: Condition.FAIR,
       brand: "Olympus",
       model: "CX23",
       photoUrl: "/photos/microscope.jpg",
+    },
+    // Chemistry items
+    {
+      tagId: "CNCS-DEMO-0004",
+      name: "Dell 65W Charger",
+      categoryId: byName["Electronics"].id,
+      orgUnitId: chemDept.id,
+      building: "Chemistry Building",
+      floor: "1",
+      room: "101",
+      ownerId: chemStaff1.id,
+      purchaseCost: 1200,
+      condition: Condition.GOOD,
+      brand: "Dell",
+      model: "LA65NM130",
+      photoUrl: "/photos/charger.jpg",
+    },
+    // Physics items (no head)
+    {
+      tagId: "CNCS-DEMO-0005",
+      name: "Physics Lab Equipment",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: physDept.id,
+      building: "Physics Building",
+      floor: "1",
+      room: "101",
+      ownerId: physDept.id, // Department-held
+      holderType: "DEPARTMENT",
+      holderId: physDept.id,
+      purchaseCost: 50000,
+      condition: Condition.GOOD,
+      photoUrl: "/photos/physics.jpg",
     },
   ];
 
@@ -165,12 +366,6 @@ async function main() {
   for (const { tagId, ...data } of sampleItems) {
     const item = await prisma.item.upsert({
       where: { tagId },
-      // `photoUrl` is the one field this seed *does* refresh on an existing
-      // row. Every other column is left alone so a walked-through demo is not
-      // silently reset, but the photo is presentation-only demo furniture: an
-      // instance seeded before these images existed would keep rendering
-      // `PhotoFrame`'s "No photo" placeholder forever, and the only other fix
-      // would be dropping the database.
       update: { photoUrl: data.photoUrl },
       create: { ...data, tagId },
     });
@@ -184,10 +379,7 @@ async function main() {
     throw new Error(`Expected ${LAPTOP_TAG_ID} to be seeded before the workflow fixtures.`);
   }
 
-  // The accessory that makes the approval cascade demoable: approving a TRANSFER
-  // on the laptop must move this charger with it, and a DISPOSAL must dispose it
-  // with a "Disposed with parent item CNCS-DEMO-0001: ..." reason (decision D6).
-  // `update` re-links it, so a demo that unlinked it is repeatable.
+  // The accessory that makes the approval cascade demoable
   const charger = await prisma.item.upsert({
     where: { tagId: CHARGER_TAG_ID },
     update: { parentItemId: laptop.id, photoUrl: "/photos/charger.jpg" },
@@ -195,11 +387,11 @@ async function main() {
       tagId: CHARGER_TAG_ID,
       name: "Dell 65W Charger",
       categoryId: byName["Electronics"].id,
-      department: "Computer Science",
+      orgUnitId: csDept.id,
       building: "CNCS Building",
       floor: "3",
       room: "312",
-      ownerId: staff.id,
+      ownerId: csStaff1.id,
       purchaseCost: 1200,
       condition: Condition.GOOD,
       brand: "Dell",
@@ -210,28 +402,21 @@ async function main() {
   });
   await generateTagQR(charger.tagId);
 
-  // Restore the bundle's baseline. Without this the walkthrough in
-  // docs/phase-2.md runs exactly once ever: its disposal step sets
-  // status=DISPOSED, and `upsert`'s `update: {}` on an existing row is a no-op,
-  // so the next seed would leave the laptop disposed and every later step 409.
-  // Scoped to the two tags this block owns — no other item is touched.
+  // Restore the bundle's baseline
   await prisma.item.updateMany({
     where: { tagId: { in: [LAPTOP_TAG_ID, CHARGER_TAG_ID] } },
     data: {
       building: "CNCS Building",
       floor: "3",
       room: "312",
-      ownerId: staff.id,
+      ownerId: csStaff1.id,
       status: ItemStatus.ACTIVE,
       disposalReason: null,
       disposedAt: null,
     },
   });
 
-  // One PENDING TRANSFER, ready for `POST /requests/:id/approve`. The `update`
-  // rewinds a decided request instead of leaving it APPROVED — same reasoning as
-  // the reset above. Note it does NOT rewind the ItemEditLog rows that decision
-  // wrote: history is append-only, and a growing trail is the point.
+  // One PENDING TRANSFER
   const transferRequest = await prisma.request.upsert({
     where: { id: SEED_REQUEST_ID },
     update: {
@@ -245,7 +430,7 @@ async function main() {
       type: RequestType.TRANSFER,
       status: RequestStatus.PENDING,
       itemId: laptop.id,
-      requestedById: staff.id,
+      requestedById: csStaff1.id,
       reason: "Laptop is moving with its user to the ground-floor office.",
       newLocationBuilding: "CNCS Building",
       newLocationFloor: "1",
@@ -253,16 +438,8 @@ async function main() {
     },
   });
 
-  // The reviewer's inbox row for that request. Rendered by the same helper the
-  // API uses, so the seeded text cannot drift from the D3 template — including
-  // the `[REQUEST_SUBMITTED]` prefix, which `GET /notifications` strips.
-  //
-  // Only one row, for the property officer who can decide it: the real fan-out
-  // (D2 — every deciding role except the requester) is
-  // `notifyReviewersOfNewRequest`, exercised by the API, and duplicating it here
-  // would mean non-deterministic ids for no demo value.
   const submittedMessage = renderRequestSubmitted({
-    requesterName: staff.fullName,
+    requesterName: csStaff1.fullName,
     requestType: "TRANSFER",
     itemTagId: laptop.tagId,
     itemName: laptop.name,
@@ -278,23 +455,58 @@ async function main() {
     },
   });
 
+  // Add a few pending account requests per department
+  const pendingCS = await prisma.user.upsert({
+    where: { email: "pending.cs@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "Pending CS Staff",
+      email: "pending.cs@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("Pending123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: csDept.id,
+      accountStatus: "PENDING_APPROVAL",
+      staffId: "PENDING-CS-001",
+    },
+  });
+
+  const pendingBIO = await prisma.user.upsert({
+    where: { email: "pending.bio@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "Pending Bio Staff",
+      email: "pending.bio@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("Pending123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: bioDept.id,
+      accountStatus: "PENDING_APPROVAL",
+      staffId: "PENDING-BIO-001",
+    },
+  });
+
+  const pendingPHYS = await prisma.user.upsert({
+    where: { email: "pending.phys@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "Pending Phys Staff",
+      email: "pending.phys@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("Pending123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: physDept.id,
+      accountStatus: "PENDING_APPROVAL",
+      staffId: "PENDING-PHYS-001",
+    },
+  });
+
   console.log("Seed complete:");
   console.log(`  ${categories.length} categories`);
-  console.log(
-    `  5 users: ` +
-    `${SEED_USERS.admin.email} / ${SEED_USERS.admin.password} (SYSTEM_ADMIN), ` +
-    `${SEED_USERS.officer.email} / ${SEED_USERS.officer.password} (PROPERTY_OFFICER), ` +
-    `${SEED_USERS.staff.email} / ${SEED_USERS.staff.password} (STAFF), ` +
-    `${SEED_USERS.deptHead.email} / ${SEED_USERS.deptHead.password} (DEPARTMENT_HEAD), ` +
-    `${SEED_USERS.auditor.email} / ${SEED_USERS.auditor.password} (AUDITOR)`
-  );
-  console.log(`  ${sampleItems.length + 1} items with QR tags generated under uploads/tags/`);
-  console.log(`  ${CHARGER_TAG_ID} linked as an accessory of ${LAPTOP_TAG_ID}`);
-  console.log(`  1 PENDING TRANSFER request (${SEED_REQUEST_ID}) on ${LAPTOP_TAG_ID}, filed by staff`);
-  console.log(`  1 unread notification (${SEED_NOTIFICATION_ID}) in the admin's inbox`);
-  // The request and accessory endpoints take item ids, not tagIds — printed here
-  // so the walkthrough in docs/phase-2.md can be copy-pasted without a DB query.
-  console.log(`  item ids: ${LAPTOP_TAG_ID}=${laptop.id}  ${CHARGER_TAG_ID}=${charger.id}`);
+  console.log(`  1 College, 4 Departments (CS, Biology, Chemistry, Physics)`);
+  console.log(`  3 Department Heads (CS, Biology, Chemistry), Physics has NO head`);
+  console.log(`  2 CS Staff, 2 Biology Staff, 1 Chemistry Staff`);
+  console.log(`  5 Items across departments`);
+  console.log(`  3 Pending account requests (CS, Biology, Physics)`);
+  console.log(`  1 PENDING TRANSFER request (${SEED_REQUEST_ID}) on ${LAPTOP_TAG_ID}, filed by CS Staff 1`);
+  console.log(`  1 unread notification (${SEED_NOTIFICATION_ID}) in the officer's inbox`);
 }
 
 main()

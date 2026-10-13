@@ -29,10 +29,21 @@ export type Capability =
   | "REQUEST_READ_ALL"
   | "REPORT_VIEW_ALL"
   | "ACCOUNT_MANAGE"
+  | "ACCOUNT_APPROVE_OWN_UNIT"
+  | "ACCOUNT_APPROVE_ANY"
+  | "ACCOUNT_INVITE"
+  | "ACCOUNT_DEACTIVATE_OWN_UNIT"
+  | "ACCOUNT_DEACTIVATE_PRIVILEGED"
   | "USER_READ";
 
 const GRANTS: Record<Role, readonly Capability[]> = {
-  SYSTEM_ADMIN: ["ACCOUNT_MANAGE", "USER_READ"],
+  SYSTEM_ADMIN: [
+    "ACCOUNT_MANAGE",
+    "ACCOUNT_APPROVE_ANY",
+    "ACCOUNT_INVITE",
+    "ACCOUNT_DEACTIVATE_PRIVILEGED",
+    "USER_READ",
+  ],
   PROPERTY_OFFICER: [
     "ITEM_CREATE",
     "ITEM_EDIT_IDENTITY",
@@ -59,6 +70,8 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "REQUEST_DECIDE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
+    "ACCOUNT_APPROVE_OWN_UNIT",
+    "ACCOUNT_DEACTIVATE_OWN_UNIT",
   ],
   STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM"],
   AUDITOR: ["ITEM_READ_ALL", "AUDIT_RUN", "AUDIT_VIEW", "REPORT_VIEW_ALL"],
@@ -104,3 +117,18 @@ export const canApproveDisposal = (role: Role | undefined | null) =>
 /** Approve a loan request (property officer only). */
 export const canApproveLoan = (role: Role | undefined | null) =>
   hasCapability(role, "LOAN_APPROVE");
+/** Approve staff self-registrations in own unit (Department Head). */
+export const canApproveOwnUnitAccounts = (role: Role | undefined | null) =>
+  hasCapability(role, "ACCOUNT_APPROVE_OWN_UNIT");
+/** Approve any account request (System Admin). */
+export const canApproveAnyAccount = (role: Role | undefined | null) =>
+  hasCapability(role, "ACCOUNT_APPROVE_ANY");
+/** Invite privileged accounts (System Admin). */
+export const canInviteAccounts = (role: Role | undefined | null) =>
+  hasCapability(role, "ACCOUNT_INVITE");
+/** Deactivate staff in own unit (Department Head). */
+export const canDeactivateOwnUnitStaff = (role: Role | undefined | null) =>
+  hasCapability(role, "ACCOUNT_DEACTIVATE_OWN_UNIT");
+/** Deactivate privileged roles (System Admin). */
+export const canDeactivatePrivileged = (role: Role | undefined | null) =>
+  hasCapability(role, "ACCOUNT_DEACTIVATE_PRIVILEGED");

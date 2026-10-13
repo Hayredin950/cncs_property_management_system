@@ -1,39 +1,37 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
+import { prisma } from "../lib/prisma.js";
 
 export const departmentsRouter: Router = Router();
 
 /**
- * The CNCS department vocabulary.
+ * GET /departments — Public list of departments accepting self-registration.
  *
- * Closes gap G9: `Item.department` is a free-text column and there was no
- * endpoint to enumerate it, so the only source of department names was the
- * departments that happened to appear on `GET /items` — which is empty on a
- * fresh register and drifts with typos. This is the fixed list the college
- * files property under, exposed so every client picks from the same set.
- *
- * Public on purpose: the register, the audit scope and the item form are all
- * reachable by (or on behalf of) staff who may be anonymous on the read side,
- * and department names are not sensitive. It stays a read; writing a department
- * is still part of `Item`.
+ * Returns active OrgUnits with type DEPARTMENT and acceptsSelfReg = true.
+ * No head names, no counts, no item data.
  */
-export const CNCS_DEPARTMENTS = [
-  "Biology",
-  "Chemistry",
-  "Physics",
-  "Mathematics",
-  "Statistics",
-  "Earth Science (Geology)",
-  "Computer Science",
-  "Information Science (INSY)",
-] as const;
-
 departmentsRouter.get(
   "/",
-  (_req: Request, res: Response, _next: NextFunction): void => {
-    // `{ value, label }` rather than a bare string array: it is the shape every
-    // picker in the app already consumes, so a client can render it directly.
-    res.status(200).json(
-      CNCS_DEPARTMENTS.map((name) => ({ value: name, label: name })),
-    );
+  async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const departments = await prisma.orgUnit.findMany({
+        where: {
+          type: "DEPARTMENT",
+          isActive: true,
+          acceptsSelfReg: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+        },
+        orderBy: { name: "asc" },
+      });
+
+      res.status(200).json(
+        departments.map((d) => ({ id: d.id, name: d.name, code: d.code })),
+      );
+    } catch (err) {
+      next(err);
+    }
   },
 );

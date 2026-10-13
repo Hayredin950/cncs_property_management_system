@@ -54,6 +54,16 @@ export type Capability =
   | "REPORT_VIEW_ALL"
   /** Account administration: invites, approvals, deactivation, resets (spec 3). */
   | "ACCOUNT_MANAGE"
+  /** Approve staff self-registrations in own unit (DEPARTMENT_HEAD). */
+  | "ACCOUNT_APPROVE_OWN_UNIT"
+  /** Approve any account request (SYSTEM_ADMIN). */
+  | "ACCOUNT_APPROVE_ANY"
+  /** Invite privileged accounts (SYSTEM_ADMIN). */
+  | "ACCOUNT_INVITE"
+  /** Deactivate staff in own unit (DEPARTMENT_HEAD). */
+  | "ACCOUNT_DEACTIVATE_OWN_UNIT"
+  /** Deactivate privileged roles (SYSTEM_ADMIN). */
+  | "ACCOUNT_DEACTIVATE_PRIVILEGED"
   /**
    * Read the account list. Needed by the Property Officer to pick a holder when
    * registering an item — a name and an email are not asset data, so this does
@@ -65,7 +75,13 @@ export type Capability =
 const GRANTS: Record<UserRole, readonly Capability[]> = {
   // Technical + account administration only. Sees no asset data, approves
   // nothing business-related (spec 2.1.1). ACCOUNT_ADMIN merged into this role per 12 Oct decision.
-  SYSTEM_ADMIN: ["ACCOUNT_MANAGE", "USER_READ"],
+  SYSTEM_ADMIN: [
+    "ACCOUNT_MANAGE",
+    "ACCOUNT_APPROVE_ANY",
+    "ACCOUNT_INVITE",
+    "ACCOUNT_DEACTIVATE_PRIVILEGED",
+    "USER_READ",
+  ],
   // The single college-level operational role (spec 2.1.2).
   PROPERTY_OFFICER: [
     "ITEM_CREATE",
@@ -97,6 +113,8 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "REQUEST_DECIDE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
+    "ACCOUNT_APPROVE_OWN_UNIT",
+    "ACCOUNT_DEACTIVATE_OWN_UNIT",
   ],
   // Scoped to one department. Holds and claims items, files requests, edits
   // condition and notes of what they hold — nothing else.

@@ -503,7 +503,7 @@ describe("POST /users/:id/approve", () => {
     expect(call.data.tokenVersion).toEqual({ increment: 1 });
   });
 
-  it("refuses an administrator approving their own account (403, server-side)", async () => {
+  it("refuses an administrator approving their own account (404, hides existence)", async () => {
     // The account under decision IS the caller. Nothing about this request needs
     // the queue screen to have hidden a button.
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
@@ -516,12 +516,12 @@ describe("POST /users/:id/approve", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .send({});
 
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe("You cannot approve or reject your own account");
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("You cannot approve or reject your own account request");
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
-  it("refuses a decision on an account that is not waiting (409)", async () => {
+  it("refuses a decision on an account that is not waiting (404, hides existence)", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
       id: "user-1",
       accountStatus: "ACTIVE",
@@ -532,8 +532,8 @@ describe("POST /users/:id/approve", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .send({});
 
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe("This account is not waiting for approval");
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("This request is not pending approval");
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
@@ -594,7 +594,7 @@ describe("POST /users/:id/reject", () => {
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
-  it("refuses an administrator rejecting their own account (403, server-side)", async () => {
+  it("refuses an administrator rejecting their own account (404, hides existence)", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
       id: "admin-1",
       accountStatus: "PENDING_APPROVAL",
@@ -605,8 +605,8 @@ describe("POST /users/:id/reject", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ reason: "Never mind" });
 
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe("You cannot approve or reject your own account");
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("You cannot approve or reject your own account request");
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

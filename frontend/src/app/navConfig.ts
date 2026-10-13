@@ -11,6 +11,7 @@ import {
   Settings,
   ShieldCheck,
   Tag,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "../types/enums";
@@ -54,9 +55,11 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Scan a Tag", to: "/scan", icon: ScanLine, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"], phase: 1, emphasized: true },
   { label: "Browse Items", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER"], phase: 1 },
   { label: "My Items", to: "/items?mine=true", icon: Package, roles: ["STAFF", "DEPARTMENT_HEAD"], phase: 1 },
+  { label: "Department Items", to: "/department-items", icon: Users, roles: ["DEPARTMENT_HEAD"], phase: 1 },
   { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["PROPERTY_OFFICER"], phase: 2, badge: "pending-count" },
   { label: "Department Requests", to: "/requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
   { label: "My Requests", to: "/requests?mine=true", icon: ClipboardList, roles: ["STAFF"], phase: 2 },
+  { label: "Account Requests", to: "/account-requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
   { label: "Notifications", to: "/notifications", icon: Bell, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 2, badge: "unread-notifications" },
   { label: "Buildings", to: "/buildings", icon: Building2, roles: ["PROPERTY_OFFICER"], phase: 2 },
   { label: "New item", to: "/items/new", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
@@ -64,6 +67,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Audit history", to: "/audits", icon: History, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
   { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER"], phase: 3 },
   { label: "Account Admins", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN"], phase: 2 },
+  { label: "Account Requests", to: "/admin/account-requests", icon: ClipboardList, roles: ["SYSTEM_ADMIN"], phase: 2, badge: "pending-count" },
   { label: "System Config", to: "/admin/system", icon: Settings, roles: ["SYSTEM_ADMIN"], phase: 2 },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
 ];

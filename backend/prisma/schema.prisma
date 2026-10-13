@@ -139,23 +139,108 @@ enum CustodyEventType {
   EDITED
 }
 
-/// A real organisational unit. A Department is a Unit; the Office of Auditors is a unit
-/// with no head (spec 2.3.2), which is why headId is optional.
-model Department {
+/// OrgUnit hierarchy: College → Department → (future: Lab/Group). One head per unit.
+/// Self-referencing via parentId for tree structure.
+model OrgUnit {
+  id                 String    @id @default(uuid())
+  name               String    @unique
+  code               String    @unique
+  type               OrgUnitType
+  isActive           Boolean   @default(true)
+  acceptsSelfReg     Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+
+  /// Parent unit (e.g., Department → College). Null for root (College).
+  parentId           String?
+  parent             OrgUnit?  @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
+  children           OrgUnit[] @relation("OrgUnitHierarchy")
+
+  /// One head per unit. A vacant head is null (fallback to parent head, then SYSTEM_ADMIN).
+  headId             String?   @unique
+  head               User?     @relation("OrgUnitHead", fields: [headId], references: [id])
+
+  users              User[]    @relation("UserOrgUnit")
+  items              Item[]    @relation("ItemOrgUnit")
+  requestedAccountRequests  AccountRequest[] @relation("RequestedAccountRequests")
+  confirmedAccountRequests  AccountRequest[] @relation("ConfirmedAccountRequests")
+  adminActions       AdminActionLog[] @relation("AdminActionLogs")
+
+  @@index([type])
+  @@index([parentId])
+}
+
+model AccountRequest {
+  id                 String            @id @default(uuid())
+  userId             String            @unique
+  user               User              @relation("AccountRequestUser", fields: [userId], references: [id])
+  requestedUnitId    String
+  requestedUnit      OrgUnit           @relation("RequestedAccountRequests", fields: [requestedUnitId], references: [id])
+  confirmedUnitId    String?
+  confirmedUnit      OrgUnit?          @relation("ConfirmedAccountRequests", fields: [confirmedUnitId], references: [id])
+  status             AccountRequestStatus @default(PENDING_APPROVAL)
+  submittedAt        DateTime          @default(now())
+  decidedAt          DateTime?
+  decidedById        String?
+  decidedBy          User?             @relation("DecidedAccountRequests", fields: [decidedById], references: [id])
+  decisionNote       String?
+  rejectionReason    String?
+  escalatedAt        DateTime?
+  escalatedById      String?
+  escalatedBy        User?             @relation("EscalatedAccountRequests", fields: [escalatedById], references: [id])
+  escalationReason   String?
+
+  @@index([requestedUnitId, status])
+  @@index([escalatedAt])
+}
+
+enum AccountRequestStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  ESCALATED
+}
+
+model EmailToken {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation("EmailTokens", fields: [userId], references: [id])
+  type      EmailTokenType
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  @@index([userId, type])
+  @@index([expiresAt])
+}
+
+enum EmailTokenType {
+  VERIFY
+  INVITE
+  RESET
+}
+
+model AdminActionLog {
   id        String   @id @default(uuid())
-  name      String   @unique
-  code      String   @unique
-  isActive  Boolean  @default(true)
+  actorId   String
+  actor     User     @relation("AdminActions", fields: [actorId], references: [id])
+  action    String
+  targetUserId String?
+  targetUser User?   @relation("AdminActionTargets", fields: [targetUserId], references: [id])
+  unitId    String?
+  unit      OrgUnit? @relation("AdminActionLogs", fields: [unitId], references: [id])
+  before    Json?
+  after     Json?
   createdAt DateTime @default(now())
 
-  /// One head per department, and a head belongs to one department. A vacant head is
-  /// null rather than an empty string (spec 13.1 fixes this with a fallback approver,
-  /// which lands with the approver-resolution slice).
-  headId String? @unique
-  head   User?   @relation("DepartmentHead", fields: [headId], references: [id])
+  @@index([actorId, createdAt])
+  @@index([targetUserId])
+}
 
-  users User[] @relation("UserDepartment")
-  items Item[] @relation("ItemDepartment")
+enum OrgUnitType {
+  COLLEGE
+  DEPARTMENT
+  LAB_GROUP
 }
 
 model User {
@@ -166,16 +251,17 @@ model User {
   role         Role
   createdAt    DateTime @default(now())
 
-  /// Real department link. The old system's free-text department lives on Item only
-  /// and is removed in the contract slice.
-  departmentId String?
-  departmentRef Department? @relation("UserDepartment", fields: [departmentId], references: [id])
+  /// OrgUnit link. Replaces departmentId. Staff/heads belong to one unit.
+  orgUnitId    String?
+  orgUnitRef   OrgUnit?   @relation("UserOrgUnit", fields: [orgUnitId], references: [id])
 
-  /// Account lifecycle (spec 3.1.2). A self-request lands PENDING_APPROVAL and
-  /// cannot sign in until a SYSTEM_ADMIN approves it — the supervisor's flagged
-  /// rule: nobody self-registers into an active account. `createdAt` is the
+  /// Staff ID for self-registration (unique, required for STAFF)
+  staffId      String?   @unique
+
+  /// Account lifecycle (spec 3.1.2). A self-request lands PENDING_EMAIL_VERIFICATION
+  /// and cannot sign in until an approver approves it. `createdAt` is the
   /// request time, so the queue needs no separate `requestedAt` column.
-  accountStatus AccountStatus @default(ACTIVE)
+  accountStatus AccountStatus @default(PENDING_EMAIL_VERIFICATION)
 
   /// Who decided this account and when (spec 3.1.2). Null for an account an
   /// administrator created directly — there was nothing to approve — and for
@@ -196,7 +282,8 @@ model User {
   /// chooses their own password (spec 3.3.7, 12.5).
   mustChangePassword Boolean @default(false)
 
-  headOfDepartment Department? @relation("DepartmentHead")
+  /// Head of an OrgUnit (for DEPARTMENT_HEAD role)
+  headedOrgUnit  OrgUnit?   @relation("OrgUnitHead")
 
   ownedItems       Item[]         @relation("ItemOwner")
   requestsCreated  Request[]      @relation("RequestedBy")
@@ -215,6 +302,12 @@ model User {
   stage2ApprovedRequests Request[] @relation("TransferStage2Approvals")
   /// Items this user returned from loan.
   loansReturned Request[] @relation("LoanReturnedBy")
+  accountRequest   AccountRequest? @relation("AccountRequestUser")
+  decidedAccountRequests AccountRequest[] @relation("DecidedAccountRequests")
+  escalatedAccountRequests AccountRequest[] @relation("EscalatedAccountRequests")
+  adminActions     AdminActionLog[] @relation("AdminActions")
+  adminActionTargets AdminActionLog[] @relation("AdminActionTargets")
+  emailTokens      EmailToken[]   @relation("EmailTokens")
 
   /// The approval queue reads by status, oldest first.
   @@index([accountStatus])
@@ -235,10 +328,9 @@ model Item {
   name         String
   categoryId   String
   category     Category    @relation(fields: [categoryId], references: [id])
-  /// Free-text department, kept read-only until the contract slice.
-  department   String
-  departmentId String?
-  departmentRecord Department? @relation("ItemDepartment", fields: [departmentId], references: [id])
+  /// OrgUnit link for department-level items. Replaces free-text department.
+  orgUnitId    String?
+  orgUnitRef   OrgUnit?    @relation("ItemOrgUnit", fields: [orgUnitId], references: [id])
   building     String
   floor        String
   room         String
@@ -298,7 +390,7 @@ model Item {
 
   @@index([holderType, holderId])
   @@index([status])
-  @@index([departmentId])
+  @@index([orgUnitId])
 }
 
 model CustodyEvent {

@@ -68,3 +68,12 @@ export interface LoginRequest {
   email: string;
   password: string;
 }
+
+/**
+ * Department option from `GET /departments`.
+ */
+export interface DepartmentOption {
+  id: string;
+  name: string;
+  code: string;
+}

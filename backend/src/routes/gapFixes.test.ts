@@ -11,6 +11,7 @@ vi.mock("../lib/prisma.js", () => {
     item: { findUnique: vi.fn() },
     auditSession: { findUnique: vi.fn() },
     auditItemResultRow: { findMany: vi.fn() },
+    orgUnit: { findMany: vi.fn() },
   };
   return { prisma: client };
 });
@@ -23,13 +24,20 @@ beforeEach(() => {
 
 describe("GET /departments", () => {
   it("lists the canonical CNCS departments", async () => {
+    vi.mocked(prisma.orgUnit.findMany).mockResolvedValueOnce([
+      { id: "1", name: "Computer Science", code: "CS" },
+      { id: "2", name: "Biology", code: "BIO" },
+      { id: "3", name: "Chemistry", code: "CHEM" },
+      { id: "4", name: "Physics", code: "PHYS" },
+    ] as never);
+
     const res = await request(app).get("/departments");
 
     expect(res.status).toBe(200);
-    const values = (res.body as { value: string }[]).map((row) => row.value);
+    const values = (res.body as { name: string }[]).map((row) => row.name);
     expect(values).toContain("Computer Science");
-    expect(values).toContain("Information Science (INSY)");
-    expect(values.length).toBeGreaterThanOrEqual(8);
+    expect(values).toContain("Physics");
+    expect(values.length).toBeGreaterThanOrEqual(4);
   });
 });
 

@@ -1,6 +1,5 @@
 import path from "node:path";
 import dotenv from "dotenv";
-import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../generated/prisma/client.js";
 
 /**
@@ -17,9 +16,27 @@ import { PrismaClient } from "../generated/prisma/client.js";
  * platform's real variables are already in `process.env` and dotenv does not
  * overwrite them.
  */
-// Three levels up: this file is `backend/src/lib/` and the `.env` is at the
-// repo root, next to `docker-compose.yaml`.
 dotenv.config({ path: path.resolve(import.meta.dirname, "../../../.env") });
 
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
-export const prisma = new PrismaClient({ adapter });
+/**
+ * Use PrismaNeon adapter only in development (long-running server).
+ * In production (Vercel serverless), WebSockets aren't supported,
+ * so use standard PrismaClient with the pooled connection string directly.
+ */
+const isProduction = process.env.NODE_ENV === "production";
+
+let prisma: PrismaClient;
+
+if (isProduction) {
+  // Production: use pooled connection directly (no WebSocket adapter)
+  prisma = new PrismaClient({
+    datasourceUrl: process.env.DATABASE_URL,
+  });
+} else {
+  // Development: use Neon WebSocket adapter for better performance
+  const { PrismaNeon } = await import("@prisma/adapter-neon");
+  const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
+  prisma = new PrismaClient({ adapter });
+}
+
+export { prisma };

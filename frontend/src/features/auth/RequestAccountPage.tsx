@@ -10,13 +10,16 @@ import { PortalPageHeader } from "../../components/aau/PortalPageHeader";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Input } from "../../components/Input";
+import { Select } from "../../components/Select";
 import { ApiError } from "../../types/api";
 import type { AccountRequestResponse } from "../../types/user";
+import { DEPARTMENT_OPTIONS } from "../../lib/departments";
 
 const requestSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
   email: z.string().trim().email("Enter a valid email"),
   password: z.string().min(8, "At least 8 characters"),
+  department: z.string().trim().min(1, "Department is required"),
 });
 
 type RequestFormValues = z.infer<typeof requestSchema>;
@@ -97,6 +100,14 @@ export function RequestAccountPage() {
               autoComplete="email"
               error={errors.email?.message}
               {...register("email")}
+              required
+            />
+            <Select
+              label="Department"
+              options={DEPARTMENT_OPTIONS}
+              placeholder="Select your department"
+              error={errors.department?.message}
+              {...register("department")}
               required
             />
             <Input

@@ -43,6 +43,7 @@ describe("RequestAccountPage", () => {
     await user.type(screen.getByLabelText("Full name"), "New Person");
     await user.type(screen.getByLabelText("Email"), "new.person@aau.edu.et");
     await user.type(screen.getByLabelText("Password"), "SecurePass1");
+    await user.selectOptions(screen.getByLabelText("Department"), "Biology");
     await user.click(screen.getByRole("button", { name: "Submit request" }));
 
     await waitFor(() =>
@@ -50,6 +51,7 @@ describe("RequestAccountPage", () => {
         fullName: "New Person",
         email: "new.person@aau.edu.et",
         password: "SecurePass1",
+        department: "Biology",
       }),
     );
 

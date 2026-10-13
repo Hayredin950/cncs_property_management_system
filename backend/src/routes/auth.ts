@@ -209,6 +209,7 @@ const accountRequestSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
   email: z.string().trim().email("Enter a valid email"),
   password: z.string().min(8, "At least 8 characters"),
+  department: z.string().trim().min(1, "Department is required"),
 });
 
 /**
@@ -265,6 +266,7 @@ router.post(
           passwordHash,
           role: "STAFF",
           accountStatus: "PENDING_APPROVAL",
+          department: parseResult.data.department,
         },
         select: { id: true, fullName: true, email: true, accountStatus: true, createdAt: true },
       });

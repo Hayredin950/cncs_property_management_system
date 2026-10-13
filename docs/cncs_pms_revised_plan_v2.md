@@ -45,12 +45,11 @@ Supersedes `cncs_pms_change_specification.md` (v1). It folds in the team's spec 
 
 ### 2.1 Role set (DECIDED)
 
-1. SYSTEM_ADMIN: technical only. Seeds the first Account Admin, can deactivate Account Admins, manages system configuration. Sees no asset data.
-2. ACCOUNT_ADMIN: invites privileged accounts (Department Heads, Property Officer, Auditors, other Account Admins), deactivates Department Heads and Auditors, resolves account issues (locked or unverified accounts, reset help). Sees no asset data. Cannot hold any asset-approval role.
-3. PROPERTY_OFFICER: the single college-level role. Registers and imports assets, finalises disposals, records cross-department transfers, manages buildings and the about page content, investigates losses.
-4. DEPARTMENT_HEAD: scoped to one department. Approves staff registrations, approves transfers and loans, recommends disposals, deactivates staff in their own department. Can also hold property personally and claim it like staff. (DECIDED)
-5. STAFF: scoped to one department. Claims and holds assets, initiates transfer, disposal and loan requests, edits condition and notes of items they hold.
-6. AUDITOR: belongs to the Office of Auditors (a unit with no head for now). Conducts audits.
+1. SYSTEM_ADMIN: technical + account administration. Seeds the first Account Admin (now merged), manages system configuration, invites privileged accounts (Department Heads, Property Officer, Auditors, other System Admins), approves/rejects staff registrations, deactivates Department Heads and Auditors, resolves account issues. Sees no asset data.
+2. PROPERTY_OFFICER: the single college-level role. Registers and imports assets, finalises disposals, records cross-department transfers, manages buildings and the about page content, investigates losses.
+3. DEPARTMENT_HEAD: scoped to one department. Approves staff registrations, approves transfers and loans, recommends disposals, deactivates staff in their own department. Can also hold property personally and claim it like staff. (DECIDED)
+4. STAFF: scoped to one department. Claims and holds assets, initiates transfer, disposal and loan requests, edits condition and notes of items they hold.
+5. AUDITOR: belongs to the Office of Auditors (a unit with no head for now). Conducts audits.
 
 Rules:
 - One person cannot hold both PROPERTY_OFFICER and AUDITOR. Enforced in the data model.

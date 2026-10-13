@@ -736,6 +736,7 @@ describe("POST /auth/account-requests", () => {
     fullName: "Hanna Tesfaye",
     email: "Hanna@cncs.aau.edu.et",
     password: "ChosenByMe123",
+    department: "Computer Science",
   };
 
   // This file's earlier suites create rows, and `not.toHaveBeenCalled()` below is a

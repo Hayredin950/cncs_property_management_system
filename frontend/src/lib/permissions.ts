@@ -90,6 +90,10 @@ export const canManageAccounts = (role: Role | undefined | null) =>
 export const canReadUsers = (role: Role | undefined | null) => hasCapability(role, "USER_READ");
 /** See every item's detail, whichever role holds it. */
 export const seesAllItems = (role: Role | undefined | null) => hasCapability(role, "ITEM_READ_ALL");
+
+/** View own filed requests (STAFF and any role with REQUEST_DECIDE). */
+export const canViewOwnRequests = (role: Role | undefined | null) =>
+  hasCapability(role, "REQUEST_DECIDE") || role === "STAFF";
 /** Approve first stage of a transfer (releasing head / property officer). */
 export const canApproveTransferStage1 = (role: Role | undefined | null) =>
   hasCapability(role, "TRANSFER_APPROVE_STAGE1");

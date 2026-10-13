@@ -622,7 +622,9 @@ describe("POST /requests/:id/approve", () => {
 
   it("answers 409 when the request CAS matches nothing, without touching the item", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
-    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(makeRequest() as never);
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({ status: "PENDING_STAGE2" }) as never,
+    );
     // Another admin committed the decision between the read and the write.
     vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 0 } as never);
 
@@ -655,7 +657,7 @@ describe("POST /requests/:id/approve", () => {
   it("refuses to approve a request whose item was disposed meanwhile", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
-      makeRequest({ item: makeItem({ status: "DISPOSED" }) }) as never,
+      makeRequest({ status: "PENDING_STAGE2", item: makeItem({ status: "DISPOSED" }) }) as never,
     );
 
     const res = await request(app)
@@ -687,6 +689,7 @@ describe("POST /requests/:id/approve", () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
       makeRequest({
+        status: "PENDING_STAGE2",
         requestedById: "officer-1",
         requestedBy: { id: "officer-1", fullName: "Property Officer", email: "officer@cncs.aau.edu.et" },
       }) as never,
@@ -707,7 +710,7 @@ describe("POST /requests/:id/approve", () => {
   it("checks self-decision before status, so an own decided request still says 403", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
-      makeRequest({ requestedById: "officer-1", status: "REJECTED" }) as never,
+      makeRequest({ status: "PENDING_STAGE2", requestedById: "officer-1" }) as never,
     );
 
     const res = await request(app)

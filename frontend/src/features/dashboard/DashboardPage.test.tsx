@@ -31,7 +31,7 @@ describe("/dashboard", () => {
     );
     renderWithProviders({ initialEntries: ["/dashboard"] });
 
-    expect(await screen.findByText("Pending requests")).toBeInTheDocument();
+    expect(await screen.findByText("Your recent requests")).toBeInTheDocument();
     expect(await screen.findByText("You haven't filed any requests yet")).toBeInTheDocument();
   });
 

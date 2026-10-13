@@ -64,9 +64,15 @@ const TRANSFER_BODY = {
 };
 
 beforeEach(() => {
-  // clearAllMocks, never resetAllMocks: reset would wipe the $transaction
-  // implementation above and every test would silently receive undefined.
-  vi.clearAllMocks();
+  // Use resetAllMocks to fully reset all mock implementations and call history.
+  // Then re-setup the $transaction mock which is wiped by resetAllMocks.
+  vi.resetAllMocks();
+
+  // Re-setup the $transaction mock after reset.
+  vi.mocked(prisma.$transaction).mockImplementation(async (arg: unknown) =>
+    typeof arg === "function"
+      ? await (arg as (tx: unknown) => Promise<unknown>)(vi.mocked(prisma))
+      : await Promise.all(arg as Promise<unknown>[]));
 });
 
 /** Nothing was written anywhere. Used by every refusal test. */

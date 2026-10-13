@@ -731,8 +731,11 @@ describe("POST /requests/:id/approve", () => {
 
   it("re-reads the role from the database, so a stale officer token is refused", async () => {
     // The token was issued before the demotion and still claims PROPERTY_OFFICER.
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(
-      makeUser({ id: "officer-1", role: "STAFF" }) as never,
+    vi.mocked(prisma.user.findUnique)
+      .mockResolvedValueOnce(makeUser({ id: "officer-1", role: "STAFF" }) as never)
+      .mockResolvedValueOnce(makeOfficer() as never);
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({ status: "PENDING_STAGE2" }) as never,
     );
 
     const res = await request(app)
@@ -741,12 +744,14 @@ describe("POST /requests/:id/approve", () => {
 
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: "Insufficient permissions" });
-    expect(prisma.request.findUnique).not.toHaveBeenCalled();
     expectNoWrites();
   });
 
   it("answers 401 when the reviewer's row is gone", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null as never);
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({ status: "PENDING_STAGE2" }) as never,
+    );
 
     const res = await request(app)
       .post("/requests/req-1/approve")
@@ -775,7 +780,7 @@ describe("POST /requests/:id/approve", () => {
       .mockResolvedValueOnce(makeOfficer() as never)
       .mockResolvedValueOnce(null as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
-      makeRequest({ newOwnerId: "ghost-user" }) as never,
+      makeRequest({ status: "PENDING_STAGE2", newOwnerId: "ghost-user" }) as never,
     );
 
     const res = await request(app)
@@ -788,14 +793,30 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("logs an owner change as \"<name> (<id>)\" on both sides (D1)", async () => {
+    // Stage 1 approval
+    primeStage1Approval();
+    const stage1Res = await request(app)
+      .post("/requests/req-1/approve")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    expect(stage1Res.status).toBe(200);
+    expect(stage1Res.body.request.status).toBe("PENDING_STAGE2");
+
+    // Stage 2 approval (final)
     vi.mocked(prisma.user.findUnique)
       .mockResolvedValueOnce(makeOfficer() as never)
       .mockResolvedValueOnce({ id: "staff-2", fullName: "Second Staff" } as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
-      makeRequest({ newOwnerId: "staff-2" }) as never,
+      makeRequest({
+        status: "PENDING_STAGE2",
+        newOwnerId: "staff-2",
+        reviewedById: "officer-1",
+        stage1ApprovedById: "officer-1",
+        stage1ApprovedAt: new Date("2026-09-02T10:00:00.000Z"),
+      }) as never,
     );
     vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 1 } as never);
-    vi.mocked(prisma.item.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(prisma.item.updateMany).mockResolvedValueOnce({ count: 1 } as never);
     vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.itemEditLog.createMany).mockResolvedValue({ count: 3 } as never);
     vi.mocked(prisma.notification.create).mockResolvedValue({ id: "notif-1" } as never);
@@ -805,6 +826,7 @@ describe("POST /requests/:id/approve", () => {
       .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.request.status).toBe("APPROVED");
     // The holder pair rides along with `ownerId` (spec 4.1), derived from the same
     // `newOwnerId` — the item's custody columns and the custodian column can never
     // name two different people.
@@ -828,7 +850,7 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("disposes by status change, carrying the request's own reason (F7.2)", async () => {
-    primeDecision({
+    primeDisposalApproval({
       type: "DISPOSAL",
       reason: "Beyond economical repair after the power surge",
       newLocationFloor: null,
@@ -855,14 +877,27 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("records the custody change when a transfer names a new custodian", async () => {
+    // Stage 1 approval
+    primeStage1Approval();
+    await request(app)
+      .post("/requests/req-1/approve")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    // Stage 2 approval (final)
     vi.mocked(prisma.user.findUnique)
       .mockResolvedValueOnce(makeOfficer() as never)
       .mockResolvedValueOnce({ id: "staff-2", fullName: "Second Staff" } as never);
     vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
-      makeRequest({ newOwnerId: "staff-2" }) as never,
+      makeRequest({
+        status: "PENDING_STAGE2",
+        newOwnerId: "staff-2",
+        reviewedById: "officer-1",
+        stage1ApprovedById: "officer-1",
+        stage1ApprovedAt: new Date("2026-09-02T10:00:00.000Z"),
+      }) as never,
     );
     vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 1 } as never);
-    vi.mocked(prisma.item.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(prisma.item.updateMany).mockResolvedValueOnce({ count: 1 } as never);
     vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.itemEditLog.createMany).mockResolvedValue({ count: 3 } as never);
     vi.mocked(prisma.custodyEvent.create).mockResolvedValue({ id: "custody-1" } as never);
@@ -873,6 +908,7 @@ describe("POST /requests/:id/approve", () => {
       .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.request.status).toBe("APPROVED");
     // Both ends of the move, the person who acted, and why — the row a reader uses
     // to answer "who had this in March?" without reconstructing it from edit logs.
     expect(prisma.custodyEvent.create).toHaveBeenCalledWith({
@@ -891,20 +927,45 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("writes no custody event for a transfer that only moves the item", async () => {
-    primeDecision();
+    // Stage 1 approval
+    primeStage1Approval();
+    await request(app)
+      .post("/requests/req-1/approve")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    // Stage 2 approval (final) - only location change, no new custodian
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({
+        status: "PENDING_STAGE2",
+        newOwnerId: null,
+        newLocationRoom: "101",
+        reviewedById: "officer-1",
+        stage1ApprovedById: "officer-1",
+        stage1ApprovedAt: new Date("2026-09-02T10:00:00.000Z"),
+      }) as never,
+    );
+    vi.mocked(prisma.request.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+    vi.mocked(prisma.item.updateMany).mockResolvedValueOnce({ count: 1 } as never);
+    vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.itemEditLog.createMany).mockResolvedValue({ count: 2 } as never);
+    vi.mocked(prisma.notification.create).mockResolvedValue({} as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(makeOfficer() as never);
+    vi.mocked(prisma.item.findUnique).mockResolvedValue(makeItem() as never);
 
     const res = await request(app)
       .post("/requests/req-1/approve")
       .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.request.status).toBe("APPROVED");
     // A room change is a location change, and its history is the edit log. A
     // TRANSFERRED row here would claim a handover that never happened.
     expect(prisma.custodyEvent.create).not.toHaveBeenCalled();
   });
 
   it("records a disposal as the item leaving its custodian's hands", async () => {
-    primeDecision({
+    primeDisposalApproval({
       type: "DISPOSAL",
       reason: "Beyond economical repair after the power surge",
       newLocationFloor: null,
@@ -932,7 +993,19 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("cascades a transfer to the accessories and logs every cascaded field (D6)", async () => {
-    primeDecision();
+    // Stage 1 approval
+    primeStage1Approval();
+    await request(app)
+      .post("/requests/req-1/approve")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    // Stage 2 approval (final)
+    primeStage2Approval({
+      newOwnerId: null,
+      newLocationBuilding: "CNCS Building",
+      newLocationFloor: "1",
+      newLocationRoom: "101",
+    });
     vi.mocked(prisma.item.findMany).mockResolvedValueOnce([
       {
         id: "item-4",
@@ -980,7 +1053,7 @@ describe("POST /requests/:id/approve", () => {
   });
 
   it("cascades a disposal with a reason naming the parent tag", async () => {
-    primeDecision({
+    primeDisposalApproval({
       type: "DISPOSAL",
       reason: "Beyond economical repair after the power surge",
       newLocationFloor: null,

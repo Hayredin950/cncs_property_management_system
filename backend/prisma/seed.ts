@@ -139,7 +139,7 @@ async function main() {
       building: "CNCS Building",
       floor: "1",
       room: "101",
-      ownerId: officer.id,
+      ownerId: deptHead.id,
       purchaseCost: 8000,
       condition: Condition.NEW,
       photoUrl: "/photos/desk.jpg",

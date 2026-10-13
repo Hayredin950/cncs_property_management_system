@@ -1,115 +1,69 @@
-import { Building2, PackageSearch, ScanLine } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { LogIn, Mail, MapPin } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "../../components/Button";
-import { EmptyState } from "../../components/EmptyState";
-import { ErrorState, OfflineState } from "../../components/ErrorState";
-import { ItemCard } from "../../components/ItemCard";
-import { SearchBar } from "../../components/SearchBar";
-import { SkeletonCard } from "../../components/Skeleton";
-import { useItems } from "../../hooks/useItems";
-import { NetworkError } from "../../types/api";
 
 /**
- * `/` — the front door (F4.2). Zero-training: scan or search, nothing else to
- * learn (SRS §4 usability). Reuses `ItemCard`/`useItems` from the `/items`
- * browse page so "recently added" and the full browse grid never look or
- * behave differently.
+ * `/` — Public informational page (Phase D, §9).
+ * Anonymous visitors see a static informational page with no item data.
+ * Sign-in is the only call-to-action.
  */
 export function LandingPage() {
-  const navigate = useNavigate();
-  const recentQuery = useItems({ page: 1, limit: 8 });
-
-  function handleSearch(value: string) {
-    if (value.trim()) {
-      navigate(`/items?search=${encodeURIComponent(value.trim())}`);
-    }
-  }
-
   return (
     <div className="flex flex-col gap-12">
-      <section className="flex flex-col items-center gap-5 py-6 text-center sm:py-10">
-        <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">Find a campus asset</h1>
-        <p className="max-w-md text-slate-500">
-          Scan the QR tag on any CNCS property item, or search by name or tag ID below.
+      <section className="flex flex-col items-center gap-6 py-12 text-center sm:py-16">
+        <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
+          CNCS Property Management System
+        </h1>
+        <p className="max-w-2xl text-lg text-slate-600">
+          A property register for CNCS — tracking university-owned equipment and assets.
         </p>
 
-        <div className="flex w-full max-w-md flex-col gap-3">
-          <Link to="/scan">
-            {/* Was overridden to the teal `accent-600`; the accent token now
-                carries AAU's red, and a red primary CTA would be the one button
-                on this page the official site has no equivalent for. AAU's own
-                CTAs are all `blue-600`, so this is the default primary variant
-                — and dropping the override also stops the class from silently
-                doing nothing, which it did: `bg-brand-600` from the variant and
-                `bg-accent-600` here have equal specificity, and Tailwind emits
-                `brand-600` last, so the button has rendered blue regardless. */}
-            <Button size="lg" fullWidth leftIcon={<ScanLine className="h-5 w-5" />}>
-              Scan a tag
-            </Button>
-          </Link>
-
-          <div className="flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-slate-400">
-            <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
-            or search
-            <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
-          </div>
-
-          <SearchBar value="" onChange={handleSearch} debounceMs={500} />
-
-          {/*
-            Two full-weight buttons, not bare text links. These are the page's
-            other two primary ways in, so they get the same button treatment the
-            rest of the app uses rather than depending on the visitor noticing a
-            line of underlined text below the search box.
-          */}
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <Link to="/items" className="sm:flex-1">
-              <Button
-                variant="outline"
-                fullWidth
-                leftIcon={<PackageSearch className="h-4 w-4" />}
-              >
-                Browse all items
-              </Button>
-            </Link>
-            <Link to="/map" className="sm:flex-1">
-              <Button
-                variant="outline"
-                fullWidth
-                leftIcon={<Building2 className="h-4 w-4" />}
-              >
-                Browse by building
-              </Button>
-            </Link>
-          </div>
-        </div>
+        <Link to="/login">
+          <Button size="lg" leftIcon={<LogIn className="h-5 w-5" />}>
+            Sign in
+          </Button>
+        </Link>
       </section>
 
-      <section>
-        <h2 className="mb-4 text-lg font-semibold text-slate-900">Recently added</h2>
-
-        {recentQuery.isPending ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <SkeletonCard key={index} />
-            ))}
-          </div>
-        ) : recentQuery.isError ? (
-          recentQuery.error instanceof NetworkError ? (
-            <OfflineState />
-          ) : (
-            <ErrorState heading="Couldn't load recent items" />
-          )
-        ) : recentQuery.data.data.length === 0 ? (
-          <EmptyState icon={<PackageSearch className="h-8 w-8" />} heading="No items registered yet" />
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {recentQuery.data.data.map((item) => (
-              <ItemCard key={item.id} item={item} />
-            ))}
-          </div>
-        )}
+      <section className="grid gap-8 sm:grid-cols-3">
+        <InfoCard
+          icon={<MapPin className="h-8 w-8" />}
+          title="Who can use this"
+          description="Staff, department heads, property officers, and auditors with a CNCS account can access the system to track and manage university property."
+        />
+        <InfoCard
+          icon={<LogIn className="h-8 w-8" />}
+          title="How to get an account"
+          description="Contact your department head or the Property Office to request an account. All accounts require approval from a system administrator."
+        />
+        <InfoCard
+          icon={<Mail className="h-8 w-8" />}
+          title="Contact the Property Office"
+          description="For questions about the system, lost items, or account access, reach out to the CNCS Property Office."
+        />
       </section>
+    </div>
+  );
+}
+
+function InfoCard({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-600">
+        {icon}
+      </div>
+      <div>
+        <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+        <p className="mt-2 text-sm text-slate-600">{description}</p>
+      </div>
     </div>
   );
 }

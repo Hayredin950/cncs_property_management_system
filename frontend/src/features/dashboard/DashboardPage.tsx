@@ -1,4 +1,4 @@
-import { ClipboardList, Package, ScanLine, Activity } from "lucide-react";
+import { ClipboardList, Package, ScanLine } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { PortalPageHeader, PortalTile } from "../../components/aau/PortalPageHeader";
@@ -13,6 +13,15 @@ import { usePendingCount, useRequests } from "../../hooks/useRequests";
 import { formatRelativeTime } from "../../lib/formatters";
 import { canDecideRequests, canViewOwnRequests, canManageAccounts, canRunAudits } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
+import { RecentlyRegisteredItems } from "./widgets/RecentlyRegisteredItems";
+import { OverdueLoans } from "./widgets/OverdueLoans";
+import { HeldItems } from "./widgets/HeldItems";
+import { DepartmentRoster } from "./widgets/DepartmentRoster";
+import { CurrentAuditProgress } from "./widgets/CurrentAuditProgress";
+import { OpenFindings } from "./widgets/OpenFindings";
+import { AuditHistoryQuickList } from "./widgets/AuditHistoryQuickList";
+import { SystemStatus } from "./widgets/SystemStatus";
+import { RecentSystemEvents } from "./widgets/RecentSystemEvents";
 
 /**
  * `/dashboard` \u2014 Shell B/C, Staff/Admin (F1.3), frontend-design-system.md \u00a710.4.
@@ -80,40 +89,41 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* System Admin specific section */}
-      {isSystemAdmin && canManageAcc && (
-        <Card className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-slate-900">
-              System Administration
-            </h2>
-            <Link
-              to="/admin/users"
-              className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
-            >
-              View all \u2192
-            </Link>
-          </div>
+      {/* PROPERTY_OFFICER specific widgets */}
+      {user?.role === "PROPERTY_OFFICER" && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <RecentlyRegisteredItems />
+          <OverdueLoans />
+        </div>
+      )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <StatCard
-              label="Pending approvals"
-              value={pendingQuery.data?.pendingCount ?? "\u2014"}
-              icon={<ClipboardList className="h-5 w-5" />}
-              tone="warning"
-              to="/admin/users"
-              className="w-full"
-            />
-            <StatCard
-              label="System health"
-              value="\u2014"
-              icon={<Activity className="h-5 w-5" />}
-              tone="neutral"
-              to="/admin/system"
-              className="w-full"
-            />
-          </div>
-        </Card>
+      {/* DEPARTMENT_HEAD specific widgets */}
+      {user?.role === "DEPARTMENT_HEAD" && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <HeldItems />
+          <DepartmentRoster />
+        </div>
+      )}
+
+      {/* AUDITOR specific widgets */}
+      {isAuditor && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <CurrentAuditProgress />
+          <OpenFindings />
+        </div>
+      )}
+
+      {/* AUDITOR: Audit history quick list (full width) */}
+      {isAuditor && (
+        <AuditHistoryQuickList />
+      )}
+
+      {/* SYSTEM_ADMIN specific widgets */}
+      {isSystemAdmin && canManageAcc && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SystemStatus />
+          <RecentSystemEvents />
+        </div>
       )}
 
       {canViewOwn && (

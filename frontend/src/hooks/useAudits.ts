@@ -10,6 +10,126 @@ import { scanToastSlot, toast } from "../lib/toast";
 import type { AuditCompletionResponse, AuditScanRow, AuditSession, CreateAuditPayload } from "../types/audit";
 
 /**
+ * Fetch active audit session for dashboard widget.
+ * Endpoint: GET /audits/active
+ * Falls back gracefully if endpoint doesn't exist yet.
+ */
+export function useActiveAudit() {
+  return useQuery({
+    queryKey: ["audits", "active"],
+    queryFn: async ({ signal }) => {
+      try {
+        const response = await fetch("/api/v1/audits/active", {
+          signal,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        if (!response.ok) {
+          // No active audit or endpoint doesn't exist yet - return null gracefully
+          if (response.status === 404) {
+            return null;
+          }
+          throw new Error(`Failed to fetch active audit: ${response.statusText}`);
+        }
+        return response.json();
+      } catch (error) {
+        // If fetch fails, return null gracefully
+        console.error("Failed to fetch active audit:", error);
+        return null;
+      }
+    },
+    // Don't retry on 404 - no active audit is a valid state
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes("404")) {
+        return false;
+      }
+      return failureCount < 3;
+    },
+  });
+}
+
+/**
+ * Fetch open findings count for dashboard widget.
+ * Endpoint: GET /audits/findings?status=OPEN
+ * Falls back gracefully if endpoint doesn't exist yet.
+ */
+export function useOpenFindings() {
+  return useQuery({
+    queryKey: ["audits", "findings", "OPEN"],
+    queryFn: async ({ signal }) => {
+      try {
+        const response = await fetch("/api/v1/audits/findings?status=OPEN", {
+          signal,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        if (!response.ok) {
+          // Endpoint doesn't exist yet - return zero count gracefully
+          if (response.status === 404) {
+            return { count: 0 };
+          }
+          throw new Error(`Failed to fetch open findings: ${response.statusText}`);
+        }
+        return response.json();
+      } catch (error) {
+        // If fetch fails, return zero count gracefully
+        console.error("Failed to fetch open findings:", error);
+        return { count: 0 };
+      }
+    },
+    // Don't retry on 404 - endpoint might not exist yet
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes("404")) {
+        return false;
+      }
+      return failureCount < 3;
+    },
+  });
+}
+
+/**
+ * Fetch audit history quick list for dashboard widget.
+ * Endpoint: GET /audits?limit=3&sort=completedAt:desc
+ * Falls back gracefully if endpoint doesn't exist yet.
+ */
+export function useAuditHistoryList() {
+  return useQuery({
+    queryKey: ["audits", "history", "quick"],
+    queryFn: async ({ signal }) => {
+      try {
+        const response = await fetch("/api/v1/audits?limit=3&sort=completedAt:desc", {
+          signal,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        if (!response.ok) {
+          // Endpoint doesn't exist yet - return empty array gracefully
+          if (response.status === 404) {
+            return [];
+          }
+          throw new Error(`Failed to fetch audit history: ${response.statusText}`);
+        }
+        return response.json();
+      } catch (error) {
+        // If fetch fails, return empty array gracefully
+        console.error("Failed to fetch audit history:", error);
+        return [];
+      }
+    },
+    // Don't retry on 404 - endpoint might not exist yet
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes("404")) {
+        return false;
+      }
+      return failureCount < 3;
+    },
+  });
+}
+
+/**
  * One stored session and its result rows (`GET /audits/:id`).
  *
  * Shares the `["audit", id]` key with the report page's own fetch, so the two

@@ -51,10 +51,22 @@ describe("header account block", () => {
     await openDrawer();
 
     expect(screen.getByText(/sign in to manage the register/i)).toBeInTheDocument();
-    // One control in the bar plus the drawer's own full-width one — the same
-    // "one in the bar, the rest in the drawer" shape as the signed-in state.
-    expect(screen.getAllByRole("button", { name: "Sign in" })).toHaveLength(2);
+    // One control in the bar, one in the drawer, and one in the landing page hero section.
+    expect(screen.getAllByRole("button", { name: "Sign in" })).toHaveLength(3);
     // No account chrome leaks to a visitor with no account.
     expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
+  });
+
+  it("shows informational content on the landing page for anonymous visitors", async () => {
+    renderWithProviders({ initialEntries: ["/"] });
+
+    // Hero section
+    expect(screen.getByText("CNCS Property Management System")).toBeInTheDocument();
+    expect(screen.getByText(/A property register for CNCS/)).toBeInTheDocument();
+
+    // Info cards
+    expect(screen.getByText("Who can use this")).toBeInTheDocument();
+    expect(screen.getByText("How to get an account")).toBeInTheDocument();
+    expect(screen.getByText("Contact the Property Office")).toBeInTheDocument();
   });
 });

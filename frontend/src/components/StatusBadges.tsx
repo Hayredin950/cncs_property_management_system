@@ -80,7 +80,6 @@ export function ItemStatusBadge({ status, className }: { status: ItemStatus; cla
 
 const ROLE_TONE: Record<Role, BadgeTone> = {
   SYSTEM_ADMIN: "violet",
-  ACCOUNT_ADMIN: "violet",
   PROPERTY_OFFICER: "info",
   DEPARTMENT_HEAD: "accent",
   STAFF: "brand",
@@ -89,7 +88,6 @@ const ROLE_TONE: Record<Role, BadgeTone> = {
 
 const ROLE_ICON: Record<Role, ReactNode> = {
   SYSTEM_ADMIN: <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />,
-  ACCOUNT_ADMIN: <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />,
   PROPERTY_OFFICER: <Briefcase className="h-3.5 w-3.5" aria-hidden="true" />,
   DEPARTMENT_HEAD: <Users className="h-3.5 w-3.5" aria-hidden="true" />,
   STAFF: <IdCard className="h-3.5 w-3.5" aria-hidden="true" />,

@@ -208,10 +208,10 @@ usersRouter.post(
       const requestedRole = parsed.data.role ?? existing.role;
 
       // Authorization: validate the reviewer can assign this role
-      if (reviewer.role === "ACCOUNT_ADMIN") {
-        // ACCOUNT_ADMIN can approve any role except SYSTEM_ADMIN
+      if (reviewer.role === "SYSTEM_ADMIN") {
+        // SYSTEM_ADMIN (merged with ACCOUNT_ADMIN per 12 Oct decision) can approve any role except SYSTEM_ADMIN
         if (requestedRole === "SYSTEM_ADMIN") {
-          res.status(403).json({ error: "ACCOUNT_ADMIN cannot create SYSTEM_ADMIN accounts" });
+          res.status(403).json({ error: "Cannot create SYSTEM_ADMIN accounts" });
           return;
         }
       } else if (reviewer.role === "DEPARTMENT_HEAD") {
@@ -224,10 +224,6 @@ usersRouter.post(
           res.status(403).json({ error: "This account is not in your department" });
           return;
         }
-      } else {
-        // SYSTEM_ADMIN has ACCOUNT_MANAGE but shouldn't use it for account approvals
-        res.status(403).json({ error: "Only ACCOUNT_ADMIN or DEPARTMENT_HEAD may approve accounts" });
-        return;
       }
 
       const updateData: Prisma.UserUpdateInput = {
@@ -288,7 +284,9 @@ usersRouter.post(
       const reviewer = req.user!;
 
       // Same authorization as approve: DEPARTMENT_HEAD can only reject staff in their dept
-      if (reviewer.role === "DEPARTMENT_HEAD") {
+      if (reviewer.role === "SYSTEM_ADMIN") {
+        // SYSTEM_ADMIN can reject any account
+      } else if (reviewer.role === "DEPARTMENT_HEAD") {
         if (existing.role !== "STAFF") {
           res.status(403).json({ error: "Department heads can only reject staff accounts" });
           return;
@@ -297,9 +295,6 @@ usersRouter.post(
           res.status(403).json({ error: "This account is not in your department" });
           return;
         }
-      } else if (reviewer.role !== "ACCOUNT_ADMIN") {
-        res.status(403).json({ error: "Only ACCOUNT_ADMIN or DEPARTMENT_HEAD may reject accounts" });
-        return;
       }
 
       assertCanReview({

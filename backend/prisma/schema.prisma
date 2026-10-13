@@ -38,7 +38,6 @@ generator client {
 /// `STAFF` alone. See `src/services/permissions.ts` for what each role may do.
 enum Role {
   SYSTEM_ADMIN
-  ACCOUNT_ADMIN
   PROPERTY_OFFICER
   DEPARTMENT_HEAD
   STAFF

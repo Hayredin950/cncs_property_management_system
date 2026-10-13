@@ -26,7 +26,7 @@ vi.mock("../lib/prisma.js", () => {
   return { prisma: client };
 });
 
-const adminToken = createToken({ id: "admin-1", role: "ACCOUNT_ADMIN" });
+const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
 
 /** A row in the shape `userListSelect` returns, `_count` included. */

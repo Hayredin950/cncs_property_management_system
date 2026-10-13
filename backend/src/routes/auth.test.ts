@@ -28,7 +28,7 @@ function createToken(payload: {
 
 describe("POST /auth/register", () => {
   // Registration is ACCOUNT_MANAGE — the Account Admin role.
-  const adminToken = createToken({ id: "admin-1", role: "ACCOUNT_ADMIN" });
+  const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
   const staffToken = createToken({ id: "staff-1", role: "STAFF" });
 
   beforeEach(() => {

@@ -32,8 +32,7 @@ export type Capability =
   | "USER_READ";
 
 const GRANTS: Record<Role, readonly Capability[]> = {
-  SYSTEM_ADMIN: ["USER_READ"],
-  ACCOUNT_ADMIN: ["ACCOUNT_MANAGE", "USER_READ"],
+  SYSTEM_ADMIN: ["ACCOUNT_MANAGE", "USER_READ"],
   PROPERTY_OFFICER: [
     "ITEM_CREATE",
     "ITEM_EDIT_IDENTITY",
@@ -58,7 +57,6 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "ITEM_EDIT_CUSTODY",
     "ITEM_CLAIM",
     "REQUEST_DECIDE",
-    "ACCOUNT_MANAGE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
   ],

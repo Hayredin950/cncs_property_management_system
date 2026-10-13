@@ -58,11 +58,10 @@ import { SmartLayout } from "./SmartLayout";
  * test harness mounts the *production* tree inside `createMemoryRouter`
  * rather than a hand-copied route list that would drift.
  */
-/** Every signed-in role. The shell itself admits all six; each screen guards
+/** Every signed-in role. The shell itself admits all five; each screen guards
  * itself below, because the roles have genuinely different jobs now. */
 const ALL_ROLES: Role[] = [
   "SYSTEM_ADMIN",
-  "ACCOUNT_ADMIN",
   "PROPERTY_OFFICER",
   "DEPARTMENT_HEAD",
   "STAFF",

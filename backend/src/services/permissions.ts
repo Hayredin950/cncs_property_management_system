@@ -64,12 +64,8 @@ export type Capability =
 /** Every capability a role holds. Absent role ⇒ no capabilities. */
 const GRANTS: Record<UserRole, readonly Capability[]> = {
   // Technical + account administration only. Sees no asset data, approves
-  // nothing business-related (spec 2.1.1).
-  SYSTEM_ADMIN: ["USER_READ"],
-  // Invites privileged accounts (heads, officers, auditors, other account admins),
-  // approves/rejects privileged account requests, deactivates heads and auditors.
-  // Sees no asset data. (spec 2.1.2)
-  ACCOUNT_ADMIN: ["ACCOUNT_MANAGE", "USER_READ"],
+  // nothing business-related (spec 2.1.1). ACCOUNT_ADMIN merged into this role per 12 Oct decision.
+  SYSTEM_ADMIN: ["ACCOUNT_MANAGE", "USER_READ"],
   // The single college-level operational role (spec 2.1.2).
   PROPERTY_OFFICER: [
     "ITEM_CREATE",
@@ -99,7 +95,6 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "ITEM_EDIT_CUSTODY",
     "ITEM_CLAIM",
     "REQUEST_DECIDE",
-    "ACCOUNT_MANAGE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
   ],

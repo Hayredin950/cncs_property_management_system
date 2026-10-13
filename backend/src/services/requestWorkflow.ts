@@ -416,6 +416,7 @@ export async function applyDecision(
 
   if (input.decision === "REJECTED") {
     nextStatus = "REJECTED";
+    decidedAt = input.decidedAt;
   } else if (input.decision === "APPROVED") {
     if (request.type === "TRANSFER") {
       if (request.status === "PENDING_STAGE1" || request.status === "PENDING") {

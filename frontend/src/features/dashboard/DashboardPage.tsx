@@ -1,4 +1,4 @@
-import { ClipboardList, Package, ScanLine, Users, Activity } from "lucide-react";
+import { ClipboardList, Package, ScanLine, Activity } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { PortalPageHeader, PortalTile } from "../../components/aau/PortalPageHeader";
@@ -11,7 +11,7 @@ import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBad
 import { StatCard } from "../../components/StatCard";
 import { usePendingCount, useRequests } from "../../hooks/useRequests";
 import { formatRelativeTime } from "../../lib/formatters";
-import { canDecideRequests, canViewOwnRequests, canManageAccounts } from "../../lib/permissions";
+import { canDecideRequests, canViewOwnRequests, canManageAccounts, canRunAudits } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
 
 /**
@@ -33,9 +33,9 @@ export function DashboardPage() {
   const { user } = useAuth();
   const canDecide = canDecideRequests(user?.role);
   const canViewOwn = canViewOwnRequests(user?.role);
-  const isAccountAdmin = user?.role === "ACCOUNT_ADMIN";
   const isSystemAdmin = user?.role === "SYSTEM_ADMIN";
   const canManageAcc = canManageAccounts(user?.role);
+  const isAuditor = canRunAudits(user?.role);
 
   const pendingQuery = usePendingCount();
   const requestsQuery = useRequests({ limit: 5 });
@@ -62,28 +62,30 @@ export function DashboardPage() {
       />
 
       {/* The portal's action tiles, doing the portal's job: the two things a
-          staff member arrives on this screen to do. */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <PortalTile
-          to="/scan"
-          icon={<ScanLine className="h-7 w-7" />}
-          title="Scan a tag"
-          description="Point the camera at a QR tag to open its record or count it in an audit."
-        />
-        <PortalTile
-          to="/items"
-          icon={<Package className="h-7 w-7" />}
-          title="Browse items"
-          description="Search the register by name, tag ID, department or building."
-        />
-      </div>
+          staff member arrives on this screen to do. Auditors don't see these. */}
+      {!isAuditor && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <PortalTile
+            to="/scan"
+            icon={<ScanLine className="h-7 w-7" />}
+            title="Scan a tag"
+            description="Point the camera at a QR tag to open its record or count it in an audit."
+          />
+          <PortalTile
+            to="/items"
+            icon={<Package className="h-7 w-7" />}
+            title="Browse items"
+            description="Search the register by name, tag ID, department or building."
+          />
+        </div>
+      )}
 
-      {/* System Admin / Account Admin specific section */}
-      {(isSystemAdmin || isAccountAdmin) && canManageAcc && (
+      {/* System Admin specific section */}
+      {isSystemAdmin && canManageAcc && (
         <Card className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-base font-semibold text-slate-900">
-              {isSystemAdmin ? "System Administration" : "Account Administration"}
+              System Administration
             </h2>
             <Link
               to="/admin/users"
@@ -103,11 +105,11 @@ export function DashboardPage() {
               className="w-full"
             />
             <StatCard
-              label={isSystemAdmin ? "System health" : "Active accounts"}
+              label="System health"
               value="\u2014"
-              icon={isSystemAdmin ? <Activity className="h-5 w-5" /> : <Users className="h-5 w-5" />}
+              icon={<Activity className="h-5 w-5" />}
               tone="neutral"
-              to="/admin/users"
+              to="/admin/system"
               className="w-full"
             />
           </div>

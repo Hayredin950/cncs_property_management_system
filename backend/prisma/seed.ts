@@ -15,6 +15,8 @@ const SEED_USERS = {
   admin: { email: "admin@cncs.aau.edu.et", password: "Admin123!" },
   officer: { email: "officer@cncs.aau.edu.et", password: "Officer123!" },
   staff: { email: "staff@cncs.aau.edu.et", password: "Staff123!" },
+  deptHead: { email: "dept.head@cncs.aau.edu.et", password: "DeptHead123!" },
+  auditor: { email: "auditor@cncs.aau.edu.et", password: "Auditor123!" },
 };
 
 /**
@@ -75,6 +77,28 @@ async function main() {
       email: SEED_USERS.staff.email,
       passwordHash: await argon2.hash(SEED_USERS.staff.password, { type: argon2.argon2id }),
       role: Role.STAFF,
+    },
+  });
+
+  const deptHead = await prisma.user.upsert({
+    where: { email: SEED_USERS.deptHead.email },
+    update: {},
+    create: {
+      fullName: "Department Head Test",
+      email: SEED_USERS.deptHead.email,
+      passwordHash: await argon2.hash(SEED_USERS.deptHead.password, { type: argon2.argon2id }),
+      role: Role.DEPARTMENT_HEAD,
+    },
+  });
+
+  const auditor = await prisma.user.upsert({
+    where: { email: SEED_USERS.auditor.email },
+    update: {},
+    create: {
+      fullName: "Auditor Test",
+      email: SEED_USERS.auditor.email,
+      passwordHash: await argon2.hash(SEED_USERS.auditor.password, { type: argon2.argon2id }),
+      role: Role.AUDITOR,
     },
   });
 
@@ -257,9 +281,12 @@ async function main() {
   console.log("Seed complete:");
   console.log(`  ${categories.length} categories`);
   console.log(
-    `  3 users: ${SEED_USERS.admin.email} / ${SEED_USERS.admin.password} (SYSTEM_ADMIN), ` +
-      `${SEED_USERS.officer.email} / ${SEED_USERS.officer.password} (PROPERTY_OFFICER), ` +
-      `${SEED_USERS.staff.email} / ${SEED_USERS.staff.password} (STAFF)`
+    `  5 users: ` +
+    `${SEED_USERS.admin.email} / ${SEED_USERS.admin.password} (SYSTEM_ADMIN), ` +
+    `${SEED_USERS.officer.email} / ${SEED_USERS.officer.password} (PROPERTY_OFFICER), ` +
+    `${SEED_USERS.staff.email} / ${SEED_USERS.staff.password} (STAFF), ` +
+    `${SEED_USERS.deptHead.email} / ${SEED_USERS.deptHead.password} (DEPARTMENT_HEAD), ` +
+    `${SEED_USERS.auditor.email} / ${SEED_USERS.auditor.password} (AUDITOR)`
   );
   console.log(`  ${sampleItems.length + 1} items with QR tags generated under uploads/tags/`);
   console.log(`  ${CHARGER_TAG_ID} linked as an accessory of ${LAPTOP_TAG_ID}`);

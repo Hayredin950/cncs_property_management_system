@@ -106,20 +106,53 @@ export function parseNotificationMessage(raw: string): {
  * notify: fan out to everyone who is allowed to decide it — the property officer
  * and the department head (spec 5.1) — minus the requester, who already knows and
  * is barred from deciding their own request anyway.
+ *
+ * For transfers: both stage 1 (releasing head) and stage 2 (receiving head) approvers.
+ * For disposals: property officer only.
+ * For loans: property officer only.
+ * The requester is always excluded.
  */
-export function reviewerRecipientsWhere(requesterId: string): {
-  role: { in: Array<"PROPERTY_OFFICER" | "DEPARTMENT_HEAD"> };
+export function reviewerRecipientsWhere(
+  requesterId: string,
+  requestType: "TRANSFER" | "DISPOSAL" | "LOAN",
+): {
+  role?: { in: Array<"PROPERTY_OFFICER" | "DEPARTMENT_HEAD"> };
   id: { not: string };
 } {
-  return { role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] }, id: { not: requesterId } };
+  const base = { id: { not: requesterId } };
+  switch (requestType) {
+    case "TRANSFER":
+      // Stage 1: releasing head (DEPARTMENT_HEAD of the item's department) OR property officer
+      // Stage 2: receiving head (DEPARTMENT_HEAD of the target department) OR property officer
+      // For simplicity, fan out to all DEPARTMENT_HEAD and PROPERTY_OFFICER except requester
+      return {
+        ...base,
+        role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] },
+      };
+    case "DISPOSAL":
+      // Only PROPERTY_OFFICER can approve disposals
+      return {
+        ...base,
+        role: { in: ["PROPERTY_OFFICER"] },
+      };
+    case "LOAN":
+      // Only PROPERTY_OFFICER can approve loans
+      return {
+        ...base,
+        role: { in: ["PROPERTY_OFFICER"] },
+      };
+    default:
+      return base;
+  }
 }
 
 export async function resolveReviewerRecipients(
   client: DbClient,
   requesterId: string,
+  requestType: "TRANSFER" | "DISPOSAL" | "LOAN",
 ): Promise<Array<{ id: string; email: string; fullName: string }>> {
   return client.user.findMany({
-    where: reviewerRecipientsWhere(requesterId),
+    where: reviewerRecipientsWhere(requesterId, requestType),
     select: { id: true, email: true, fullName: true },
   });
 }
@@ -128,6 +161,7 @@ export interface NotifyReviewersInput extends RequestSubmittedInput {
   requestId: string;
   requesterId: string;
   createdAt: Date;
+  requestType: "TRANSFER" | "DISPOSAL" | "LOAN";
 }
 
 /**
@@ -142,7 +176,7 @@ export async function notifyReviewersOfNewRequest(
   client: DbClient,
   input: NotifyReviewersInput,
 ): Promise<Array<{ id: string; email: string; fullName: string }>> {
-  const recipients = await resolveReviewerRecipients(client, input.requesterId);
+  const recipients = await resolveReviewerRecipients(client, input.requesterId, input.requestType);
 
   if (recipients.length === 0) {
     // A request nobody can see is an operational hazard, not a validation

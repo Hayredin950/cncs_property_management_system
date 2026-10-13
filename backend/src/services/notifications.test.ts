@@ -155,14 +155,31 @@ describe("emailSubjectFor", () => {
 });
 
 describe("reviewerRecipientsWhere", () => {
-  it("targets the deciding roles and excludes the requester (D2)", () => {
-    // `Request.reviewedById` is null at submit time, so there is nobody specific
-    // to notify — fan out to everyone allowed to decide it (officer and head).
-    // Whoever filed the request already knows, and assertDecidable() bars them
-    // from deciding it anyway.
-    expect(reviewerRecipientsWhere("officer-1")).toEqual({
+  it("targets the deciding roles and excludes the requester (D2) — TRANSFER", () => {
+    expect(reviewerRecipientsWhere("officer-1", "TRANSFER")).toEqual({
       role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] },
       id: { not: "officer-1" },
+    });
+  });
+
+  it("targets only PROPERTY_OFFICER for DISPOSAL", () => {
+    expect(reviewerRecipientsWhere("officer-1", "DISPOSAL")).toEqual({
+      role: { in: ["PROPERTY_OFFICER"] },
+      id: { not: "officer-1" },
+    });
+  });
+
+  it("targets only PROPERTY_OFFICER for LOAN", () => {
+    expect(reviewerRecipientsWhere("officer-1", "LOAN")).toEqual({
+      role: { in: ["PROPERTY_OFFICER"] },
+      id: { not: "officer-1" },
+    });
+  });
+
+  it("excludes the requester from recipients", () => {
+    expect(reviewerRecipientsWhere("admin-1", "TRANSFER")).toEqual({
+      role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] },
+      id: { not: "admin-1" },
     });
   });
 });

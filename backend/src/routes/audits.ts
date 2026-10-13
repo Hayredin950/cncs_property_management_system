@@ -160,6 +160,9 @@ auditsRouter.post(
  * Finalizes a department audit from its scans. LOCATION and any other scope
  * types remain unsupported here: scopeValue has no documented, parseable
  * location format, so guessing one would misclassify inventory.
+ *
+ * Includes grace window: after close, MISSING items enter a grace window
+ * (default 7 days) before becoming LOST.
  */
 auditsRouter.post(
   "/:id/complete",
@@ -209,6 +212,10 @@ auditsRouter.post(
       );
       const completedAt = new Date();
 
+      // Grace window: default 7 days, configurable via query param
+      const graceDays = req.query.graceDays ? parseInt(req.query.graceDays as string, 10) : 7;
+      const graceEndsAt = new Date(completedAt.getTime() + graceDays * 24 * 60 * 60 * 1000);
+
       await prisma.$transaction([
         ...(results.locationMismatch.length > 0
           ? [
@@ -240,13 +247,14 @@ auditsRouter.post(
           : []),
         prisma.auditSession.updateMany({
           where: { id, completedAt: null },
-          data: { completedAt },
+          data: { completedAt, graceEndsAt },
         }),
       ]);
 
       res.status(200).json({
         auditSessionId: id,
         completedAt,
+        graceEndsAt,
         counts: {
           found: results.found.length,
           missing: results.missing.length,

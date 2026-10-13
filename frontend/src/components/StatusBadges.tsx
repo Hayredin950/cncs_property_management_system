@@ -96,10 +96,10 @@ const ROLE_ICON: Record<Role, ReactNode> = {
   AUDITOR: <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />,
 };
 
-export function RoleBadge({ role, className }: { role: Role; className?: string }) {
+export function RoleBadge({ role, className, collapsed }: { role: Role; className?: string; collapsed?: boolean }) {
   return (
     <Badge tone={ROLE_TONE[role]} icon={ROLE_ICON[role]} className={className}>
-      {ROLE_LABELS[role]}
+      {!collapsed && ROLE_LABELS[role]}
     </Badge>
   );
 }

@@ -226,7 +226,7 @@ export interface DecisionParty {
 export interface ApplyDecisionResult {
   requestId: string;
   type: RequestTypeValue;
-  status: DecisionValue;
+  status: RequestStatusValue;
   decidedAt: Date;
   item: { id: string; tagId: string; name: string };
   itemChanges: ItemChanges;
@@ -360,57 +360,7 @@ export async function applyDecision(
   const labels: Record<string, string> = {};
   labels[request.item.owner.id] = request.item.owner.fullName;
 
-  // 4. Resolve the change set. Rejection changes nothing about the item.
-  let itemChanges: ItemChanges = {};
-  if (input.decision === "APPROVED") {
-    if (request.type === "TRANSFER") {
-      if (request.newOwnerId) {
-        // `Request.newOwnerId` is a bare String with no foreign key, so it can
-        // dangle if that user was removed after the request was filed.
-        const newOwner = await tx.user.findUnique({
-          where: { id: request.newOwnerId },
-          select: { id: true, fullName: true },
-        });
-        if (!newOwner) {
-          throw httpError(400, ERROR_DANGLING_OWNER);
-        }
-        labels[newOwner.id] = newOwner.fullName;
-      }
-      itemChanges = buildTransferChanges(request);
-    } else if (request.type === "DISPOSAL") {
-      itemChanges = buildDisposalChanges({
-        reason: request.reason,
-        disposedAt: input.decidedAt,
-      });
-    } else if (request.type === "LOAN") {
-      // Loan approval: set item status to LOANED, record due date
-      itemChanges = {
-        status: "LOANED",
-        holderType: "STAFF",
-        holderId: request.newOwnerId,
-      };
-    }
-  }
-
-  // 5. Compare-and-swap the request. This runs BEFORE any item write: if two
-  //    admins approve at the same moment, exactly one `updateMany` matches a
-  //    PENDING row, and the loser aborts here without ever touching the item.
-  //    Nothing else in this function guards that race.
-  const requestWhere: Record<string, unknown> = { id: request.id };
-  if (request.type === "TRANSFER") {
-    if (request.status === "PENDING_STAGE1") {
-      requestWhere.status = "PENDING_STAGE1";
-    } else if (request.status === "PENDING_STAGE2") {
-      requestWhere.status = "PENDING_STAGE2";
-    } else {
-      requestWhere.status = "PENDING";
-    }
-  } else if (request.type === "LOAN") {
-    requestWhere.status = "PENDING";
-  } else {
-    requestWhere.status = "PENDING";
-  }
-
+  // 4. Determine next status first (needed to decide if item changes should be applied)
   let nextStatus: RequestStatusValue = request.status;
   let decidedAt: Date | undefined;
 
@@ -434,12 +384,76 @@ export async function applyDecision(
     }
   }
 
+  // 5. Resolve the change set. Rejection changes nothing about the item.
+  // For two-stage transfer approval: stage 1 (PENDING -> PENDING_STAGE2) applies no item changes,
+  // stage 2 (PENDING_STAGE2 -> APPROVED) applies item changes.
+  let itemChanges: ItemChanges = {};
+  if (input.decision === "APPROVED") {
+    if (request.type === "TRANSFER") {
+      // Only apply item changes on stage 2 or final approval
+      const isStage1Approval = request.status === "PENDING" && nextStatus === "PENDING_STAGE2";
+      if (!isStage1Approval) {
+        if (request.newOwnerId) {
+          // `Request.newOwnerId` is a bare String with no foreign key, so it can
+          // dangle if that user was removed after the request was filed.
+          const newOwner = await tx.user.findUnique({
+            where: { id: request.newOwnerId },
+            select: { id: true, fullName: true },
+          });
+          if (!newOwner) {
+            throw httpError(400, ERROR_DANGLING_OWNER);
+          }
+          labels[newOwner.id] = newOwner.fullName;
+        }
+        itemChanges = buildTransferChanges(request);
+      }
+    } else if (request.type === "DISPOSAL") {
+      itemChanges = buildDisposalChanges({
+        reason: request.reason,
+        disposedAt: input.decidedAt,
+      });
+    } else if (request.type === "LOAN") {
+      // Loan approval: set item status to LOANED, record due date
+      itemChanges = {
+        status: "LOANED",
+        holderType: "STAFF",
+        holderId: request.newOwnerId,
+      };
+    }
+  }
+
+  // 6. Compare-and-swap the request. This runs BEFORE any item write: if two
+  //    admins approve at the same moment, exactly one `updateMany` matches a
+  //    PENDING row, and the loser aborts here without ever touching the item.
+  //    Nothing else in this function guards that race.
+  const requestWhere: Record<string, unknown> = { id: request.id };
+  if (request.type === "TRANSFER") {
+    if (request.status === "PENDING_STAGE1") {
+      requestWhere.status = "PENDING_STAGE1";
+    } else if (request.status === "PENDING_STAGE2") {
+      requestWhere.status = "PENDING_STAGE2";
+    } else {
+      requestWhere.status = "PENDING";
+    }
+  } else if (request.type === "LOAN") {
+    requestWhere.status = "PENDING";
+  } else {
+    requestWhere.status = "PENDING";
+  }
+
   const requestUpdateData: Record<string, unknown> = {
     status: nextStatus,
     reviewedById: reviewer.id,
     ...(decidedAt ? { decidedAt } : {}),
     ...(input.decision === "REJECTED" && input.rejectionReason
       ? { rejectionReason: input.rejectionReason }
+      : {}),
+    // Track stage 1 and stage 2 approvals for transfers
+    ...(request.type === "TRANSFER" && nextStatus === "PENDING_STAGE2"
+      ? { stage1ApprovedById: reviewer.id, stage1ApprovedAt: input.decidedAt }
+      : {}),
+    ...(request.type === "TRANSFER" && nextStatus === "APPROVED"
+      ? { stage2ApprovedById: reviewer.id, stage2ApprovedAt: input.decidedAt }
       : {}),
   };
 
@@ -575,8 +589,8 @@ export async function applyDecision(
   return {
     requestId: request.id,
     type: request.type,
-    status: input.decision,
-    decidedAt: input.decidedAt,
+    status: nextStatus,
+    decidedAt: decidedAt ?? input.decidedAt,
     item: { id: request.item.id, tagId: request.item.tagId, name: request.item.name },
     itemChanges,
     cascadedItemIds,

@@ -238,7 +238,7 @@ export function AppLayout() {
                         className={({ isActive }) =>
                           cn(
                             "relative flex items-center gap-3 px-3 py-2.5 text-sm transition-colors",
-                            collapsed && "justify-center gap-0 px-0",
+                            collapsed && "justify-center gap-2 px-3",
                             isActive
                               ? "bg-aau-portal-active font-semibold text-brand-700"
                               : "text-aau-gray-700 hover:bg-aau-gray-100",
@@ -265,7 +265,7 @@ export function AppLayout() {
                               (collapsed ? (
                                 <span
                                   aria-label={badge.label}
-                                  className="absolute right-2 top-2 h-2 w-2 rounded-full bg-warning-600"
+                                  className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-warning-600"
                                 />
                               ) : (
                                 <span
@@ -284,21 +284,20 @@ export function AppLayout() {
               </nav>
             </div>
 
-            <div
+<div
               className={cn(
                 "mt-3 border border-aau-gray-300 bg-white",
                 collapsed ? "p-2" : "p-3",
               )}
             >
-              {/* The role chip, moved out of the header (which had no room for
-                  it on a phone) into the navigation panel beside the name. */}
+              {/* The role chip and user info, moved out of the header into the navigation panel. */}
               <div
                 className={cn(
                   "mb-2 flex items-center gap-2",
                   collapsed ? "justify-center" : "justify-start",
-                )}
+                  )}
               >
-                <RoleBadge role={user.role} />
+                <RoleBadge role={user.role} collapsed={collapsed} />
                 {!collapsed && (
                   <span className="truncate text-sm font-medium text-aau-gray-700">
                     {user.fullName}

@@ -1,6 +1,12 @@
 import type { Item } from "../types/item";
 import type { Category } from "../types/category";
-import type { AuthUser, LoginResponse, MeResponse, UserSummary } from "../types/user";
+import type {
+  AuthUser,
+  DepartmentOption,
+  LoginResponse,
+  MeResponse,
+  UserSummary,
+} from "../types/user";
 import type {
   PendingCountResponse,
   RequestDetail,
@@ -409,6 +415,22 @@ export const HISTORY_FIXTURE: ItemsHistoryResponse = {
 
 /** A minimal CSV body — enough for the download tests to prove a blob came back. */
 export const CSV_BODY = "tagId,name\nCNCS-AB12CD34,Dell Latitude 5440\n";
+
+/**
+ * `GET /departments` — the public list the request-account form loads, in the
+ * live shape (`[{ id, name, code }]`, verified against the deployed API). The ids
+ * are readable slugs rather than uuids so a test that selects "Biology" can assert
+ * on the value the form actually submits instead of on an opaque identifier.
+ *
+ * Physics is present and headless on purpose: it is the unit the vacant-head
+ * fallback is tested against.
+ */
+export const DEPARTMENTS: DepartmentOption[] = [
+  { id: "unit-bio", name: "Biology", code: "BIO" },
+  { id: "unit-chem", name: "Chemistry", code: "CHEM" },
+  { id: "unit-cs", name: "Computer Science", code: "CS" },
+  { id: "unit-phys", name: "Physics", code: "PHYS" },
+];
 
 /**
  * `GET /requests/:id` returns a richer shape than the list (`REQUEST_DETAIL_SELECT`

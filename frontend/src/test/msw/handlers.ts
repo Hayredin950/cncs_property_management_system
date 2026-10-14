@@ -7,6 +7,7 @@ import {
   AUDIT_SESSION,
   AUDITS_LIST,
   CSV_BODY,
+  DEPARTMENTS,
   DISPOSED_ITEM,
   HISTORY_FIXTURE,
   ITEMS_LIST,
@@ -94,6 +95,12 @@ export const handlers = [
   }),
 
   http.get(`${API}/health`, healthOk),
+
+  /**
+   * Public, like the real route: an anonymous visitor picks their department
+   * before they have an account. No token check here on purpose.
+   */
+  http.get(`${API}/departments`, () => HttpResponse.json(DEPARTMENTS)),
 
   http.get(`${API}/categories`, () => HttpResponse.json([{ id: "cat-1", name: "Laptops", itemCount: 2 }])),
 

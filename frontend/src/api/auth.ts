@@ -1,11 +1,9 @@
 import { apiClient } from "../lib/apiClient";
-import type { Role } from "../types/enums";
 import type {
   AccountRequestResponse,
   LoginRequest,
   LoginResponse,
   MeResponse,
-  AuthUser,
 } from "../types/user";
 
 /** `POST /auth/login` — public. See types/user.ts for why only `.user` is read back out. */
@@ -53,21 +51,26 @@ export function changePassword(payload: ChangePasswordPayload): Promise<LoginRes
   return apiClient.post<LoginResponse>("/auth/change-password", payload);
 }
 
-/** Body of `POST /auth/register` — System Admin-only account creation (F1.3). */
-export interface RegisterPayload {
-  fullName: string;
-  email: string;
-  password: string;
-  role: Role;
-}
-
 /**
- * `POST /auth/register` — creates the account and returns the created user.
- * A duplicate email answers 409. The server flags the new account
- * `mustChangePassword`, because the password an admin types here is a temporary
- * one to pass on: the holder is forced to choose their own at the first sign-in
- * (`RequireAuth` redirects to `/change-password`).
+ * `POST /auth/accept-invite` — the invited person chooses their own password (T6).
+ *
+ * Public, because the whole point is that they do not have an account yet: the
+ * account an administrator invited exists as `PENDING_EMAIL_VERIFICATION` with a
+ * password nobody knows — including the administrator, who is never allowed to
+ * set one. The token from the invite link is the credential.
+ *
+ * On success it returns the same `{ token, user }` shape as `POST /auth/login`: the
+ * invitee is signed in on this device rather than asked to type the password they
+ * just chose.
  */
-export function registerUser(payload: RegisterPayload): Promise<{ user: AuthUser }> {
-  return apiClient.post<{ user: AuthUser }>("/auth/register", payload);
+export function acceptInvite(payload: {
+  token: string;
+  password: string;
+  /** Their own name — the invitation names an email and a post, not a person. */
+  fullName?: string | undefined;
+}): Promise<LoginResponse & { headedUnitId: string | null }> {
+  return apiClient.post<LoginResponse & { headedUnitId: string | null }>(
+    "/auth/accept-invite",
+    payload,
+  );
 }

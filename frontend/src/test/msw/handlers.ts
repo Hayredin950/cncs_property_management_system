@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import {
+  ACCEPTED_INVITE_USER,
   ACCOUNTS,
   AUDIT_COMPLETION_BODY,
   AUDIT_READBACK,
@@ -10,6 +11,7 @@ import {
   DEPARTMENTS,
   DISPOSED_ITEM,
   HISTORY_FIXTURE,
+  INVITABLE_UNITS,
   ITEMS_LIST,
   LOGIN_RESPONSE,
   ME_RESPONSE,
@@ -102,9 +104,65 @@ export const handlers = [
    * Public, like the real route: an anonymous visitor picks their department
    * before they have an account. No token check here on purpose.
    */
+  /**
+   * `GET /departments/invitable` — the head-appointment picker (T6). Behind
+   * `ACCOUNT_INVITE`, so a missing token is the same 401 every admin read sends.
+   *
+   * Declared before the `/departments` handler so the more specific path is the
+   * one that reads first — the two are distinct patterns (MSW matches a literal
+   * path exactly), but a reader looking for "where does /departments/invitable go"
+   * should find its answer above the list it is not part of.
+   */
+  http.get(`${API}/departments/invitable`, () =>
+    getToken() ? HttpResponse.json(INVITABLE_UNITS) : unauthorized(),
+  ),
+
   http.get(`${API}/departments`, () => HttpResponse.json(DEPARTMENTS)),
 
+  /**
+   * `POST /auth/accept-invite` — public, like the real route: the person does not
+   * have an account to authenticate with, which is what the invitation is for. It
+   * answers with a session, so the invitee does not have to sign in twice.
+   */
+  http.post(`${API}/auth/accept-invite`, () =>
+    HttpResponse.json({ token: "invite-session-token", user: ACCEPTED_INVITE_USER }),
+  ),
+
   http.get(`${API}/categories`, () => HttpResponse.json([{ id: "cat-1", name: "Laptops", itemCount: 2 }])),
+
+  /**
+   * `POST /users/invite` — the privileged invite (T6). There is no password in
+   * the request or the response, and that is the contract under test: an
+   * administrator learns the email result and gets the single-use link back, and
+   * nothing here can be signed into until the invitee accepts it.
+   */
+  http.post(`${API}/users/invite`, async ({ request }) => {
+    if (!getToken()) return unauthorized();
+    const body = (await request.json()) as {
+      email?: string;
+      role?: string;
+      unitId?: string | null;
+    };
+    return HttpResponse.json(
+      {
+        invite: {
+          userId: "invitee-1",
+          email: body.email ?? "",
+          role: body.role ?? "DEPARTMENT_HEAD",
+          unitId: body.unitId ?? null,
+          status: "PENDING_EMAIL_VERIFICATION",
+          expiresAt: "2026-10-17T08:00:00.000Z",
+          renewed: false,
+        },
+        inviteUrl: "http://localhost:5173/accept-invite?token=test-invite-token",
+        // The live default while no mail transport is configured.
+        email: "skipped",
+      },
+      { status: 201 },
+    );
+  }),
+
+
 
   http.put(`${API}/categories/:id`, ({ params }) =>
     getToken()

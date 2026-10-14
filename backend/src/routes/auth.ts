@@ -3,14 +3,12 @@ import { Router, type Response, type Router as ExpressRouter } from "express";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import {
-  authenticate,
-  requireCapability,
-  type AuthenticatedRequest,
-} from "../middleware/auth.js";
+import { authenticate, type AuthenticatedRequest } from "../middleware/auth.js";
+import { isHttpError } from "../lib/httpError.js";
 import { createRateLimiter, noRateLimit } from "../middleware/rateLimit.js";
 import { normalizeEmail } from "../utils/email.js";
 import { signInRefusal } from "../services/accountApproval.js";
+import { acceptInvite, ERROR_INVITE_PASSWORD } from "../services/invites.js";
 
 const router: ExpressRouter = Router();
 
@@ -26,28 +24,6 @@ const loginLimiter =
   process.env.NODE_ENV === "test"
     ? noRateLimit
     : createRateLimiter({ windowMs: 15 * 60_000, max: 10, message: "Too many sign-in attempts. Try again in a few minutes." });
-
-const registerSchema = z
-  .object({
-    name: z.string().trim().min(1, "Name is required").optional(),
-    fullName: z.string().trim().min(1, "Full name is required").optional(),
-    email: z.string().trim().min(1, "Email is required").optional(),
-    id: z.string().trim().min(1, "ID is required").optional(),
-    emailOrId: z.string().trim().min(1, "Email or ID is required").optional(),
-    password: z.string().min(1, "Password is required"),
-    role: z.enum(
-      ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"],
-      { message: "Role must be one of the five system roles" },
-    ),
-  })
-  .refine((data) => Boolean(data.name || data.fullName), {
-    message: "Name is required",
-    path: ["name"],
-  })
-  .refine((data) => Boolean(data.email || data.id || data.emailOrId), {
-    message: "Email or ID is required",
-    path: ["email"],
-  });
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
@@ -72,139 +48,15 @@ const loginSchema = z
   );
 
 /**
- * POST /auth/register
- * Admin-only route to register a new user (the five spec roles).
- * Validates payload, verifies uniqueness, hashes password with argon2id,
- * and returns safe user data without exposing password hashes.
+ * Asking for an account (T4).
  *
- * This is an **invite**, not a request: the administrator is the approver, so the
- * account is created `ACTIVE` and the decision is recorded (`reviewedById`) rather
- * than left looking unreviewed in the approval queue. People who were not invited
- * ask for an account through `POST /auth/account-requests` instead, and that one
- * lands `PENDING_APPROVAL` and cannot sign in until an administrator decides.
- *
- * The password here is an **initial, temporary** one an administrator typed and
- * passes on, so the account is created flagged `mustChangePassword`. Without
- * that flag the holder signs in with the shared secret and is never asked to
- * replace it — which is exactly the "forced change on first sign-in" the reset
- * flow already promises. The client routers redirect on the flag (`RequireAuth`
- * on the web, the go_router guard on mobile), so setting it here is what makes
- * a brand-new account behave like a reset one.
+ * The legacy flow this replaces — `POST /auth/register`, where an administrator
+ * typed a password, read it out and picked the role on the spot — was removed on
+ * 14 Oct, the same day privileged invitations landed (T6: `POST /users/invite` +
+ * `POST /auth/accept-invite`). Leaving both would have left two answers to "who
+ * approved this account", which is the duplication §5 of the design doc exists to
+ * end.
  */
-router.post(
-  ["/register", "/auth/register"],
-  authenticate,
-  requireCapability("ACCOUNT_MANAGE"),
-  async (req: AuthenticatedRequest, res: Response) => {
-    const parseResult = registerSchema.safeParse(req.body);
-    if (!parseResult.success) {
-      const firstIssue = parseResult.error.issues[0];
-      return res.status(400).json({
-        error: firstIssue?.message ?? "Invalid request payload",
-        details: parseResult.error.issues,
-      });
-    }
-
-    const { name, fullName, email, id, emailOrId, password, role } = parseResult.data;
-    const resolvedName = (name ?? fullName)!;
-    const effectiveEmail = normalizeEmail((email ?? emailOrId ?? id)!);
-    const effectiveId = id;
-
-    try {
-      /**
-       * The email arms match without regard to case — see `utils/email.ts`.
-       * Without that, registering `Admin@x` beside an existing `admin@x` passes
-       * this check and creates the second account for one address. The `id` arms
-       * stay exact: `STAFF-007` and `staff-007` are different ids, and the value
-       * may not be an address at all.
-       */
-      const orConditions: Array<{
-        email?: { equals: string; mode: "insensitive" };
-        id?: string;
-      }> = [
-        { email: { equals: effectiveEmail, mode: "insensitive" } },
-        { id: effectiveEmail },
-      ];
-
-      if (effectiveId && effectiveId !== effectiveEmail) {
-        orConditions.push({ id: effectiveId });
-        orConditions.push({ email: { equals: effectiveId, mode: "insensitive" } });
-      }
-
-      const existingUser = await prisma.user.findFirst({
-        where: {
-          OR: orConditions,
-        },
-      });
-
-      if (existingUser) {
-        return res.status(409).json({
-          error: "User with this email or ID already exists",
-        });
-      }
-
-      const passwordHash = await argon2.hash(password, {
-        type: argon2.argon2id,
-      });
-
-      const newUser = await prisma.user.create({
-        data: {
-          ...(effectiveId ? { id: effectiveId } : {}),
-          fullName: resolvedName,
-          email: effectiveEmail,
-          passwordHash,
-          role,
-          mustChangePassword: true,
-          // An invite is approved by its inviter: the account never sits in the
-          // queue, and the record says who let it in (spec 3.1.2).
-          accountStatus: "ACTIVE",
-          reviewedById: req.user!.id,
-          reviewedAt: new Date(),
-        },
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-          role: true,
-          createdAt: true,
-          mustChangePassword: true,
-        },
-      });
-
-      const safeUser = {
-        id: newUser.id,
-        name: newUser.fullName,
-        fullName: newUser.fullName,
-        email: newUser.email,
-        role: newUser.role,
-        createdAt: newUser.createdAt,
-        mustChangePassword: newUser.mustChangePassword,
-      };
-
-      return res.status(201).json({
-        message: "User registered successfully",
-        user: safeUser,
-        ...safeUser,
-      });
-    } catch (error: unknown) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        error.code === "P2002"
-      ) {
-        return res.status(409).json({
-          error: "User with this email or ID already exists",
-        });
-      }
-
-      return res.status(500).json({
-        error: "Failed to register user",
-      });
-    }
-  }
-);
-
 const accountRequestSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
   email: z.string().trim().email("Enter a valid email"),
@@ -576,6 +428,105 @@ router.post(
         "Change password error:",
         error instanceof Error ? error.message : error
       );
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+const acceptInviteSchema = z.object({
+  token: z.string().trim().min(1, "The invite link is missing its token"),
+  password: z.string().min(8, ERROR_INVITE_PASSWORD),
+  /**
+   * Their own name, optional. The invitation names an email and a post, never a
+   * person, so this is the one moment the system can learn it from the only
+   * source that knows — without an administrator guessing on their behalf.
+   */
+  fullName: z.string().trim().min(2, "Enter your full name").max(120).optional(),
+});
+
+/**
+ * `POST /auth/accept-invite` — the invitee sets their own password (T6).
+ *
+ * Public, because the whole point is that the person does not have an account yet:
+ * the invitation exists precisely so that nobody — including the administrator who
+ * issued it — ever knows this person's password. The account is created by
+ * `POST /users/invite` with a hash of a random secret nobody holds, and this is
+ * the only route that replaces it.
+ *
+ * The token is the credential, and it is a single-use, expiring, hashed-at-rest
+ * secret (`services/invites.ts`), so this route needs no rate limiter of its own:
+ * the lookup that happens before any hashing cannot be satisfied by guessing, and
+ * a submission that fails it costs one indexed read. A valid token **is** enough
+ * to spend an argon2 hash on, and it is spent exactly once — the consume-first
+ * transaction is what makes "once" true even if two requests arrive together.
+ *
+ * On success the invitation is spent and the account is `ACTIVE`, so the response
+ * carries a session — the same `{ token, user }` shape `POST /auth/login`
+ * returns. Making the invitee sign in immediately after choosing a password would
+ * be asking them to prove a credential they just set, on a device they are already
+ * holding.
+ */
+router.post(
+  ["/accept-invite", "/auth/accept-invite"],
+  async (req: AuthenticatedRequest, res: Response) => {
+    const parseResult = acceptInviteSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      const firstIssue = parseResult.error.issues[0];
+      return res.status(400).json({
+        error: firstIssue?.message ?? "Invalid request payload",
+        details: parseResult.error.issues,
+      });
+    }
+
+    try {
+      const accepted = await acceptInvite(parseResult.data);
+
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        throw new Error("JWT_SECRET is not set in environment variables");
+      }
+
+      const token = jwt.sign(
+        {
+          id: accepted.userId,
+          role: accepted.role,
+          ver: accepted.tokenVersion,
+        },
+        secret,
+        { expiresIn: "1d" },
+      );
+
+      const safeUser = {
+        id: accepted.userId,
+        name: accepted.fullName,
+        fullName: accepted.fullName,
+        email: accepted.email,
+        role: accepted.role,
+        mustChangePassword: false,
+      };
+
+      return res.status(200).json({
+        token,
+        user: safeUser,
+        ...safeUser,
+        /** Non-null when accepting this invite made them the head of a unit. */
+        headedUnitId: accepted.headedUnitId,
+      });
+    } catch (error: unknown) {
+      /**
+       * An expired, used or unrecognised link is a 400 with the reason — not the
+       * 500 this used to be able to become. These three are the expected outcomes
+       * of an invitation flow, and the person reading the screen has to be told
+       * which one happened and what to do about it.
+       */
+      if (isHttpError(error)) {
+        return res.status(error.status).json({
+          error: error.message,
+          ...(error.details ? { details: error.details } : {}),
+        });
+      }
+
+      console.error("Accept invite error:", error instanceof Error ? error.message : error);
       return res.status(500).json({ error: "Internal server error" });
     }
   }

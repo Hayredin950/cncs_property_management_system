@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, KeyRound, Pencil, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
+import { Check, ClipboardCopy, KeyRound, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -15,32 +15,54 @@ import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
 import { Textarea } from "../../components/Textarea";
 import { RoleBadge } from "../../components/StatusBadges";
-import { ROLE_LABELS, ROLES, type Role } from "../../types/enums";
+import { INVITABLE_ROLES, ROLE_LABELS, ROLES, type InvitableRole, type Role } from "../../types/enums";
 import {
   useApproveUser,
   useDeleteUser,
+  useInviteUser,
   usePromoteUser,
-  useRegisterUser,
   useRejectUser,
   useResetUserPassword,
   useUpdateUser,
 } from "../../hooks/useAuthMutations";
-import { useApprovals, useUsers } from "../../hooks/useUsers";
+import { useApprovals, useInvitableUnits, useUsers } from "../../hooks/useUsers";
 import { formatDateUTC } from "../../lib/formatters";
 import { ApiError } from "../../types/api";
-import type { UserSummary } from "../../types/user";
+import type { InviteAccountResponse, UserSummary } from "../../types/user";
 
-const createSchema = z.object({
-  fullName: z.string().trim().min(1, "Full name is required"),
+/**
+ * The invite form (T6).
+ *
+ * `authorizedBy` and `authorizationRef` are **required**, and the labels say what
+ * they are for rather than what they are called: no role inside the app sits above
+ * a Head, an Officer or an Auditor (D3), so the appointment was decided outside
+ * the system and the system's job is to record who decided it and under which
+ * letter. The server enforces the same two fields, so this is a form that asks for
+ * what the API demands rather than the API refusing what the form allowed.
+ *
+ * There is no password field, and that is the requirement rather than an omission:
+ * the account is created unable to sign in, and the invitee chooses their own
+ * password through the single-use link.
+ */
+const inviteSchema = z.object({
   email: z.string().trim().email("Enter a valid email"),
-  password: z.string().min(8, "At least 8 characters"),
-  role: z.enum(ROLES),
+  role: z.enum(INVITABLE_ROLES),
+  unitId: z.string().trim().optional(),
+  authorizedBy: z.string().trim().min(1, "Who authorized this appointment?"),
+  authorizationRef: z.string().trim().min(1, "The letter number or equivalent is required"),
+  authorizationNote: z.string().trim().optional(),
 });
 
-type CreateFormValues = z.infer<typeof createSchema>;
+type InviteFormValues = z.infer<typeof inviteSchema>;
 
 /** The five spec roles (2.1), in the order `types/enums.ts` declares them. */
 const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role] }));
+
+/** Only the four roles D2 says are never self-registered. */
+const INVITE_ROLE_OPTIONS = INVITABLE_ROLES.map((role) => ({
+  value: role,
+  label: ROLE_LABELS[role],
+}));
 
 /**
  * `/admin/users` — **Admin only** (RequireAuth gates the route; every endpoint it
@@ -73,7 +95,8 @@ export function AdminUsersPage() {
   const { user: currentUser } = useAuth();
   const usersQuery = useUsers();
   const approvalsQuery = useApprovals();
-  const registerMutation = useRegisterUser();
+  const unitsQuery = useInvitableUnits();
+  const inviteMutation = useInviteUser();
   const updateMutation = useUpdateUser();
   const promoteMutation = usePromoteUser();
   const passwordMutation = useResetUserPassword();
@@ -81,7 +104,15 @@ export function AdminUsersPage() {
   const approveMutation = useApproveUser();
   const rejectMutation = useRejectUser();
 
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  /**
+   * The invitation just issued. Shown as a panel rather than only toasted, because
+   * the link is the one thing the administrator has to be able to copy: with no
+   * mail transport configured the response reports `email: "skipped"`, and a
+   * toast that scrolls away would leave an invitation nobody can deliver.
+   */
+  const [issued, setIssued] = useState<InviteAccountResponse | null>(null);
+  const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState<UserSummary | null>(null);
   const [editFullName, setEditFullName] = useState("");
   const [editEmail, setEditEmail] = useState("");
@@ -103,19 +134,52 @@ export function AdminUsersPage() {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors, isSubmitting },
-  } = useForm<CreateFormValues>({
-    resolver: zodResolver(createSchema),
-    defaultValues: { role: "STAFF" },
+  } = useForm<InviteFormValues>({
+    resolver: zodResolver(inviteSchema),
+    defaultValues: { role: "DEPARTMENT_HEAD", unitId: "" },
   });
 
-  async function onCreate(values: CreateFormValues) {
-    setCreateError(null);
+  /** A unit is part of the appointment only for a head: the other roles are college-wide. */
+  const invitedRole = watch("role") as InvitableRole;
+  const needsUnit = invitedRole === "DEPARTMENT_HEAD";
+  const units = unitsQuery.data ?? [];
+
+  async function onInvite(values: InviteFormValues) {
+    setInviteError(null);
+    if (values.role === "DEPARTMENT_HEAD" && !values.unitId) {
+      setInviteError("Choose the department this head is being appointed to.");
+      return;
+    }
     try {
-      await registerMutation.mutateAsync(values);
-      reset({ fullName: "", email: "", password: "", role: "STAFF" });
+      const result = await inviteMutation.mutateAsync({
+        email: values.email,
+        role: values.role,
+        unitId: values.role === "DEPARTMENT_HEAD" ? values.unitId : null,
+        authorizedBy: values.authorizedBy,
+        authorizationRef: values.authorizationRef,
+        // An untouched textarea is `""`, which is not a note — the server would
+        // store nothing either way, and sending `null` says so at the boundary.
+        authorizationNote: values.authorizationNote?.trim() || null,
+      });
+      setIssued(result);
+      setCopied(false);
+      reset({ email: "", role: values.role, unitId: "", authorizedBy: "", authorizationRef: "", authorizationNote: "" });
     } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : "Couldn't reach the server.");
+      setInviteError(err instanceof ApiError ? err.message : "Couldn't reach the server.");
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!issued) return;
+    try {
+      await navigator.clipboard.writeText(issued.inviteUrl);
+      setCopied(true);
+    } catch {
+      // Clipboard access can be refused (insecure origin, permission). The link is
+      // on screen and selectable either way, so this is not worth an error state.
+      setCopied(false);
     }
   }
 
@@ -287,9 +351,19 @@ export function AdminUsersPage() {
       </section>
 
       <Card>
-        <form onSubmit={handleSubmit(onCreate)} noValidate className="flex flex-col gap-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Create an account</h2>
-          <Input label="Full name" error={errors.fullName?.message} {...register("fullName")} required />
+        <form onSubmit={handleSubmit(onInvite)} noValidate className="flex flex-col gap-4">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Invite an account
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              For heads, property officers, auditors and system admins — the accounts nobody can
+              register for themselves. They choose their own password from the link, so no
+              administrator ever sets or knows it. Staff ask for an account on the public request
+              page and a head approves them.
+            </p>
+          </div>
+
           <Input
             label="Email"
             type="email"
@@ -298,37 +372,108 @@ export function AdminUsersPage() {
             {...register("email")}
             required
           />
-          <Input
-            label="Temporary password"
-            type="password"
-            autoComplete="new-password"
-            hint="Share it securely — they will be asked to choose their own the first time they sign in."
-            error={errors.password?.message}
-            {...register("password")}
-            required
-          />
           <Select
             label="Role"
-            options={ROLE_OPTIONS}
+            options={INVITE_ROLE_OPTIONS}
             hint="It decides what they can do, not just what they see — the matrix is in spec 2.2."
             error={errors.role?.message}
             {...register("role")}
             required
           />
 
-          {createError && (
+          {needsUnit && (
+            <Select
+              label="Department"
+              options={units.map((unit) => ({
+                value: unit.id,
+                label: unit.hasActiveHead ? `${unit.name} — already has a head` : unit.name,
+              }))}
+              error={errors.unitId?.message}
+              hint="One head per department. A department already headed cannot take a second."
+              {...register("unitId")}
+              required
+            />
+          )}
+
+          {/**
+            The two fields that make this an appointment rather than a creation. Both
+            required, both recorded on the invite and on the append-only log — see D3
+            in `docs/cncs-pms-account-approval-authority.md`.
+          */}
+          <Input
+            label="Authorized by"
+            hint="The office or person who authorized this appointment outside the system."
+            error={errors.authorizedBy?.message}
+            {...register("authorizedBy")}
+            required
+          />
+          <Input
+            label="Authorization reference"
+            hint="The letter number, minute or equivalent — so the authority can be checked later."
+            error={errors.authorizationRef?.message}
+            {...register("authorizationRef")}
+            required
+          />
+          <Textarea
+            label="Note (optional)"
+            rows={2}
+            hint="Anything about the appointment worth keeping with it."
+            error={errors.authorizationNote?.message}
+            {...register("authorizationNote")}
+          />
+
+          {inviteError && (
             <p role="alert" className="rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-700">
-              {createError}
+              {inviteError}
             </p>
           )}
 
           <div className="flex justify-end">
             <Button type="submit" leftIcon={<UserPlus className="h-4 w-4" />} loading={isSubmitting}>
-              Create account
+              Send invite
             </Button>
           </div>
         </form>
       </Card>
+
+      {issued && (
+        <Card className="flex flex-col gap-3 border-brand-200 bg-brand-50/40">
+          <div className="flex items-start gap-2">
+            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" aria-hidden="true" />
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {issued.invite.renewed ? "New link issued for" : "Invitation ready for"}{" "}
+                {issued.invite.email}
+              </h2>
+              <p className="mt-1 text-xs text-slate-600">
+                {issued.email === "sent"
+                  ? "The link has been emailed to them."
+                  : "No mail transport is configured, so nothing was emailed — pass this link on yourself."}{" "}
+                It works once, and expires {formatDateUTC(issued.invite.expiresAt) ?? "in 72 hours"}. They
+                will set their own password when they open it.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+              {issued.inviteUrl}
+            </code>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              leftIcon={<ClipboardCopy className="h-4 w-4" />}
+              onClick={() => void copyInviteLink()}
+            >
+              {copied ? "Copied" : "Copy link"}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setIssued(null)}>
+              Done
+            </Button>
+          </div>
+        </Card>
+      )}
 
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">

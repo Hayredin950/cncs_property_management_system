@@ -137,6 +137,33 @@ pnpm prisma:seed                  # idempotent; prints the demo credentials
 > the code reads them — a deploy that skips `migrate deploy` will fail with
 > `column "tokenVersion" does not exist`.
 
+### Two things block `migrate deploy` on the current database (14 Oct)
+
+Both were found while building T6 (privileged invites), which is the first feature
+that writes these columns.
+
+1. **A failed migration is already in the history.** `_prisma_migrations` holds a
+   **FAILED** row for `20261012000000_phase_a_expand` *and* an applied row for the
+   same migration. Prisma refuses to run anything further while a failed migration
+   is present (`P3009`). Resolve it deliberately — `prisma migrate resolve
+   --rolled-back 20261012000000_phase_a_expand` if the applied attempt is the good
+   one — rather than deleting the row by hand.
+2. **Three tables exist without a migration that creates them.**
+   `AccountRequest`, `EmailToken` and `AdminActionLog` are present in the database
+   (`information_schema` confirms it), and no migration on disk creates any of the
+   three: they were created outside the migration history, most likely by
+   `prisma db push`. That is why `migrate deploy` against a *fresh* database would
+   not produce the schema the code expects either.
+
+**`20261014000000_account_invite_fields` is the migration T6 needs.** It adds the
+seven invite columns (five on `AccountRequest`, two on `AdminActionLog`), the
+`invitedById` foreign key and its index — all nullable, nothing backfilled. It was
+verified by executing its SQL inside a transaction that was then rolled back
+against the live database (seven columns and the foreign key created, database
+unchanged), so it is known to apply cleanly; it has **not** been applied.
+Until it is, every invite endpoint answers 500 with
+`column AccountRequest.authorizedBy does not exist`.
+
 ## Settings worth knowing
 
 - **Vercel Authentication is disabled** on both projects. It is on by default at

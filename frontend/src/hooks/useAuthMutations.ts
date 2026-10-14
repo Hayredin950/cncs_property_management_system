@@ -1,29 +1,47 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { registerUser, type RegisterPayload } from "../api/auth";
 import { claimItem, refuseClaim } from "../api/items";
 import { createCategory, deleteCategory, updateCategory } from "../api/categories";
 import {
   approveUser,
   deleteUser,
+  inviteUser,
   promoteUser,
   rejectUser,
   resetUserPassword,
   updateUser,
+  type InviteUserPayload,
   type UpdateUserPayload,
 } from "../api/users";
 import { toast } from "../lib/toast";
 import { ROLE_LABELS, type Role } from "../types/enums";
 
-/** `POST /auth/register` — the created account now also shows in the accounts list (`GET /users`). */
-export function useRegisterUser() {
+/**
+ * `POST /users/invite` — the privileged invite (T6).
+ *
+ * The success toast says **invited**, not "created": the account exists but
+ * cannot be signed into until the invitee sets their own password, and an
+ * administrator who reads "created" will hand over the link expecting the person
+ * to already be able to sign in with something.
+ *
+ * The invited account joins the accounts list, so that query is invalidated. The
+ * invite queue is not: the account is `PENDING_EMAIL_VERIFICATION`, which the
+ * approval queue does not show — it is waiting on the *invitee*, not on a decision
+ * — so invalidating it would be a refetch that cannot change.
+ */
+export function useInviteUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: RegisterPayload) => registerUser(payload),
+    mutationFn: (payload: InviteUserPayload) => inviteUser(payload),
     onSuccess: (result) => {
-      toast.success(`Account created for ${result.user.fullName} (${result.user.email}).`);
+      toast.success(
+        result.invite.renewed
+          ? `New invite link sent to ${result.invite.email}.`
+          : `Invited ${result.invite.email} as ${ROLE_LABELS[result.invite.role]}.`,
+      );
       void queryClient.invalidateQueries({ queryKey: ["users"] });
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't create the account"),
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Couldn't send the invite"),
   });
 }
 

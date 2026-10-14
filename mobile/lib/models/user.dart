@@ -89,6 +89,82 @@ class UserSummary {
   final String? reviewNote;
 }
 
+/// `GET /departments/invitable` — the units a head invite may name (T6).
+///
+/// Not the same list as the public `GET /departments`, which is the units open to
+/// *self-registration*: an invite is most needed where a unit has no working head,
+/// and a headless unit is not one people register themselves into.
+class InvitableUnit {
+  const InvitableUnit({
+    required this.id,
+    required this.name,
+    required this.code,
+    required this.hasActiveHead,
+  });
+
+  factory InvitableUnit.fromJson(Map<String, dynamic> json) => InvitableUnit(
+        id: asString(json['id']),
+        name: asString(json['name']),
+        code: asString(json['code']),
+        hasActiveHead: asBool(json['hasActiveHead']),
+      );
+
+  final String id;
+  final String name;
+  final String code;
+
+  /// True when the department already has a working head — the case the server
+  /// refuses an invite for, shown here so it is not discovered from a 400.
+  final bool hasActiveHead;
+}
+
+/// `POST /users/invite` — what an administrator gets back after issuing a
+/// privileged invitation (T6).
+///
+/// There is no password in it, and that is the point: the account exists but cannot
+/// be signed into until the invitee opens the single-use link and chooses their own.
+class InviteResult {
+  const InviteResult({
+    required this.email,
+    required this.role,
+    required this.unitId,
+    required this.inviteUrl,
+    required this.expiresAt,
+    required this.renewed,
+    required this.delivery,
+  });
+
+  factory InviteResult.fromJson(Map<String, dynamic> json) {
+    final invite = asMap(json['invite']);
+    return InviteResult(
+      email: asString(invite['email']),
+      role: Role.fromJson(invite['role']),
+      unitId: asStringOrNull(invite['unitId']),
+      inviteUrl: asString(json['inviteUrl']),
+      expiresAt: asString(invite['expiresAt']),
+      renewed: asBool(invite['renewed']),
+      delivery: asString(json['email']),
+    );
+  }
+
+  final String email;
+  final Role role;
+  final String? unitId;
+
+  /// The single-use link. Returned to the issuing administrator as well as emailed,
+  /// because with no mail transport configured the administrator is the only
+  /// deliverer there is.
+  final String inviteUrl;
+
+  final String expiresAt;
+
+  /// True when this replaced a previous invitation that expired unaccepted.
+  final bool renewed;
+
+  /// `sent`, `skipped` or `failed` — `skipped` means nothing was emailed.
+  final String delivery;
+}
+
 /// `POST /auth/account-requests` — what a person gets back after asking for an
 /// account. Deliberately not a user object: there is no session, no role to render,
 /// and the only thing to show is that the request is in and who to ask.

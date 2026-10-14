@@ -5,6 +5,7 @@ import { AuditListPage } from "../features/audits/AuditListPage";
 import { AuditNewPage } from "../features/audits/AuditNewPage";
 import { AuditReportPage } from "../features/audits/AuditReportPage";
 import { AuditScanPage } from "../features/audits/AuditScanPage";
+import { AcceptInvitePage } from "../features/auth/AcceptInvitePage";
 import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { RequestAccountPage } from "../features/auth/RequestAccountPage";
@@ -86,6 +87,10 @@ export const appRoutes: RouteObject[] = [
           { path: "/map", element: <MapPage /> },
           { path: "/login", element: <LoginPage /> },
           { path: "/request-account", element: <RequestAccountPage /> },
+          // The invited person is not signed in and has no account to sign in
+          // with — the invitation is what creates one (T6), so this belongs to
+          // the public shell rather than behind `RequireAuth`.
+          { path: "/accept-invite", element: <AcceptInvitePage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

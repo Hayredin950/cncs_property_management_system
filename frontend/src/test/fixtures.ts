@@ -24,6 +24,7 @@ import type {
 } from "../types/audit";
 import type { ItemsHistoryResponse } from "../types/history";
 import type { SystemEvent, SystemStatus } from "../api/system";
+import type { InvitableUnit } from "../api/departments";
 
 /**
  * Fixtures shaped exactly like the backend's responses (docs/backend-handoff.md
@@ -466,6 +467,34 @@ export const SYSTEM_STATUS: SystemStatus = {
  * carry an audit session, a tag id or a room. There is no asset-shaped fixture
  * here to accidentally assert against.
  */
+/**
+ * `GET /departments/invitable` — the head-appointment picker (T6).
+ *
+ * Deliberately not the same list as `DEPARTMENTS`: that one is the units open to
+ * *self-registration*, and an invite is most needed where a unit has no working
+ * head. Chemistry carries `hasActiveHead: true` so a test can assert the picker
+ * marks the unit the server will refuse, and Physics — headless by design — is the
+ * one a head is actually appointed into.
+ */
+export const INVITABLE_UNITS: InvitableUnit[] = [
+  { id: "unit-chem", name: "Chemistry", code: "CHEM", hasActiveHead: true },
+  { id: "unit-cs", name: "Computer Science", code: "CS", hasActiveHead: true },
+  { id: "unit-phys", name: "Physics", code: "PHYS", hasActiveHead: false },
+];
+
+/**
+ * `POST /auth/accept-invite` — the session an invitee gets back after choosing
+ * their own password. A Department Head, because that is the case with the most
+ * moving parts (the unit it heads is returned too).
+ */
+export const ACCEPTED_INVITE_USER: AuthUser = {
+  id: "invitee-1",
+  fullName: "New Head",
+  email: "newhead@cncs.aau.edu.et",
+  role: "DEPARTMENT_HEAD",
+  createdAt: "2026-10-14T08:00:00.000Z",
+};
+
 export const SYSTEM_EVENTS: SystemEvent[] = [
   {
     id: "log-1",

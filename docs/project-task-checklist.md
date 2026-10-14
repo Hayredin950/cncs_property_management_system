@@ -203,7 +203,11 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
       `"item":{"tagId":"CNCS-DEMO-0002","name":"Office Desk"}` in each row, contradicting
       "System Administrator sees no asset data" (UI spec §SYSTEM_ADMIN). One of the rows is a
       transfer **requested by the System Admin account itself**.
-- [ ] Live `GET /requests/pending` → 500 `Internal server error`.
+- [x] `GET /requests/pending` — it is not a route (`/requests/pending-count` is, and answers
+      200). The 500s reported against the request flow, the audit report and every export
+      were transient Neon connection failures, not routing or deployment: fixed 14 Oct in
+      `backend/src/lib/prisma.ts` + `lib/dbRetry.ts`, reproduced 8-of-12 failing before and
+      0-of-90 after. Measurements: **`docs/db-connection-resilience.md`**.
 
 ---
 
@@ -211,9 +215,24 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 
 ### 14. Phase-1 reports by audience
 - [~] `routes/reports.ts` + `reports.test.ts` exist; `frontend` Reports page and CSV utils exist.
-- [ ] **`GET /reports/inventory` returns 500 in production** for both the Property Officer and
-      the Auditor; 403 for staff/head.
-- [ ] Live `/audits/findings` and `/audits/active` are 404 in production.
+- [x] `GET /reports/inventory` — the 500s were the transient connection failure, fixed
+      14 Oct (see §10.5 above and `docs/db-connection-resilience.md`). Live now: CSV and PDF
+      both 200 for the Property Officer and the Auditor, 403 for staff/head as designed.
+- [x] `/audits/findings` and `/audits/active` answer 404 — **not because the routes are
+      missing**. Both are declared (`routes/audits.ts:567,632`), but *after* `GET /audits/:id`
+      (`:485`), and Express matches in registration order, so `/:id` swallows both names and the
+      request dies looking up a session called `active`. `GET /items/recent` and
+      `GET /items/held-by-me` are the same bug in `routes/items.ts` (`:972`, `:1004`, declared
+      after `/:tagId` at `:338`). One cause, four endpoints: a static path registered below the
+      `:param` route that matches its name.
+- [x] `useAuditHistoryList` was repointed at the real `GET /audits` on 14 Oct (it had been
+      reading `{audits:[…]}` as an array and answering "No audits completed yet" whatever the
+      server said). `useActiveAudit`, `useOpenFindings`, `useRecentItems` and `useHeldItems`
+      still duplicate the old pattern — a root-relative bare `fetch` (no token; and on the
+      deployed origin it resolves to the frontend host, where `vercel.json` rewrites every path
+      to `index.html`, i.e. a 200 that cannot parse), with each failure funnelled into a `catch`
+      that returns `[]`/`{count:0}`. Tracked in §12; fixing the route order without them would
+      only move the `404` from the router to the client.
 - [ ] "Frozen when official" is unconsumed: `reportNumber` is the only freeze-ish column in the
       schema (`schema.prisma:504`); no snapshot/frozen-at column exists.
 
@@ -244,16 +263,26 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 ## Account-Approval Authority work (T1–T9) — `docs/cncs-pms-account-approval-authority.md`
 
 ### T1. Schema
-- [~] `AccountRequest` exists (`schema.prisma:185–214`) with `requestedUnitId`,
+- [x] `AccountRequest` exists (`schema.prisma:185–214`) with `requestedUnitId`,
       `confirmedUnitId`, `status`, `decidedBy`, `escalatedBy`, and the invite fields
-      (`authorizedBy`, `authorizationRef`, `authorizationNote`, `invitedById`, `invitedAt`) —
-      **but the invite fields are uncommitted working-tree changes** (not in `24fb728`).
-- [~] `AdminActionLog` has `actorId`, `action`, `targetUserId`, `unitId`, `before`, `after`,
-      and (uncommitted) `authorizedBy`/`authorizationRef`. Append-only is **not** enforced at
-      DB level, and nothing writes to it.
-- [ ] **No migration exists for the uncommitted fields** — `grep -rl "authorizedBy\|invitedById"
-      backend/prisma/migrations/` returns nothing. The last migration on disk is
-      `20261012030000_account_approval_queue`.
+      (`authorizedBy`, `authorizationRef`, `authorizationNote`, `invitedById`, `invitedAt`).
+- [x] `AdminActionLog` has `actorId`, `action`, `targetUserId`, `unitId`, `before`, `after`,
+      `authorizedBy`/`authorizationRef`. T6 now writes to it
+      (`ACCOUNT_INVITE_SENT`/`ACCOUNT_INVITE_RESENT`/`ACCOUNT_INVITE_ACCEPTED`); append-only is
+      still **not** enforced at DB level.
+- [x] **A migration now exists** — `prisma/migrations/20261014000000_account_invite_fields/`
+      adds all seven columns, the `invitedById` foreign key and its index.
+- [ ] **It is not applied, and the database is missing the columns.** Verified live, 14 Oct:
+      `AccountRequest`, `EmailToken` and `AdminActionLog` exist as tables — **created outside the
+      migration history** (no migration on disk creates any of the three) — while none of the
+      seven invite columns exist. The migration's SQL was proved by running it inside a
+      transaction that was rolled back against the live database: seven columns and the foreign
+      key created, database unchanged.
+- [ ] **`prisma migrate deploy` cannot currently run:** `_prisma_migrations` holds a **FAILED**
+      row for `20261012000000_phase_a_expand` alongside an applied one — `P3009` — so it needs a
+      `prisma migrate resolve` decision first (see `docs/deployment.md`). Until both are done,
+      **T6 cannot be live-verified**: every invite endpoint fails on its first query with
+      `column AccountRequest.authorizedBy does not exist`.
 
 ### T2. Capabilities
 - [x] Server has all five — `permissions.ts:58–66`; `ACCOUNT_APPROVE_OWN_UNIT`→head
@@ -290,12 +319,31 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 - [~] Live row support: `GET /users/approvals` as admin returned PENDING_APPROVAL accounts
       (`pending.cs@`, …), so the legacy queue has real data.
 
-### T6. Privileged invites backend
-- [ ] `POST /users/invite` — **does not exist**.
-- [ ] `POST /auth/accept-invite` — **does not exist**.
-- [ ] Duplicate head / PO+AUDITOR conflict / self-invite rejections — not implemented.
-- [ ] Head activation side-effects (set `headUserId`, move department items to
-      `REVERTED_UNVERIFIED`, reassign previous head's approvals) — not implemented.
+### T6. Privileged invites backend — **built 14 Oct, unit-tested, not live-verified**
+- [x] `POST /users/invite` (`ACCOUNT_INVITE`) — `routes/users.ts`, rules in
+      `services/invites.ts` (`assertInvitable`). Body: `email, role, unitId?, authorizedBy,
+      authorizationRef, authorizationNote?`. **No password field exists in the payload.**
+- [x] `POST /auth/accept-invite` — invitee sets their own password; returns a session.
+      Single-use hashed token (`EmailToken.type = INVITE`, 72 h), consumed by a conditional
+      `updateMany` so two concurrent requests cannot spend one link.
+- [x] Rejections: missing `authorizedBy`/`authorizationRef` 400 (both required for every
+      privileged role — D3); a unit that already has a **working** head 400; the same person as
+      Property Officer and Auditor 409; self-invite 400; an address with a live account 409; a
+      second invite while one is outstanding 409. A lapsed invite is renewed on the same
+      account row instead of dead-ending the address.
+- [x] Head activation: `OrgUnit.headId` set on acceptance, the unit's department-held items
+      moved to `REVERTED_UNVERIFIED` (terminal rows skipped), both in the acceptance transaction.
+      **Deliberately not done:** "reassign the previous head's pending approvals" — the queue is
+      derived from status and unit (`GET /users/approvals`), not assigned to a person, so there
+      is no per-approver list to move; what changes is `resolveApprover`, which now finds the
+      new head.
+- [x] `GET /departments/invitable` — the head picker's unit list, with `hasActiveHead`.
+- [x] Tests: `services/invites.test.ts` (19) + `routes/invites.test.ts` (22).
+- [x] **The direct-creation path was removed**, not left beside it: `POST /auth/register` is
+      gone from `routes/auth.ts` (and its ~16 route tests with it), the web panel is now the
+      invite form, and the mobile client was converted in the same change.
+- [ ] **Live verification of the 20 rows is blocked** on T1's migration being applied.
+- [ ] Not built (authority doc T6, last bullet): resend, revoke, and the invite status list.
 
 ### T7. Deactivation backend
 - [ ] No deactivate endpoint. `DELETE /users/:id` is the only removal path, it requires
@@ -311,12 +359,16 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
       (`RequestAccountPage.tsx:50–68`) — but that fetch is the code that fails the
       rules-of-hooks check.
 - [ ] Verify-email page — does not exist.
-- [~] Department Head "Account Requests" screen: nav points at `/account-requests`
-      (`navConfig.ts:60`) but **no route is declared for it** → dead link.
-- [~] SYSTEM_ADMIN: nav points at `/admin/account-requests` (`navConfig.ts:68`) and
-      `/admin/system` (`navConfig.ts:69`) — **neither route exists**; only `/admin/users` is
-      declared (`router.tsx:190`). Invite form/status list — not built.
-- [ ] Test that every nav item resolves for every role — does not exist.
+- [x] The dead nav links are gone (14 Oct). `/account-requests`, `/admin/account-requests`,
+      `/admin/system` and `/buildings` were removed from `navConfig.ts` — none had a declared
+      route, and the screens behind them (T5 queue, system config, buildings) are still
+      `[BUILD]`. The System Admin's queue is not lost: it is the "Waiting for approval"
+      panel on `/admin/users`, which is why the surviving **Accounts** row carries the
+      `pending-count` badge. Each row returns with its route.
+- [x] Test that every nav item resolves for every role — **`frontend/src/test/navRoutes.test.tsx`**
+      (17 tests). It walks the exported `appRoutes` tree, so it cannot drift from the real
+      router, and it fails for any `NAV_ITEMS` entry whose path is undeclared — which is the
+      check whose absence let those four rows ship.
 
 ### T9. Seed data
 - [x] Four departments with Physics headless; heads for CS/Bio/Chem; two staff each; one officer;
@@ -345,12 +397,13 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 - [x] Badge kinds implemented (`pending-count`, `unread-notifications`) — `navConfig.ts:33–40`.
 - [x] SYSTEM_ADMIN nav has no Scan/Items/Requests/Reports — confirmed in `navConfig.ts`.
 - [x] AUDITOR nav is Dashboard / Active Audit / Audit history / Notifications — `navConfig.ts:63,64`.
-- [~] STAFF nav is Dashboard / My Items / My Requests / Notifications — correct in config.
-- [~] PROPERTY_OFFICER nav adds Buildings (`:62`) **with no route** → Page-not-found.
-- [~] DEPARTMENT_HEAD nav adds Account Requests (`:60`) **with no route** → Page-not-found.
+- [x] STAFF nav is Dashboard / My Items / My Requests / Notifications — correct in config.
+- [x] PROPERTY_OFFICER's dead Buildings row removed 14 Oct (`:62`) — see T8.
+- [x] DEPARTMENT_HEAD's dead Account Requests row removed 14 Oct (`:60`) — see T8.
 - [ ] "Scan a Tag" is `roles: ["PROPERTY_OFFICER"]` only (`:53`) — the spec's emphasis for
       duties and the E6 note "desktop shows manual tag lookup" are unverified.
-- [ ] Test that iterates every role's nav and asserts the route renders — does not exist.
+- [x] Test that iterates every role's nav and asserts the route renders — **`navRoutes.test.tsx`**
+      does exactly this against `appRoutes`, for all five roles.
 
 ### Dashboard widgets per role
 - [x] All nine widget files exist — `frontend/src/features/dashboard/widgets/`: SystemStatus,
@@ -429,17 +482,22 @@ Amended by the authority doc where they differ. Phases A–H.
       lint.
 - [ ] E2 verify-email page — missing.
 - [~] E3 sign-in messages for non-ACTIVE — unverified.
-- [~] E4 head Account Requests screen — nav entry only; no route, no screen.
-- [~] E5 SYSTEM_ADMIN screen — nav entry only; no route, no invites.
-- [ ] E6 "every nav item resolves for that role" — **fails today** for `/buildings`,
-      `/admin/system`, `/admin/account-requests`.
+- [ ] E4 head Account Requests screen — still missing; the dead nav row was removed 14 Oct
+      rather than left pointing at the 404.
+- [ ] E5 SYSTEM_ADMIN screen — still missing (invites are T6); the two dead nav rows were
+      removed 14 Oct.
+- [x] E6 "every nav item resolves for that role" — **passes** since 14 Oct:
+      `frontend/src/test/navRoutes.test.tsx` asserts it for all five roles against the
+      exported route tree, rather than against the four paths that used to fail.
 - [ ] E7 front-end tests for registration/queue/sign-in states — partial (one
       `requestAccount.test.tsx`, currently failing).
 - [~] F1 one scope function used by list/search/scan/report — `itemListScope` covers the item
       listing; scan (`GET /items/:id`) is **not** scope-checked; report queries unverified.
 - [ ] F2 scan behaviour for out-of-scope tags — not implemented.
 - [ ] F3 multi-department proof tests — not verified.
-- [ ] G1 invites — missing (see T6).
+- [x] G1 invites — built 14 Oct (see T6): `/users/invite` + `/auth/accept-invite`, web and
+      mobile, with the authorization fields required. Blocked from live verification by T1's
+      unapplied migration.
 - [ ] G2 deactivation — missing (see T7).
 - [ ] G3 head replacement — missing.
 - [~] G4 role change bumps `tokenVersion` — yes for promote (`users.ts`), and it is logged

@@ -1,4 +1,4 @@
-import type { AccountStatus, Role } from "./enums";
+import type { AccountStatus, InvitableRole, Role } from "./enums";
 
 export interface AuthUser {
   id: string;
@@ -67,6 +67,29 @@ export interface MeResponse {
 export interface LoginRequest {
   email: string;
   password: string;
+}
+
+/**
+ * `POST /users/invite` — what an administrator gets back after issuing a
+ * privileged invitation (T6).
+ *
+ * `inviteUrl` is the single-use link, and `email` says whether it was also sent:
+ * the transport reports `skipped` while no mail server is configured, which is
+ * when the administrator has to pass the link on themselves. `renewed` says
+ * whether this replaced a previous invitation that expired unaccepted.
+ */
+export interface InviteAccountResponse {
+  invite: {
+    userId: string;
+    email: string;
+    role: InvitableRole;
+    unitId: string | null;
+    status: AccountStatus;
+    expiresAt: string;
+    renewed: boolean;
+  };
+  inviteUrl: string;
+  email: "sent" | "skipped" | "failed";
 }
 
 /**

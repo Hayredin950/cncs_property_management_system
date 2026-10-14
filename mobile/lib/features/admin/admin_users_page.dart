@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_error.dart';
@@ -36,10 +37,17 @@ import '../../widgets/status_badges.dart';
 ///
 /// Resetting a password generates one on the device and shows it once. The server sets
 /// `mustChangePassword`, so the account is forced to replace it at the next sign-in —
-/// which is what makes "read it aloud to the person" an acceptable hand-off. Creating an
-/// account is the same hand-off one step earlier: the administrator types an initial
-/// password, and the server flags the new account `mustChangePassword` so the holder
-/// replaces it at the first sign-in rather than keeping a shared secret.
+/// which is what makes "read it aloud to the person" an acceptable hand-off.
+///
+/// **Creating an account is no longer that hand-off.** `POST /auth/register` — where
+/// an administrator typed an initial password and picked the role on the spot — was
+/// removed on 14 Oct, in the same change as the web panel, once privileged
+/// invitations landed (T6). This screen now issues an invite: an email, a role, a
+/// department when the role is a head's, and the two fields that record **who
+/// authorized the appointment outside the system** (D3). The account cannot be
+/// signed into until the invitee opens the single-use link and sets their own
+/// password, so no administrator ever knows a credential — and no appointment is
+/// recorded without the authority behind it.
 class AdminUsersPage extends ConsumerStatefulWidget {
   const AdminUsersPage({super.key});
 
@@ -48,21 +56,29 @@ class AdminUsersPage extends ConsumerStatefulWidget {
 }
 
 class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
-  final _fullName = TextEditingController();
   final _email = TextEditingController();
-  final _password = TextEditingController();
+  final _authorizedBy = TextEditingController();
+  final _authorizationRef = TextEditingController();
+  final _authorizationNote = TextEditingController();
 
-  var _role = Role.staff;
+  var _role = Role.departmentHead;
+  String? _unitId;
   var _creating = false;
   Object? _formError;
   final _fieldErrors = <String, String?>{};
   String? _busyUserId;
 
+  /// The invitation just issued, kept on screen with its link: with no mail
+  /// transport configured the administrator is the one who has to pass it on, and
+  /// a toast that fades would take the only copy with it.
+  InviteResult? _issued;
+
   @override
   void dispose() {
-    _fullName.dispose();
     _email.dispose();
-    _password.dispose();
+    _authorizedBy.dispose();
+    _authorizationRef.dispose();
+    _authorizationNote.dispose();
     super.dispose();
   }
 
@@ -129,7 +145,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'Create an account',
+                'Invite an account',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -138,20 +154,13 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
               ),
               const SizedBox(height: 2),
               const Text(
-                'The person can sign in straight away. There is no invitation email — pass '
-                'the password on yourself.',
+                'For heads, property officers, auditors and system admins — the accounts '
+                'nobody can register for themselves. They set their own password from the '
+                'invitation, so no password is typed here. Staff ask for an account on the '
+                'public request page and a head approves them.',
                 style: TextStyle(fontSize: 12.5, color: AppColors.aauGray500, height: 1.4),
               ),
               const SizedBox(height: AppSpace.s4),
-              AppTextField(
-                label: 'Full name',
-                controller: _fullName,
-                hint: 'Selam Bekele',
-                errorText: _fieldErrors['fullName'],
-                enabled: !_creating,
-                required: true,
-              ),
-              const SizedBox(height: AppSpace.stack),
               AppTextField(
                 label: 'Email',
                 controller: _email,
@@ -162,27 +171,54 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                 required: true,
               ),
               const SizedBox(height: AppSpace.stack),
-              AppTextField(
-                label: 'Initial password',
-                controller: _password,
-                errorText: _fieldErrors['password'],
-                enabled: !_creating,
-                required: true,
-                helper: 'At least 8 characters. The holder must choose their own the first '
-                    'time they sign in.',
-              ),
-              const SizedBox(height: AppSpace.stack),
               AppSelectField<Role>(
                 label: 'Role',
                 value: _role,
-                options: Role.selectable,
+                options: Role.invitable,
                 labelOf: (value) => value.label,
                 enabled: !_creating,
-                onChanged: (value) => setState(() => _role = value ?? Role.staff),
+                onChanged: (value) => setState(() {
+                  _role = value ?? Role.departmentHead;
+                  // A unit only means something for a head: the other roles are
+                  // college-wide, and the server ignores it for them.
+                  if (_role != Role.departmentHead) _unitId = null;
+                }),
                 helper: 'It decides what they can do, not just what they see. System Admin '
                     'runs accounts; Property Officer registers items, decides requests and '
-                    'manages categories; Department Head and Staff hold and transfer items; '
-                    'Auditor runs audit sessions.',
+                    'manages categories; Department Head holds and transfers items and '
+                    'approves their unit\u2019s staff; Auditor runs audit sessions.',
+              ),
+              if (_role == Role.departmentHead) ...[
+                const SizedBox(height: AppSpace.stack),
+                _unitPicker(),
+              ],
+              const SizedBox(height: AppSpace.stack),
+              AppTextField(
+                label: 'Authorized by',
+                controller: _authorizedBy,
+                errorText: _fieldErrors['authorizedBy'],
+                enabled: !_creating,
+                required: true,
+                helper: 'The office or person who authorized this appointment outside the '
+                    'system. Nothing in the app outranks a head, an officer or an auditor, so '
+                    'the decision was made elsewhere \u2014 the system records who made it.',
+              ),
+              const SizedBox(height: AppSpace.stack),
+              AppTextField(
+                label: 'Authorization reference',
+                controller: _authorizationRef,
+                errorText: _fieldErrors['authorizationRef'],
+                enabled: !_creating,
+                required: true,
+                helper: 'The letter number, minute or equivalent, so the authority can be '
+                    'checked later.',
+              ),
+              const SizedBox(height: AppSpace.stack),
+              AppTextField(
+                label: 'Note (optional)',
+                controller: _authorizationNote,
+                enabled: !_creating,
+                maxLines: 2,
               ),
               if (_formError != null) ...[
                 const SizedBox(height: AppSpace.stack),
@@ -190,7 +226,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
               ],
               const SizedBox(height: AppSpace.s4),
               AppButton(
-                label: 'Create account',
+                label: 'Send invite',
                 icon: Icons.person_add_alt,
                 expand: true,
                 loading: _creating,
@@ -199,6 +235,11 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
             ],
           ),
         ),
+
+        if (_issued != null) ...[
+          const SizedBox(height: AppSpace.s4),
+          _issuedCard(_issued!),
+        ],
 
         const SizedBox(height: AppSpace.s6),
         users.when(
@@ -244,15 +285,124 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
     );
   }
 
+  /// The department picker, shown only for a head invite. A unit is a uuid, so it
+  /// has to come from the server: `GET /departments/invitable` is the list of active
+  /// departments with whether each already has a working head — which is the exact
+  /// case the invite is refused for, so the picker says so first.
+  Widget _unitPicker() {
+    final units = ref.watch(invitableUnitsProvider);
+    return units.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpace.s2),
+        child: LinearProgressIndicator(),
+      ),
+      error: (error, _) => InlineError(
+        error: error,
+        onRetry: () => ref.invalidate(invitableUnitsProvider),
+      ),
+      data: (rows) => AppSelectField<String>(
+        label: 'Department',
+        value: _unitId,
+        options: [for (final unit in rows) unit.id],
+        labelOf: (id) {
+          final unit = rows.firstWhere((row) => row.id == id);
+          return unit.hasActiveHead
+              ? '${unit.name} \u2014 already has a head'
+              : unit.name;
+        },
+        errorText: _fieldErrors['unitId'],
+        enabled: !_creating,
+        onChanged: (value) => setState(() => _unitId = value),
+        helper: 'One head per department. A department that already has a working head '
+            'cannot take a second.',
+      ),
+    );
+  }
+
+  /// The invitation the administrator has to be able to copy: the link is the only
+  /// way in, and nothing was emailed while the transport is a stub.
+  Widget _issuedCard(InviteResult issued) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            issued.renewed
+                ? 'New link issued for ${issued.email}'
+                : 'Invitation ready for ${issued.email}',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.aauGray900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            issued.delivery == 'sent'
+                ? 'The link has been emailed to them. It works once, and expires '
+                    '${formatDateUtc(issued.expiresAt) ?? ''}. They set their own password '
+                    'when they open it.'
+                : 'No mail transport is configured, so nothing was emailed \u2014 pass this '
+                    'link on yourself. It works once, and expires '
+                    '${formatDateUtc(issued.expiresAt) ?? ''}.',
+            style: const TextStyle(fontSize: 12.5, color: AppColors.aauGray500, height: 1.4),
+          ),
+          const SizedBox(height: AppSpace.stack),
+          SelectableText(
+            issued.inviteUrl,
+            style: const TextStyle(fontSize: 12, color: AppColors.aauGray700),
+          ),
+          const SizedBox(height: AppSpace.s3),
+          Row(
+            children: [
+              Expanded(
+                child: AppButton(
+                  label: 'Copy link',
+                  icon: Icons.copy_all_outlined,
+                  variant: AppButtonVariant.outline,
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: issued.inviteUrl));
+                    if (!mounted) return;
+                    showAppToast(
+                      context,
+                      message: 'Invitation link copied.',
+                      tone: ToastTone.success,
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: AppSpace.s2),
+              Expanded(
+                child: AppButton(
+                  label: 'Done',
+                  variant: AppButtonVariant.ghost,
+                  onPressed: () => setState(() => _issued = null),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _create() async {
-    final fullName = _fullName.text.trim();
     final email = _email.text.trim();
-    final password = _password.text;
+    final authorizedBy = _authorizedBy.text.trim();
+    final authorizationRef = _authorizationRef.text.trim();
+    final needsUnit = _role == Role.departmentHead;
 
     final errors = <String, String?>{};
-    if (fullName.isEmpty) errors['fullName'] = 'Enter the full name.';
     if (email.isEmpty || !email.contains('@')) errors['email'] = 'Enter a valid email address.';
-    if (password.length < 8) errors['password'] = 'At least 8 characters.';
+    if (needsUnit && (_unitId == null || _unitId!.isEmpty)) {
+      errors['unitId'] = 'Choose the department this head is appointed to.';
+    }
+    // D3: required by the server for every privileged role, so they are required
+    // here too rather than being a refusal the administrator discovers on submit.
+    if (authorizedBy.isEmpty) errors['authorizedBy'] = 'Who authorized this appointment?';
+    if (authorizationRef.isEmpty) {
+      errors['authorizationRef'] = 'The letter number or equivalent is required.';
+    }
 
     setState(() {
       _fieldErrors
@@ -264,25 +414,34 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
 
     setState(() => _creating = true);
     try {
-      final created = await ref.read(userActionsProvider).create(
-            fullName: fullName,
+      final issued = await ref.read(userActionsProvider).invite(
             email: email,
-            password: password,
             role: _role.wire,
+            unitId: needsUnit ? _unitId : null,
+            authorizedBy: authorizedBy,
+            authorizationRef: authorizationRef,
+            authorizationNote: _authorizationNote.text.trim(),
           );
       if (!mounted) return;
-      _fullName.clear();
       _email.clear();
-      _password.clear();
-      setState(() => _role = Role.staff);
+      _authorizedBy.clear();
+      _authorizationRef.clear();
+      _authorizationNote.clear();
+      setState(() {
+        _unitId = null;
+        _issued = issued;
+      });
       showAppToast(
         context,
-        message: '${created.fullName} can now sign in.',
+        message: issued.renewed
+            ? 'New invite link sent to ${issued.email}.'
+            : 'Invited ${issued.email} as ${issued.role.label}.',
         tone: ToastTone.success,
       );
     } on ApiError catch (error) {
-      // A taken email is a field-level failure, so it goes under the field — the same
-      // rule the categories screen follows for a duplicate name.
+      // A refused invite is usually about the email address or the department, so
+      // it goes under the field — the same rule the categories screen follows for a
+      // duplicate name — with anything else as a form-level error.
       setState(() {
         if (error.isConflict) {
           _fieldErrors['email'] = error.message;

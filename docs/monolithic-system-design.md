@@ -149,10 +149,18 @@ logic on top of an architecture that doesn't fit the decision already made.
 
 ### 5.1 Build order for this section (T1-T9 from the authority doc, now sequenced)
 
-1. **T1 Schema** — commit the already-drafted `authorizedBy`/`authorizationRef` fields on
-   the invite model and `AdminActionLog`; generate and apply the migration against a copy
-   of the dev DB first, then the real one. `[BROKEN]`: these fields exist uncommitted in
-   the working tree right now — commit them as their own slice, don't let them sit dirty.
+1. **T1 Schema** — `[PARTLY DONE — 14 Oct]` The fields are in `schema.prisma` and committed,
+   and a migration now exists (`prisma/migrations/20261014000000_account_invite_fields`).
+   **It is not applied to the database, and the database is the problem:** a live probe found
+   `AccountRequest`, `EmailToken` and `AdminActionLog` exist as *tables* (created outside the
+   migration history — no migration on disk creates any of them), but **none of the seven
+   invite columns exist**. So the schema is ahead of the database, and the first privileged
+   invite would have failed with `column AccountRequest.authorizedBy does not exist`.
+   The migration's SQL was verified by running it inside a transaction that was rolled back
+   against the live database (columns and foreign key created, database unchanged).
+   **Blocking step for whoever deploys next:** `_prisma_migrations` holds a **FAILED** row for
+   `20261012000000_phase_a_expand` next to an applied one, so `prisma migrate deploy` will stop
+   on `P3009` until that is resolved (`prisma migrate resolve`); see `docs/deployment.md`.
 2. **T2 Capabilities** — already specified in §3 above; implement and add the 3-way sync test.
 3. **T3 `resolveApprover` / `canDecide`** — `[BROKEN]`: `resolveApprover` is imported but
    unused (`users.ts:20`). Wire it into every approve/reject/escalate handler, not just the
@@ -163,10 +171,28 @@ logic on top of an architecture that doesn't fit the decision already made.
    5 days — confirm with supervisor per open item #3 below, use 5 as the working default).
    `[BROKEN]`: escalation is currently a string literal `"[ESCALATED]"` stuffed into a
    `reviewNote` field — replace with a real status/queue mechanism.
-6. **T6 Privileged invites** — `[BUILD]`: `/users/invite` and `/auth/accept-invite` don't
-   exist yet. Build per the authority doc's exact validation rules (reject missing
-   `authorizedBy`/`authorizationRef`, reject double-head, reject
-   Property-Officer-and-Auditor-same-person, reject self-invite).
+6. **T6 Privileged invites** — `[BUILT — 14 Oct, unit-tested, NOT live-verified]`.
+   `[DONE]` `POST /users/invite` (`ACCOUNT_INVITE`, System Admin) with every validation rule the
+   authority doc lists — missing `authorizedBy`/`authorizationRef` 400, a unit that already has
+   a **working** head 400, one person holding Property Officer and Auditor 409, self-invite 400,
+   an address with a live account 409 — in `services/invites.ts`, which is where the rules are
+   testable without a database. `[DONE]` `POST /auth/accept-invite`: single-use hashed token
+   (`EmailToken`, 72 h), consumed by a conditional `updateMany` so two requests cannot spend one
+   link, the invitee sets their **own** password, and accepting a head invite sets
+   `OrgUnit.headId` and moves the unit's department-held items to `REVERTED_UNVERIFIED`.
+   `[DONE]` `GET /departments/invitable` for the head picker (all active departments with
+   `hasActiveHead` — deliberately not the self-registration list, which hides the headless
+   units an invite exists for). `[DONE]` Every invite, renewal and acceptance writes
+   `AdminActionLog` with the outside authorization recorded on it.
+   `[DONE]` **The legacy direct-creation path is gone**: `POST /auth/register` (admin types a
+   password, picks the role) was deleted from the backend, the web panel replaced by the invite
+   form, and the mobile client converted — one account-creation path, not two.
+   `[NOT BUILDABLE YET]` **None of it can run against the live database until T1's migration is
+   applied** (item 1 above): the invite columns are missing, so every one of these endpoints
+   fails on its first query. This is the one thing standing between T6 and live verification.
+   `[BUILD]` Still missing, and not this batch's work: resend/revoke, the invite status list
+   (sent/accepted/expired), and the T5 queue's "Not in my department" escalation moving to a
+   real status rather than the `"[ESCALATED]"` string in `reviewNote`.
 7. **T7 Deactivation** — `[BUILD]`, not started. Immediate `tokenVersion` bump, items move
    to `REVERTED_UNVERIFIED`, logged with reason.
 8. **T8 Frontend** — fix the 3 dead nav links found in the audit (`/buildings`,
@@ -242,9 +268,15 @@ Start audit (scope) → scan/search each item → mark FOUND / MISSING / OUTSIDE
 ## 9. Requests (time-windowing)
 
 `[DONE]` in code (`requests.ts:124`, filters `this-week|this-month|last-30-days|custom`).
-`[BROKEN]`: `GET /requests/pending` returns 500 in production — fix as part of the
-production-deployment-mismatch work in §11, confirm it's not a code bug first by testing
-against the correct deployed revision.
+
+`[FIXED — 14 Oct]` The reported 500 was **not** a code bug and **not** the deployment
+drift §11 assumed. `/requests/pending` is simply not a route — the endpoint is
+`/requests/pending-count`, and a bare `/requests/pending` is a 404 by design. The real
+500s came from `GET /requests/:id`, `GET /audits/:id` and every `/reports/*` export:
+transient failure to open a new TCP connection to the Neon pooler, which `pg`'s pool did
+not retry and `errorHandler` answered as 500. Fixed in `backend/src/lib/prisma.ts` +
+`backend/src/lib/dbRetry.ts`; reproduced 8-of-12 failing before, 0-of-90 after.
+Full account, with the measurements: **`docs/db-connection-resilience.md`**.
 
 ---
 
@@ -252,18 +284,19 @@ against the correct deployed revision.
 
 Every item below is mandatory, server-side, verified live before being marked done:
 
-1. **`GET /items` must require authentication.** `[BROKEN — live, confirmed]`: currently
-   returns the full register (minus cost/ownerId) to anyone, no token needed, due to
-   `optionalAuthenticate` silently downgrading invalid/missing tokens to anonymous instead
-   of failing. Fix: `authenticate` (hard-require), not `optionalAuthenticate`.
-2. **Item-by-id must enforce the same scope as the list view.** `[BROKEN — live,
-   confirmed]`: STAFF/DEPARTMENT_HEAD can read any item by ID directly even though their
-   list correctly returns 0/own-only rows. This is the textbook IDOR pattern — add the
-   scope check to the single-item route, not just the list route.
+1. **`GET /items` must require authentication.** `[DONE — fixed 14 Oct, verified in code and
+   covered by `items.test.ts`]`: the route now runs `authenticate` (hard-require), so a
+   missing *or expired* token is a 401 rather than a silent downgrade to anonymous, and the
+   scope filter behind it is what makes the register role-shaped. The listing the STAFF user
+   sees is now named in the UI as the scoped list it is.
+2. **Item-by-id must enforce the same scope as the list view.** `[DONE — fixed 14 Oct]`:
+   `itemInScope` runs in `GET /items/:tagId` (which also serves the uuid form) *before* the
+   row is returned. Out-of-scope answers **404**, not 403, so the route cannot be used to
+   probe whether a tag exists (ground rule 3).
 3. **SYSTEM_ADMIN must never receive asset data from any endpoint, including `/requests`.**
-   `[BROKEN — live, confirmed]`: `/requests` returns item names/tag IDs to SYSTEM_ADMIN,
-   including a transfer the admin's own account requested. Fix at generation/query time —
-   SYSTEM_ADMIN's request list should be empty or account-related only, never asset-joined.
+   `[DONE — fixed 14 Oct]`: `scopeToViewer` maps SYSTEM_ADMIN to `{ id: { in: [] } }`, an
+   empty queue expressed as a filter matching nothing — deliberately not a missing clause,
+   which would fall back to every row. Its own filed transfer is no longer visible to it.
 4. **`/system/events` must exclude asset/audit activity.** `[DONE — fixed 14 Oct, verified
    live]`: it answered with `auditSession` rows relabelled `type:"AUDIT"`, and the database
    held 20 sessions and 33 result rows behind that handler. It now reads `AdminActionLog`
@@ -273,9 +306,12 @@ Every item below is mandatory, server-side, verified live before being marked do
    log until T5–T7), PROPERTY_OFFICER → 403, no token → 401. The tile was fixed with it —
    `api/system.ts` calls `/system/*` through `apiClient`, where it used to call the unmounted
    `/admin/system/*` with no token and paint the 404/401 as "Unknown".
-5. **`/reports/inventory` and `/requests/pending` currently 500 in production** — fix as
-   part of correcting the deployment (§11), then re-verify; don't assume these are code
-   bugs until confirmed against the *correct* deployed revision.
+5. **`/reports/inventory` and `/requests/pending` currently 500 in production** —
+   `[FIXED — 14 Oct, see §9]`. Both were believed to be deployment drift; neither was.
+   `/requests/pending` is not a route (it is `/requests/pending-count`), and
+   `/reports/inventory` 500s were transient Neon connection failures, now retried. The
+   lesson stands and is worth keeping: confirm against the running revision before
+   assuming either cause — but this pair was neither.
 6. Optimistic locking `[DONE]`, DB-level uniqueness on PIN `[DONE]`, session invalidation
    on role change (`tokenVersion` bump) — `[BUILD]`, not yet confirmed implemented anywhere
    in the audit, build and verify.
@@ -322,24 +358,44 @@ This table is the actual deliverable you asked me not to skip: **nothing in this
 
 | Endpoint | Backend status | Frontend caller | Wired? |
 |---|---|---|---|
-| `GET /items` (list) | `[BROKEN]` — public, needs auth fix §10.1 | `ItemsListPage.tsx` | Yes, but endpoint itself is wrong |
-| `GET /items/:id` | `[BROKEN]` — IDOR §10.2 | item detail page | Yes, but endpoint itself is wrong |
-| `GET /items/recent` | `[BROKEN]` — shadowed by route ordering (`items.ts:982` after `:tagId`) | dashboard widget | No — route unreachable, move it above the `:id`/`:tagId` route |
-| `GET /items/held-by-me` | `[BROKEN]` — same shadowing issue | dashboard widget | No — same fix |
+| `GET /items` (list) | `[DONE]` 14 Oct — `authenticate` (§10.1: `optionalAuthenticate` failed *open* on a stale token and answered guests with the whole register) plus the server-side scope filter | `ItemsBrowsePage.tsx` via `api/items.ts` | Yes |
+| `GET /items/:id` | `[DONE]` 14 Oct — `itemInScope` runs before the row leaves the handler; out of scope answers **404, not 403**, so the route is not a tag-existence oracle (§10.2) | item detail page | Yes |
+| `GET /items/recent` | `[BROKEN]` — declared at `items.ts:972`, *below* `GET /:tagId` (`:338`), so the param route matches the literal name and 404s | dashboard widget (`useRecentItems`) | No — two faults: route order, and the hook's bare root-relative `fetch` |
+| `GET /items/held-by-me` | `[BROKEN]` — same declaration order (`:1004` below `/:tagId`) | dashboard widget (`useHeldItems`) | No — same two faults |
 | `POST /items/:id/claim` | `[BROKEN]` — untested, not live-verified | — | Needs frontend screen built (§6) |
 | `POST /items/:id/void` | `[BUILD]` | — | Needs both sides built |
-| `GET /buildings` | `[DONE]` (officer-only, confirmed 403 for non-officer) | nav item exists | **No route declared in `router.tsx`** — fix routing |
-| `GET /admin/system/status` | `[BROKEN]` — backend serves `/system/status`, not `/admin/system/status` | widget calls `/admin/system/status` | No — path mismatch, pick one path and fix both sides |
-| `GET /system/events` | `[BROKEN]` — leaks audit data §10.4 | SYSTEM_ADMIN dashboard widget | Yes, but endpoint is wrong |
+| `GET /buildings` | `[DONE]` (officer-only, confirmed 403 for non-officer) | nav row **removed** 14 Oct | No screen exists; the row returns in the commit that adds the page |
+| `GET /system/status` | `[DONE]` — the backend has never served `/admin/system/*`; the client was calling a path that does not exist | SYSTEM_ADMIN dashboard tile via `api/system.ts` | Yes — fixed 14 Oct, through `apiClient` with the token attached |
+| `GET /system/events` | `[DONE]` 14 Oct — now served from `AdminActionLog`, so it is account-level by construction and cannot carry asset or audit rows (§10.4) | SYSTEM_ADMIN dashboard widget | Yes — `apiClient`; an empty list is the true state until T5–T7 write the log |
 | `GET /loans/overdue` | `[DONE]` code exists | dashboard widget | Confirm live after redeploy (§11.2) |
 | `GET /departments/:id/roster` | `[DONE]` code exists | dashboard widget | Confirm live after redeploy |
-| `GET /audits/active` | `[DONE]` code exists | `AuditHistoryQuickList.tsx` — **imports a hook that doesn't exist** | No — fix per §8 |
-| `GET /audits/findings` | `[DONE]` code exists | dashboard widget | Confirm live after redeploy |
+| `GET /audits/active` | `[DONE]` (`audits.ts:567`) — **shadowed by `GET /audits/:id` (`:485`), which matches the literal name, so it 404s today** | `CurrentAuditProgress.tsx` via `useActiveAudit` | No — route order, *and* the hook's bare `fetch`, *and* the shape: the server answers `{active, session, progress}` while the widget reads `{id, scope, scanned, total}` |
+| `GET /audits/findings` | `[DONE]` (`audits.ts:632`) — same shadowing by `/:id` | `OpenFindings.tsx` via `useOpenFindings` | No — route order, plus the hook's bare `fetch`; the `{count}` shape is the one thing that already matches |
 | `GET /requests?window=` | `[DONE]` code exists | requests page | Confirm live after redeploy |
-| `GET /requests/pending` | `[BROKEN]` — 500 in production | pending-count badge | No — fix §9 |
-| `/admin/account-requests` nav route | — | nav item exists | **No route declared** — fix routing |
-| `/admin/system` nav route | — | nav item exists | **No route declared** — fix routing |
-| `/account-requests` (Dept Head) nav route | — | nav item exists | **No route declared** — fix routing |
+| `GET /requests/pending` | `[DONE]` — it is `GET /requests/pending-count`; a bare `/requests/pending` is a 404 by design | pending-count badge | Yes — the badge calls `pending-count` (§9) |
+| `POST /users/invite` | `[DONE]` 14 Oct (T6) — **needs T1's migration applied** | `AdminUsersPage.tsx` invite form (web), `admin_users_page.dart` (mobile) | Yes — both clients, and both send `authorizedBy`/`authorizationRef` |
+| `GET /departments/invitable` | `[DONE]` 14 Oct (T6), `ACCOUNT_INVITE`, needs the same migration (it reads only `OrgUnit`, so it works regardless) | the department picker on both invite forms | Yes |
+| `POST /auth/accept-invite` | `[DONE]` 14 Oct (T6) — single-use token, invitee sets their own password | `AcceptInvitePage.tsx` at `/accept-invite?token=…` (web) | Yes — web. **No mobile screen:** the invite link points at the web origin (`APP_URL`), so an invitee on a phone opens it in a browser |
+| `POST /auth/register` | **removed** 14 Oct — the legacy admin-sets-a-password path, superseded by `/users/invite` | none | No — deliberately. Removing it is what makes "no administrator ever sets a password" true rather than aspirational |
+| `/admin/account-requests` nav route | — | row **removed** 14 Oct | No screen exists (T5 queue lives on `/admin/users`) |
+| `/admin/system` nav route | — | row **removed** 14 Oct | No screen exists; `[BUILD]` |
+| `/account-requests` (Dept Head) nav route | — | row **removed** 14 Oct | No screen exists; the head's queue is T5, `[BUILD]` |
+| `/buildings` nav route | `GET /buildings` `[DONE]` (officer-only) | row **removed** 14 Oct | No screen exists; re-add with the page |
+
+**The four removed nav rows, and why removal was the fix.** §13's rule is that no nav item
+may exist without a declared route, and `app/navConfig.ts` declared all four while
+`app/router.tsx` declared none — so a Department Head or System Admin clicking them got the
+shared 404. The screens behind them (T5's approval queue, buildings, system config) are
+still `[BUILD]`; building them is not this batch's work, and a nav row that 404s is worse
+than no row. Each returns in the same commit as its route.
+`frontend/src/test/navRoutes.test.tsx` now walks the exported `appRoutes` tree and fails the
+build for any `NAV_ITEMS` entry whose path is not declared — for every role. That closes the
+"Test that every nav item resolves" gap the checklist had open, and it is the check that
+would have caught these four.
+
+The System Admin's pending-approval queue is not lost: it is the "Waiting for approval"
+panel on `/admin/users`, which is why the surviving **Accounts** row carries the
+`pending-count` badge the removed row had.
 
 **Rule going forward: before marking any endpoint `[DONE]` in the task checklist, confirm
 its row in this table says "Yes" under Wired — not just that both sides exist in isolation.**

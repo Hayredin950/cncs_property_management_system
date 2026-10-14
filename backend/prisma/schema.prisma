@@ -201,6 +201,13 @@ model AccountRequest {
   escalatedById      String?
   escalatedBy        User?             @relation("EscalatedAccountRequests", fields: [escalatedById], references: [id])
   escalationReason   String?
+  // Invite-specific fields (required for privileged invites)
+  authorizedBy       String?
+  authorizationRef   String?
+  authorizationNote  String?
+  invitedById        String?
+  invitedBy          User?             @relation("InvitedAccountRequests", fields: [invitedById], references: [id])
+  invitedAt          DateTime?
 
   @@index([requestedUnitId, status])
   @@index([escalatedAt])
@@ -244,6 +251,8 @@ model AdminActionLog {
   unit      OrgUnit? @relation("AdminActionLogs", fields: [unitId], references: [id])
   before    Json?
   after     Json?
+  authorizedBy     String?
+  authorizationRef String?
   createdAt DateTime @default(now())
 
   @@index([actorId, createdAt])
@@ -318,6 +327,7 @@ model User {
   accountRequest   AccountRequest? @relation("AccountRequestUser")
   decidedAccountRequests AccountRequest[] @relation("DecidedAccountRequests")
   escalatedAccountRequests AccountRequest[] @relation("EscalatedAccountRequests")
+  invitedAccountRequests AccountRequest[] @relation("InvitedAccountRequests")
   adminActions     AdminActionLog[] @relation("AdminActions")
   adminActionTargets AdminActionLog[] @relation("AdminActionTargets")
   emailTokens      EmailToken[]   @relation("EmailTokens")

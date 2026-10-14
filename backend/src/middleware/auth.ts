@@ -150,6 +150,24 @@ export function requireCapability(capability: Capability) {
 }
 
 /**
+ * Same as requireCapability but passes if the user holds ANY of the listed
+ * capabilities. Used on approval routes where SYSTEM_ADMIN (ACCOUNT_APPROVE_ANY)
+ * and DEPARTMENT_HEAD (ACCOUNT_APPROVE_OWN_UNIT) must both pass the gate —
+ * unit scoping is enforced inside the handler via canDecide().
+ */
+export function requireAnyCapability(...capabilities: Capability[]) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    if (!capabilities.some((c) => hasCapability(req.user!.role, c))) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    next();
+  };
+}
+
+/**
  * Optional authentication middleware.
  * If a valid JWT is present in the Authorization header, attaches the decoded
  * { id, role } to req.user. If no token is present, or if the token is

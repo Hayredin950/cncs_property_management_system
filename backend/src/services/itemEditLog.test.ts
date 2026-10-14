@@ -107,7 +107,7 @@ describe("buildEditLogRows", () => {
       itemId: "item-1",
       editedById: "admin-1",
       editedAt,
-      before: { building: "CNCS Building", floor: "3", room: "312", ownerId: "staff-1" },
+      before: { buildingId: "CNCS Building", floor: "3", room: "312", ownerId: "staff-1" },
       after: { floor: "1", room: "101", ownerId: "staff-2" },
       labels: { "staff-1": "Demo Staff", "staff-2": "Second Staff" },
     });

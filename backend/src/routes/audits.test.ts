@@ -495,8 +495,10 @@ describe("GET /audits/:id", () => {
   const item = {
     tagId: "CNCS-0001",
     name: "Dell Laptop",
-    department: "CNCS",
-    building: "CNCS Building",
+    // The item's OrgUnit and Building, which is what the route selects — the
+    // free-text `department`/`building` columns no longer exist.
+    orgUnitRef: { name: "CNCS" },
+    buildingRef: { name: "CNCS Building" },
     floor: "3",
     room: "312",
   };
@@ -524,5 +526,7 @@ describe("GET /audits/:id", () => {
     expect(res.body.counts).toEqual({ found: 1, missing: 1, locationMismatch: 0 });
     expect(res.body.found).toEqual(["item-1"]);
     expect(res.body.rows).toHaveLength(2);
+    // Both clients read the location off the row's nested item under these keys.
+    expect(res.body.rows[0].item).toMatchObject({ department: "CNCS", building: "CNCS Building" });
   });
 });

@@ -14,6 +14,7 @@ import {
   type UserRole,
 } from "../middleware/auth.js";
 import { hasCapability } from "../services/permissions.js";
+import { ITEM_LOCATION_SELECT, withRowItemNames } from "../utils/itemLocation.js";
 import { validateBody, validateQuery, validatedBody, validatedQuery } from "../middleware/validate.js";
 import { httpError } from "../lib/httpError.js";
 import { sendNotificationEmail, type EmailDeliveryResult } from "../services/email.js";
@@ -175,8 +176,15 @@ const REQUEST_DETAIL_SELECT = {
       tagId: true,
       name: true,
       status: true,
-      department: true,
-      building: true,
+      /*
+       * `department` and `building` are the item's OrgUnit and Building, not
+       * free-text columns: both columns were dropped when those tables landed,
+       * and selecting them here is what made this route answer every detail
+       * read — and every create — with a 500. Prisma only reports an unknown
+       * select key at runtime, so `tsc` never saw it
+       * (`utils/itemLocation.ts` has the full account).
+       */
+      ...ITEM_LOCATION_SELECT,
       floor: true,
       room: true,
       parentItemId: true,
@@ -184,6 +192,14 @@ const REQUEST_DETAIL_SELECT = {
   },
   reviewedBy: { select: { id: true, fullName: true, email: true } },
 } as const;
+
+/*
+ * `item.department` and `item.building` reach the clients as names under those
+ * same keys (`withRowItemNames`), because the item's OrgUnit and Building are
+ * relations and their free-text columns are gone — see `utils/itemLocation.ts`,
+ * which is also where the shared select lives so this pair cannot drift from the
+ * one the report exports send.
+ */
 
 /**
  * SRS 3.4 — staff see their own requests only; a reviewer sees the ones they may
@@ -355,7 +371,7 @@ requestsRouter.post(
       );
 
       res.status(201).json({
-        request: outcome.created,
+        request: withRowItemNames(outcome.created),
         notifiedReviewerCount: outcome.recipients.length,
         emailStatus,
       });
@@ -539,7 +555,7 @@ requestsRouter.get(
         return res.status(404).json({ error: ERROR_REQUEST_NOT_FOUND });
       }
 
-      res.status(200).json({ request });
+      res.status(200).json({ request: withRowItemNames(request) });
     } catch (err) {
       next(err);
     }

@@ -4,6 +4,12 @@ import { prisma } from "../lib/prisma.js";
 import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
 import { collapseAuditRows, computeAuditResults } from "../services/auditCompletion.js";
+import {
+  ITEM_LOCATION_SELECT,
+  buildingWhere,
+  departmentWhere,
+  withRowItemNames,
+} from "../utils/itemLocation.js";
 
 export const auditsRouter: Router = Router();
 
@@ -274,10 +280,18 @@ auditsRouter.post(
  * by the caller rather than guessed at.
  *
  * Both match **case-insensitively**. The scope value the UI sends comes from a
- * fixed list, but `Item.department`/`Item.building` are free text, so an item
- * filed as "computer science" would otherwise be invisible to a "Computer
- * Science" audit and counted MISSING — a false report, which is worse than a
- * missing feature. Insensitive matching closes exactly that hole.
+ * fixed list, while the value it matches is a name an operator typed when the
+ * item was registered, so an item filed as "computer science" would otherwise be
+ * invisible to a "Computer Science" audit and counted MISSING — a false report,
+ * which is worse than a missing feature. Insensitive matching closes exactly
+ * that hole.
+ *
+ * The columns behind them are the item's OrgUnit and Building (`Item.orgUnitRef`
+ * / `Item.buildingRef`); the free-text `department`/`building` columns these
+ * filters used to name are gone, and matching on them was one of the ways an
+ * audit could answer 500. Both helpers come from `utils/itemLocation.ts`, so the
+ * audit's "what is in this department" and the inventory report's are the same
+ * question asked once.
  */
 function scopeItemFilter(
   scopeType: string,
@@ -289,16 +303,14 @@ function scopeItemFilter(
       where:
         scopeValue === null
           ? null
-          : { department: { equals: scopeValue, mode: "insensitive" }, status: "ACTIVE" },
+          : { ...departmentWhere(scopeValue, "insensitive"), status: "ACTIVE" },
     };
   }
   if (scopeType === "BUILDING") {
     return {
       supported: true,
       where:
-        scopeValue === null
-          ? null
-          : { building: { equals: scopeValue, mode: "insensitive" }, status: "ACTIVE" },
+        scopeValue === null ? null : { ...buildingWhere(scopeValue), status: "ACTIVE" },
     };
   }
   return { supported: false, where: null };
@@ -498,8 +510,12 @@ auditsRouter.get(
             select: {
               tagId: true,
               name: true,
-              department: true,
-              building: true,
+              /**
+               * `department`/`building` are the item's OrgUnit and Building —
+               * selecting the old free-text columns is what answered 500 here,
+               * exactly as it did for the exports (`utils/itemLocation.ts`).
+               */
+              ...ITEM_LOCATION_SELECT,
               floor: true,
               room: true,
             },
@@ -533,7 +549,9 @@ auditsRouter.get(
         found: byResult("FOUND"),
         missing: byResult("MISSING"),
         locationMismatch: byResult("LOCATION_MISMATCH"),
-        rows: collapsedRows,
+        // Each row keeps its own `itemId`/`result`/`scannedAt`, with the nested
+        // item reshaped to the `department`/`building` names both clients read.
+        rows: collapsedRows.map((row) => withRowItemNames(row)),
       });
     } catch (err) {
       next(err);

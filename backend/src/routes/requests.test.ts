@@ -551,6 +551,13 @@ describe("GET /requests/:id", () => {
     expect(args?.where).toEqual({ id: "req-1" });
     expect(args?.select).toBeDefined();
     expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+    // The item's OrgUnit and Building reach both clients as the `department`
+    // and `building` names they read, never the raw relation objects.
+    expect(res.body.request.item).toMatchObject({
+      department: "Computer Science",
+      building: "CNCS Building",
+    });
+    expect(res.body.request.item).not.toHaveProperty("orgUnitRef");
   });
 
   it("hides someone else's request behind a 404, not a 403 (D4)", async () => {

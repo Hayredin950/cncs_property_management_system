@@ -8,6 +8,11 @@ import { collapseAuditRows } from "../services/auditCompletion.js";
 import { allItemsWhere } from "../services/itemVisibility.js";
 import { toCsv, type CsvValue } from "../utils/csv.js";
 import { toPdfTable } from "../utils/pdf.js";
+import {
+  ITEM_LOCATION_SELECT,
+  departmentWhere,
+  withLocationNames,
+} from "../utils/itemLocation.js";
 
 /**
  * Report exports (SRS F10). Staff/Admin only — these are internal
@@ -240,7 +245,13 @@ reportsRouter.get(
       const query = validatedQuery<InventoryQuery>(req);
 
       const where = allItemsWhere({
-        ...(query.department ? { department: query.department } : {}),
+        /*
+         * `?department=` still filters by name — of the item's OrgUnit now, since
+         * the free-text column it used to match is gone. Applied through the same
+         * helper the audit scope filter uses, so "which items are in Computer
+         * Science" has one answer across the two features.
+         */
+        ...(query.department ? departmentWhere(query.department) : {}),
         ...(query.categoryId ? { categoryId: query.categoryId } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.dateFrom || query.dateTo
@@ -259,8 +270,15 @@ reportsRouter.get(
           tagId: true,
           name: true,
           category: { select: { name: true } },
-          department: true,
-          building: true,
+          /**
+           * The `department`/`building` columns this export used to select are
+           * gone — replaced by the OrgUnit and Building relations — and selecting
+           * them anyway is what made every inventory export answer 500 (design doc
+           * §10.5). The two CSV columns keep their names and carry the unit's and
+           * the building's names; `withLocationNames` below is the only place that
+           * conversion happens.
+           */
+          ...ITEM_LOCATION_SELECT,
           floor: true,
           room: true,
           owner: { select: { fullName: true, email: true } },
@@ -276,7 +294,7 @@ reportsRouter.get(
           registeredAt: true,
           lastAuditedAt: true,
         },
-        orderBy: [{ department: "asc" }, { tagId: "asc" }],
+        orderBy: [{ orgUnitRef: { name: "asc" } }, { tagId: "asc" }],
       });
 
       const headers = [
@@ -301,28 +319,31 @@ reportsRouter.get(
         "registeredAt",
         "lastAuditedAt",
       ];
-      const rows: Array<Record<string, CsvValue>> = items.map((item) => ({
-        tagId: item.tagId,
-        name: item.name,
-        category: item.category.name,
-        department: item.department,
-        building: item.building,
-        floor: item.floor,
-        room: item.room,
-        ownerName: item.owner.fullName,
-        ownerEmail: item.owner.email,
-        condition: item.condition,
-        purchaseCost: item.purchaseCost.toString(),
-        currentValue: item.currentValue?.toString() ?? null,
-        brand: item.brand,
-        model: item.model,
-        serialNumber: item.serialNumber,
-        status: item.status,
-        disposalReason: item.disposalReason,
-        disposedAt: item.disposedAt,
-        registeredAt: item.registeredAt,
-        lastAuditedAt: item.lastAuditedAt,
-      }));
+      const rows: Array<Record<string, CsvValue>> = items.map((item) => {
+        const located = withLocationNames(item);
+        return {
+          tagId: located.tagId,
+          name: located.name,
+          category: located.category.name,
+          department: located.department,
+          building: located.building,
+          floor: located.floor,
+          room: located.room,
+          ownerName: located.owner.fullName,
+          ownerEmail: located.owner.email,
+          condition: located.condition,
+          purchaseCost: located.purchaseCost.toString(),
+          currentValue: located.currentValue?.toString() ?? null,
+          brand: located.brand,
+          model: located.model,
+          serialNumber: located.serialNumber,
+          status: located.status,
+          disposalReason: located.disposalReason,
+          disposedAt: located.disposedAt,
+          registeredAt: located.registeredAt,
+          lastAuditedAt: located.lastAuditedAt,
+        };
+      });
 
       if (query.format === "pdf") {
         sendPdf(
@@ -397,8 +418,7 @@ reportsRouter.get(
             select: {
               tagId: true,
               name: true,
-              department: true,
-              building: true,
+              ...ITEM_LOCATION_SELECT,
               floor: true,
               room: true,
             },
@@ -431,22 +451,25 @@ reportsRouter.get(
         "result",
         "scannedAt",
       ];
-      const rows: Array<Record<string, CsvValue>> = collapsedRows.map((row) => ({
-        auditSessionId: session.id,
-        scopeType: session.scopeType,
-        scopeValue: session.scopeValue,
-        runByName: session.runBy.fullName,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-        tagId: row.item.tagId,
-        itemName: row.item.name,
-        department: row.item.department,
-        building: row.item.building,
-        floor: row.item.floor,
-        room: row.item.room,
-        result: row.result,
-        scannedAt: row.scannedAt,
-      }));
+      const rows: Array<Record<string, CsvValue>> = collapsedRows.map((row) => {
+        const item = withLocationNames(row.item);
+        return {
+          auditSessionId: session.id,
+          scopeType: session.scopeType,
+          scopeValue: session.scopeValue,
+          runByName: session.runBy.fullName,
+          startedAt: session.startedAt,
+          completedAt: session.completedAt,
+          tagId: item.tagId,
+          itemName: item.name,
+          department: item.department,
+          building: item.building,
+          floor: item.floor,
+          room: item.room,
+          result: row.result,
+          scannedAt: row.scannedAt,
+        };
+      });
 
       if (query.format === "pdf") {
         sendPdf(
@@ -493,7 +516,9 @@ reportsRouter.get(
         where: {
           type: "DISPOSAL",
           status: "APPROVED",
-          ...(query.department ? { item: { department: query.department } } : {}),
+          // Same `?department=` rule as the inventory export: the item's OrgUnit
+          // name, because the free-text column it used to match is gone.
+          ...(query.department ? { item: departmentWhere(query.department) } : {}),
           ...(query.dateFrom || query.dateTo
             ? {
                 decidedAt: {
@@ -512,8 +537,7 @@ reportsRouter.get(
             select: {
               tagId: true,
               name: true,
-              department: true,
-              building: true,
+              ...ITEM_LOCATION_SELECT,
               floor: true,
               room: true,
             },
@@ -536,22 +560,25 @@ reportsRouter.get(
         "reviewedByEmail",
         "decidedAt",
       ];
-      const rows: Array<Record<string, CsvValue>> = requests.map((r) => ({
-        tagId: r.item.tagId,
-        itemName: r.item.name,
-        department: r.item.department,
-        building: r.item.building,
-        floor: r.item.floor,
-        room: r.item.room,
-        disposalReason: r.reason,
-        requestedByName: r.requestedBy.fullName,
-        requestedByEmail: r.requestedBy.email,
-        // Present on every row: only an APPROVED request reaches this query,
-        // and `applyDecision` always sets `reviewedById` before that status lands.
-        reviewedByName: r.reviewedBy?.fullName ?? null,
-        reviewedByEmail: r.reviewedBy?.email ?? null,
-        decidedAt: r.decidedAt,
-      }));
+      const rows: Array<Record<string, CsvValue>> = requests.map((r) => {
+        const item = withLocationNames(r.item);
+        return {
+          tagId: item.tagId,
+          itemName: item.name,
+          department: item.department,
+          building: item.building,
+          floor: item.floor,
+          room: item.room,
+          disposalReason: r.reason,
+          requestedByName: r.requestedBy.fullName,
+          requestedByEmail: r.requestedBy.email,
+          // Present on every row: only an APPROVED request reaches this query,
+          // and `applyDecision` always sets `reviewedById` before that status lands.
+          reviewedByName: r.reviewedBy?.fullName ?? null,
+          reviewedByEmail: r.reviewedBy?.email ?? null,
+          decidedAt: r.decidedAt,
+        };
+      });
 
       if (query.format === "pdf") {
         sendPdf(

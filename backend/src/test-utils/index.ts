@@ -123,6 +123,13 @@ export interface TestItem {
   categoryId: string;
   orgUnitId: string;
   buildingId: string;
+  /**
+   * The relations `ITEM_LOCATION_SELECT` asks for, which is where an item's
+   * department and building names now live. Routes reshape them back to
+   * `department`/`building` before responding (`utils/itemLocation.ts`).
+   */
+  orgUnitRef?: { name: string } | null;
+  buildingRef?: { name: string } | null;
   floor: string;
   room: string;
   ownerId: string;
@@ -142,6 +149,8 @@ export function makeItem(overrides: Partial<TestItem> = {}): TestItem {
     categoryId: "cat-electronics",
     orgUnitId: "org-unit-cs",
     buildingId: "building-cncs",
+    orgUnitRef: { name: "Computer Science" },
+    buildingRef: { name: "CNCS Building" },
     floor: "3",
     room: "312",
     ownerId: "staff-1",

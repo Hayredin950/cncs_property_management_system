@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Record of where the AAU brand values came from; the values themselves are applied in code.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Frontend — AAU visual rebrand
 
 The brief: the app must be indistinguishable from the official Addis Ababa University web

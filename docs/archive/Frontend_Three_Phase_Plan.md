@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Historical three-phase frontend schedule.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Frontend Delivery Plan — Three Phases
 ## CNCS Property Management System
 **Version 1.0 | Depends on: SRS v1.0, SDS v1.0, Backend Three Phase Plan v1.0**

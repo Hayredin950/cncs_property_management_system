@@ -333,7 +333,7 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 
 ---
 
-## Role-Based UI spec — `docs/role-based-ui-spec.md`
+## Role-Based UI spec — `docs/archive/role-based-ui-spec.md`
 
 > The doc's own header lists **5** roles (SYSTEM_ADMIN, PROPERTY_OFFICER, DEPARTMENT_HEAD, STAFF,
 > AUDITOR). The 6th role you asked about, `ACCOUNT_ADMIN`, was merged into `SYSTEM_ADMIN`
@@ -386,7 +386,7 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 
 ---
 
-## Registration-Hierarchy task list — `docs/cncs-pms-registration-hierarchy-task-list.md`
+## Registration-Hierarchy task list — `docs/archive/cncs-pms-registration-hierarchy-task-list.md`
 
 Amended by the authority doc where they differ. Phases A–H.
 

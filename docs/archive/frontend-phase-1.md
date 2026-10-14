@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Phase 1 completion record.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Frontend Phase 1 — Foundation & Public Lookup
 
 Covers SRS F1 (auth shell), F3.4 (tag image), F4 (scan & public lookup — the flagship

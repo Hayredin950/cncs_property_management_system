@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Pre-implementation roles and hierarchy design. The five-role model is final in the source of truth's section 1.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Property Management — Hierarchy, Roles, Permissions & Governance Plan
 
 **Project:** CNCS Campus Property Management System

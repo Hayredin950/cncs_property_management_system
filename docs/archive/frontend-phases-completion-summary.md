@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Session summary written on `frontend/phase1-scaffold`, which is not the canonical branch.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Frontend Phases Completion Summary
 
 **Date:** 2026-10-13

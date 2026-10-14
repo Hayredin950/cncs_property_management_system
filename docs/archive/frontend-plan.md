@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Draft frontend plan, replaced by the source of truth.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Frontend plan (draft for review)
 
 > **Status: proposal — nothing here is built.** This plans the `/frontend` app that consumes

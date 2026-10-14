@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Supervisor's review input, folded into the five-role model.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Supervisor Feedback (Rewritten for the Team)
 
 Our supervisor reviewed the demo and raised the points below, grouped by theme.

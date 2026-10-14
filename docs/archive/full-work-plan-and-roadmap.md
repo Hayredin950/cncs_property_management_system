@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Roadmap for the earlier phase plan; live tracking now happens in `project-task-checklist.md`.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # CNCS Property Management System — Full Work Plan & Roadmap
 
 **Repo:** https://github.com/Hayredin950/cncs_property_management_system

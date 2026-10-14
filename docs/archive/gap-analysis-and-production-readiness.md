@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Gap analysis. Its gaps are now tracked as tasks in `project-task-checklist.md`.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Gap Analysis & Production-Readiness Blueprint
 
 **Project:** CNCS Campus Property Management System

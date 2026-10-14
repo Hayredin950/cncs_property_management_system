@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Old API reference, replaced by the source of truth's section 12 wiring map. It also documents the public `/items` reads that section 10 removed.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Backend handoff
 
 This is the backend the frontend is building against. Every route below is also available under `/api/v1`; use that versioned prefix for new frontend work. There is no generated Swagger/OpenAPI contract—the phase documents and this handoff are the current API reference.

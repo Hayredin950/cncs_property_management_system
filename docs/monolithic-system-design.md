@@ -341,7 +341,7 @@ its row in this table says "Yes" under Wired — not just that both sides exist 
 
 ## 13. Per-role UI — final, with the "only what's wired and relevant" rule enforced
 
-This restates `role-based-ui-spec.md`'s nav/widget lists (already well-designed) with one
+This restates `archive/role-based-ui-spec.md`'s nav/widget lists (already well-designed) with one
 addition: **no nav item may exist without a declared route, and no widget may be wired to
 an endpoint marked `[BROKEN]` or `[BUILD]` above until that endpoint is fixed.** Until a
 widget's endpoint is fixed, show a clear "temporarily unavailable" empty state — never a

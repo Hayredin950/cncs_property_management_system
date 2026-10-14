@@ -3,6 +3,15 @@
 Both halves run on Vercel, from this repository, with auto-deploys on push to
 `main`. The database is Neon; item photos live in Cloudinary.
 
+> **Read this with §11 of [`monolithic-system-design.md`](./monolithic-system-design.md).**
+> This page documents the Vercel projects **as configured**; it does not decide which
+> revision they build. Both projects build `main`, and `main` is **not** the canonical
+> branch — `phase-a-b-complete` is, and it is ahead of `main`. So "push to `main`" deploys
+> the old revision, which is the exact failure §11.2 was written about. Deploy only after
+> §11.1's build is green, and then prove the live revision behaviourally (a route that
+> exists only on the new revision, called and answered) — a Vercel "Ready" badge is not
+> proof of it.
+
 | Piece | Project | URL |
 | --- | --- | --- |
 | Frontend (static Vite build) | `cncs-pms-web` | https://cncs-pms-web-hayredins-projects.vercel.app |
@@ -86,7 +95,14 @@ Set on **`cncs-pms-web`** (Production and Preview):
 > the item's real name and photograph into the link preview. If the Vercel
 > project is ever configured to build only static files, those previews silently
 > degrade to the generic card rather than failing loudly. See
-> [social-previews.md](./social-previews.md) for how to verify it with `curl`.
+> [archive/social-previews.md](./archive/social-previews.md) for how to verify it with `curl`.
+>
+> **As of 14 Oct this path is broken, and not silently.** `api/preview.ts` calls
+> `GET /api/v1/items/:tagId` anonymously on the stated premise that the route is public,
+> but `items.ts` now requires a token there (the public item routes were removed —
+> `monolithic-system-design.md` §10.2). The function therefore gets a 401 and every shared
+> tag degrades to the generic card. Read the archived doc for the mechanism, not for the
+> current behaviour.
 
 > **`PUBLIC_BASE_URL` is the one that bites later.** It is baked into every QR
 > sticker at print time. Change it after printing labels and every existing

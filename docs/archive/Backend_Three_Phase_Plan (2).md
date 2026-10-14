@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Historical three-phase delivery plan for a schedule that has since been reworked.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Backend Delivery Plan — Three Phases
 ## CNCS Property Management System
 **Version 1.0 | Depends on: SRS v1.0, SDS v1.0**

@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Spec revision v2. Its decisions are folded into the source of truth.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # CNCS Property Management System: Revised Change Plan (v2)
 
 Supersedes `cncs_pms_change_specification.md` (v1). It folds in the team's spec review, Lalu's comments on both documents, and Lalu's answers to the follow-up questions. It contains no code. Each item is written so it can become a directional agent prompt.

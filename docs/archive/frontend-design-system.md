@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-10-14 — not the current truth. Read [`../monolithic-system-design.md`](../monolithic-system-design.md) instead.**
+>
+> Design-system proposal. Its own header says "nothing here is built", which the shipped frontend now contradicts.
+>
+> Kept as a record of what was decided at the time, nothing more. It is not maintained,
+> and anything in it that disagrees with the source of truth is the old decision losing.
+
 # Frontend Design System
 ## CNCS Property Management System — Colour, Type, Layout & Component Specification
 

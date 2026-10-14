@@ -5,6 +5,7 @@ import {
   type Router as ExpressRouter,
 } from "express";
 import { z } from "zod";
+import type { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
@@ -185,11 +186,20 @@ const REQUEST_DETAIL_SELECT = {
 } as const;
 
 /**
- * SRS 3.4 — staff see their own requests only; an admin reviews everything.
- * Applied as part of the `where` (not as a post-fetch check) so a staff lookup
- * of someone else's request is a 404, never a 403 that confirms it exists.
+ * SRS 3.4 — staff see their own requests only; a reviewer sees the ones they may
+ * decide. Applied as part of the `where` (not as a post-fetch check) so a staff
+ * lookup of someone else's request is a 404, never a 403 that confirms it exists.
+ *
+ * SYSTEM_ADMIN matches nothing at all (design doc §10.3). It holds no
+ * `REQUEST_READ_ALL`, so the rule used to hand it "requests you filed" — and the
+ * live API showed why that is still a leak: the first row was a transfer the admin
+ * account itself had filed, complete with the item's tag id, name and room from
+ * `REQUEST_LIST_SELECT`. Account administration is not asset business, so the
+ * answer is an empty queue expressed as a filter that matches nothing, not a
+ * missing clause that would fall back to every row.
  */
-function scopeToViewer(user: { id: string; role: UserRole }): { requestedById?: string } {
+function scopeToViewer(user: { id: string; role: UserRole }): Prisma.RequestWhereInput {
+  if (user.role === "SYSTEM_ADMIN") return { id: { in: [] } };
   return hasCapability(user.role, "REQUEST_READ_ALL") ? {} : { requestedById: user.id };
 }
 
@@ -356,45 +366,15 @@ requestsRouter.post(
   },
 );
 
-/**
- * GET /api/v1/requests?status=&type=&mine=&limit=&offset=
- * Staff/Admin — the review queue for an admin, "my requests" for everyone else.
+/*
+ * A second `GET /` used to be declared here — identical to the one below except
+ * that it ignored the `window` parameter. Express serves the first declaration
+ * that matches, so it was the one answering and the time-windowing further down
+ * the file (SRS 7, design doc §9) was dead code that no request could reach. Two
+ * handlers for one route where only the second is correct is worse than either
+ * alone: the query string looked supported and the tests for the surviving handler
+ * still passed. Removed rather than reordered, so there is exactly one answer.
  */
-requestsRouter.get(
-  "/",
-  authenticate,
-  validateQuery(listQuerySchema),
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    try {
-      const user = requireUser(req);
-      const query = validatedQuery<ListQuery>(req);
-
-      const where = {
-        ...scopeToViewer(user),
-        // An admin can ask for just their own; nobody can widen past the scope,
-        // because `mine=true` only ever narrows.
-        ...(query.mine === "true" ? { requestedById: user.id } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.type ? { type: query.type } : {}),
-      };
-
-      const [requests, total] = await Promise.all([
-        prisma.request.findMany({
-          where,
-          select: REQUEST_LIST_SELECT,
-          orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-          take: query.limit,
-          skip: query.offset,
-        }),
-        prisma.request.count({ where }),
-      ]);
-
-      res.status(200).json({ requests, total, limit: query.limit, offset: query.offset });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
 
 /**
  * GET /api/v1/requests/pending-count
@@ -476,7 +456,7 @@ requestsRouter.get(
       const user = requireUser(req);
       const query = validatedQuery<ListQuery>(req);
 
-      const where: { createdAt?: { gte?: Date; lte?: Date }; [key: string]: unknown } = {
+      const where: Prisma.RequestWhereInput = {
         ...scopeToViewer(user),
         ...(query.mine === "true" ? { requestedById: user.id } : {}),
         ...(query.status ? { status: query.status } : {}),
@@ -507,8 +487,14 @@ requestsRouter.get(
         toDate = new Date(now);
       }
 
-      if (fromDate) where.createdAt = { ...where.createdAt, gte: fromDate };
-      if (toDate) where.createdAt = { ...where.createdAt, lte: toDate };
+      // Built as its own filter and attached once: assigning into `where.createdAt`
+      // twice would need a spread of a value the type does not promise is an object.
+      if (fromDate || toDate) {
+        const createdAtRange: Prisma.DateTimeFilter = {};
+        if (fromDate) createdAtRange.gte = fromDate;
+        if (toDate) createdAtRange.lte = toDate;
+        where.createdAt = createdAtRange;
+      }
 
       const [requests, total] = await Promise.all([
         prisma.request.findMany({

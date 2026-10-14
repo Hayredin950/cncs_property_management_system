@@ -397,18 +397,27 @@ describe("GET /requests", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
-    expect(vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where).toEqual({
-      requestedById: "staff-1",
-    });
+    const where = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where as Record<
+      string,
+      unknown
+    >;
+    expect(where.requestedById).toBe("staff-1");
+    // The default window is `this-week` (SRS 7). Asserted as a bounded range rather
+    // than an exact pair of dates so the test does not break on a Monday.
+    const window = where.createdAt as { gte?: Date; lte?: Date };
+    expect(window.gte).toBeInstanceOf(Date);
+    expect(window.lte).toBeInstanceOf(Date);
+    expect(window.lte!.getTime()).toBeGreaterThan(window.gte!.getTime());
     expect(JSON.stringify(res.body)).not.toContain("passwordHash");
   });
 
-  it("gives an admin the unscoped queue, pending first", async () => {
+  it("gives a reviewer the unscoped queue, pending first", async () => {
     const res = await request(app).get("/requests").set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     const args = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0];
-    expect(args?.where).toEqual({});
+    // A PROPERTY_OFFICER holds REQUEST_READ_ALL, so the scope adds no owner filter.
+    expect((args?.where as Record<string, unknown>)?.requestedById).toBeUndefined();
     // RequestStatus is declared PENDING, APPROVED, REJECTED — ascending puts the
     // queue in the order a reviewer wants it.
     expect(args?.orderBy).toEqual([{ status: "asc" }, { createdAt: "desc" }]);
@@ -423,21 +432,68 @@ describe("GET /requests", () => {
 
     expect(res.status).toBe(200);
     const args = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0];
-    expect(args?.where).toEqual({ status: "APPROVED", type: "DISPOSAL" });
+    const where = args?.where as Record<string, unknown>;
+    expect(where.status).toBe("APPROVED");
+    expect(where.type).toBe("DISPOSAL");
     expect(args?.take).toBe(5);
     expect(args?.skip).toBe(10);
     // The same where drives the count, or the total would not match the page.
     expect(vi.mocked(prisma.request.count).mock.calls[0]?.[0]?.where).toEqual(args?.where);
   });
 
-  it("lets an admin narrow to their own with ?mine=true", async () => {
+  it("lets a reviewer narrow to their own with ?mine=true", async () => {
     await request(app)
       .get("/requests?mine=true")
       .set("Authorization", `Bearer ${officerToken}`);
 
-    expect(vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where).toEqual({
-      requestedById: "officer-1",
+    const where = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where as Record<
+      string,
+      unknown
+    >;
+    expect(where.requestedById).toBe("officer-1");
+  });
+
+  /**
+   * §10.3 — account administration is not asset business. This endpoint served a
+   * SYSTEM_ADMIN "their own" requests, and every row of `REQUEST_LIST_SELECT`
+   * carries the item's tag id, name and room, so the live API handed the admin the
+   * asset data of a transfer their own account had filed. It now matches nothing.
+   */
+  it("gives a SYSTEM_ADMIN no request queue at all", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: "admin-1",
+      role: "SYSTEM_ADMIN",
+      tokenVersion: 0,
+      orgUnitId: null,
+      accountStatus: "ACTIVE",
+    } as never);
+    vi.mocked(prisma.request.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.request.count).mockResolvedValue(0 as never);
+
+    const res = await request(app)
+      .get("/requests")
+      .set("Authorization", `Bearer ${createToken({ id: "admin-1", role: "SYSTEM_ADMIN", ver: 0 })}`);
+
+    expect(res.status).toBe(200);
+    // Empty because the filter matches nothing, not because a clause was forgotten.
+    expect(vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where).toMatchObject({
+      id: { in: [] },
     });
+    expect(res.body.requests).toEqual([]);
+    expect(res.body.total).toBe(0);
+  });
+
+  /** The windowing that the duplicate handler was silently overriding (§9). */
+  it("applies the requested time window instead of ignoring it", async () => {
+    await request(app)
+      .get("/requests?window=custom&fromDate=2026-10-01T00:00:00.000Z&toDate=2026-10-05T00:00:00.000Z")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    const where = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where as {
+      createdAt?: { gte?: Date; lte?: Date };
+    };
+    expect(where.createdAt?.gte?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
+    expect(where.createdAt?.lte?.toISOString()).toBe("2026-10-05T00:00:00.000Z");
   });
 
   it("rejects an out-of-range limit", async () => {

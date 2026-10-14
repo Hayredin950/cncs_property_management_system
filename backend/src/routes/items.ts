@@ -346,6 +346,40 @@ itemsRouter.get(
   },
 );
 
+/**
+ * GET /items/recent — last N registered items (Property Officer only).
+ * Used for the "Recently registered items" dashboard widget.
+ */
+itemsRouter.get(
+  "/recent",
+  authenticate,
+  requireCapability("ITEM_CREATE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const limit = Math.min(10, Math.max(1, parseInt(req.query.limit as string, 10) || 5));
+
+      const items = await prisma.item.findMany({
+        take: limit,
+        orderBy: { registeredAt: "desc" },
+        include: {
+          category: true,
+          owner: {
+            select: { id: true, fullName: true, email: true },
+          },
+        },
+      });
+
+      const sanitizedItems = items.map((item) =>
+        sanitizeItem(item as unknown as Record<string, unknown>, req.user),
+      );
+
+      res.status(200).json({ data: sanitizedItems });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 /** Matches a v4-ish uuid. Used to tell `GET /items/:id` from `GET /items/:tagId`. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -739,7 +773,44 @@ itemsRouter.put(
         { maxWait: 5000, timeout: 15000 },
       );
 
-      res.status(200).json(updatedItem);
+res.status(200).json(updatedItem);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * GET /items/held-by-me — items currently held by the authenticated user.
+ * Used for the "Their own held items" widget (Department Head and Staff).
+ */
+itemsRouter.get(
+  "/held-by-me",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const user = req.user!;
+      const where: Record<string, unknown> = {
+        status: "ACTIVE",
+        OR: [
+          { holderType: "STAFF", holderId: user.id },
+          ...(user.departmentId ? [{ holderType: "DEPARTMENT", holderId: user.departmentId }] : []),
+        ],
+      };
+
+      const items = await prisma.item.findMany({
+        where,
+        orderBy: { registeredAt: "desc" },
+        include: {
+          category: true,
+        },
+      });
+
+      const sanitizedItems = items.map((item) =>
+        sanitizeItem(item as unknown as Record<string, unknown>, req.user),
+      );
+
+      res.status(200).json({ data: sanitizedItems, total: items.length });
     } catch (err) {
       next(err);
     }

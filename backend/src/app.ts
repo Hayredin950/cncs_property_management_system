@@ -111,7 +111,7 @@ app.use(["/api/v1/items", "/items"], itemsRouter);
 app.use(["/api/v1/notifications", "/notifications"], notificationsRouter);
 app.use(["/api/v1/reports", "/reports"], reportsRouter);
 app.use(["/api/v1/requests", "/requests"], requestsRouter);
-app.use(["/api/v1/system", "/system"], systemConfigRouter);
+app.use(["/api/v1/system", "/admin/system"], systemConfigRouter);
 app.use(["/api/v1/uploads", "/uploads"], uploadsRouter);
 app.use(["/api/v1/users", "/users"], usersRouter);
 

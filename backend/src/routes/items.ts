@@ -794,7 +794,7 @@ itemsRouter.get(
         status: "ACTIVE",
         OR: [
           { holderType: "STAFF", holderId: user.id },
-          ...(user.departmentId ? [{ holderType: "DEPARTMENT", holderId: user.departmentId }] : []),
+          ...(user.orgUnitId ? [{ holderType: "DEPARTMENT", holderId: user.orgUnitId }] : []),
         ],
       };
 

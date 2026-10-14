@@ -357,7 +357,7 @@ auditsRouter.get(
           res.status(400).json({ error: "Invalid sort parameter" });
           return;
         }
-        const orderBy: any = {};
+        const orderBy: Record<string, "asc" | "desc"> = {};
         orderBy[sortField] = sortOrder === "desc" ? "desc" : "asc";
 
         const dashboardWhere = {

@@ -972,3 +972,84 @@ const item = await prisma.item.findUnique({
     }
   }
 );
+
+/**
+ * GET /items/recent?limit=5
+ * Returns last N registered items for dashboard widget.
+ * Property Officer only.
+ */
+itemsRouter.get(
+  "/recent",
+  authenticate,
+  requireCapability("ITEM_READ_ALL"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 5));
+
+      const items = await prisma.item.findMany({
+        where: { status: "ACTIVE" },
+        take: limit,
+        orderBy: { registeredAt: "desc" },
+        select: {
+          id: true,
+          name: true,
+          tagId: true,
+          registeredAt: true,
+        },
+      });
+
+      res.status(200).json(items);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * GET /items/held-by-me?summary=true
+ * Returns summary count of items held by the logged-in user.
+ * STAFF and DEPARTMENT_HEAD only.
+ */
+itemsRouter.get(
+  "/held-by-me",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+
+      const summary = req.query.summary === "true";
+
+      const where: Prisma.ItemWhereInput = {
+        OR: [
+          { holderType: "STAFF", holderId: req.user.id },
+          { ownerId: req.user.id },
+        ],
+        status: "ACTIVE",
+      };
+
+      if (summary) {
+        const count = await prisma.item.count({ where });
+        res.status(200).json({ count });
+      } else {
+        const items = await prisma.item.findMany({
+          where,
+          select: {
+            id: true,
+            name: true,
+            tagId: true,
+            status: true,
+            category: { select: { name: true } },
+          },
+          orderBy: { registeredAt: "desc" },
+        });
+        res.status(200).json(items);
+      }
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+

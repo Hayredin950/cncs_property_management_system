@@ -59,7 +59,7 @@ systemConfigRouter.get(
         },
       });
 
-const eventsMapped = events.map((session) => ({
+      const eventsMapped = events.map((session) => ({
         id: session.id,
         type: "AUDIT",
         message: `Audit ${session.scopeType} ${session.scopeValue ? `(${session.scopeValue})` : ""}`,

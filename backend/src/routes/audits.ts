@@ -345,6 +345,57 @@ auditsRouter.get(
       }
 
       const query = validatedQuery<ListQuery>(req);
+      const dashboard = req.query.dashboard === "true";
+
+      if (dashboard) {
+        // Dashboard widget mode: return simplified list with counts
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 3));
+        const sort = (req.query.sort as string) || "completedAt:desc";
+
+        const [sortField, sortOrder] = sort.split(":");
+        if (!sortField) {
+          res.status(400).json({ error: "Invalid sort parameter" });
+          return;
+        }
+        const orderBy: any = {};
+        orderBy[sortField] = sortOrder === "desc" ? "desc" : "asc";
+
+        const dashboardWhere = {
+          ...(query.mine === "true" ? { runById: user.id } : {}),
+          completedAt: { not: null },
+        };
+
+        const audits = await prisma.auditSession.findMany({
+          where: dashboardWhere,
+          take: limit,
+          orderBy,
+          include: {
+            runBy: {
+              select: { id: true, fullName: true, email: true },
+            },
+            results: {
+              select: { result: true },
+            },
+          },
+        });
+
+        const enriched = audits.map((audit) => ({
+          id: audit.id,
+          scopeType: audit.scopeType,
+          scopeValue: audit.scopeValue,
+          startedAt: audit.startedAt,
+          completedAt: audit.completedAt,
+          runBy: audit.runBy,
+          counts: {
+            found: audit.results.filter((r) => r.result === "FOUND").length,
+            missing: audit.results.filter((r) => r.result === "MISSING").length,
+            locationMismatch: audit.results.filter((r) => r.result === "LOCATION_MISMATCH").length,
+          },
+        }));
+
+        res.status(200).json(enriched);
+        return;
+      }
 
       const where = {
         // Anyone with AUDIT_VIEW (an auditor or the property officer acting on
@@ -489,3 +540,105 @@ auditsRouter.get(
     }
   },
 );
+
+/**
+ * GET /audits/active
+ * Returns active audit session for dashboard widget.
+ * Auditor only.
+ */
+auditsRouter.get(
+  "/active",
+  authenticate,
+  requireCapability("AUDIT_RUN"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+
+      const activeSession = await prisma.auditSession.findFirst({
+        where: {
+          runById: req.user.id,
+          completedAt: null,
+        },
+        include: {
+          runBy: {
+            select: { id: true, fullName: true, email: true },
+          },
+          results: {
+            select: {
+              result: true,
+            },
+          },
+        },
+        orderBy: { startedAt: "desc" },
+      });
+
+      if (!activeSession) {
+        res.status(200).json({ active: false });
+        return;
+      }
+
+      const scannedCount = activeSession.results.filter((r) => r.result === "FOUND").length;
+      const totalInScope = await prisma.auditItemResultRow.count({
+        where: { auditSessionId: activeSession.id },
+      });
+
+      res.status(200).json({
+        active: true,
+        session: {
+          id: activeSession.id,
+          scopeType: activeSession.scopeType,
+          scopeValue: activeSession.scopeValue,
+          startedAt: activeSession.startedAt,
+          runBy: activeSession.runBy,
+        },
+        progress: {
+          scanned: scannedCount,
+          total: totalInScope,
+          remaining: totalInScope - scannedCount,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * GET /audits/findings?status=OPEN
+ * Returns count of items marked MISSING awaiting review.
+ * Auditor only.
+ */
+auditsRouter.get(
+  "/findings",
+  authenticate,
+  requireCapability("AUDIT_RUN"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const status = req.query.status as string;
+
+      if (status === "OPEN") {
+        const count = await prisma.auditItemResultRow.count({
+          where: {
+            result: "MISSING",
+            auditSession: {
+              completedAt: { not: null },
+              graceEndsAt: { gt: new Date() },
+            },
+          },
+        });
+
+        res.status(200).json({ count });
+      } else {
+        res.status(400).json({ error: "Invalid status parameter" });
+      }
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+
+

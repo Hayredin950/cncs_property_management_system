@@ -32,7 +32,7 @@ export function CurrentAuditProgress() {
           heading="Couldn't load audit progress"
           body="There was a problem loading the current audit session."
         />
-      ) : !data || !data.active ? (
+      ) : !data ? (
         <EmptyState
           icon={<ClipboardCheck className="h-8 w-8" />}
           heading="No active audit"
@@ -50,22 +50,22 @@ export function CurrentAuditProgress() {
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between text-sm">
             <span className="text-slate-600">Scope:</span>
-            <span className="font-medium text-slate-900">{data.session.scopeType} {data.session.scopeValue && `(${data.session.scopeValue})`}</span>
+            <span className="font-medium text-slate-900">{data.scope}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-slate-600">Progress:</span>
             <span className="font-medium text-slate-900">
-              {data.progress.scanned} / {data.progress.total} scanned
+              {data.scanned} / {data.total} scanned
             </span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
             <div
               className="h-full bg-brand-600 transition-all"
-              style={{ width: `${(data.progress.scanned / data.progress.total) * 100}%` }}
+              style={{ width: `${(data.scanned / data.total) * 100}%` }}
               role="progressbar"
-              aria-valuenow={data.progress.scanned}
+              aria-valuenow={data.scanned}
               aria-valuemin={0}
-              aria-valuemax={data.progress.total}
+              aria-valuemax={data.total}
             />
           </div>
         </div>

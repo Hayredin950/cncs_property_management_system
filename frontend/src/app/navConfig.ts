@@ -11,7 +11,6 @@ import {
   Settings,
   ShieldCheck,
   Tag,
-  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "../types/enums";

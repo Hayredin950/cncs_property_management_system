@@ -22,16 +22,12 @@ export function SystemStatus() {
             <span className="font-medium text-slate-900">{data?.environment ?? "Unknown"}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-600">Version:</span>
-            <span className="font-medium text-slate-900">{data?.version ?? "Unknown"}</span>
+            <span className="text-slate-600">Last deploy:</span>
+            <span className="font-medium text-slate-900">{data?.lastDeploy ?? "Unknown"}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-slate-600">Uptime:</span>
-            <span className="font-medium text-slate-900">{data?.uptime ? `${Math.floor(data.uptime / 60)}m` : "Unknown"}</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-600">Database:</span>
-            <span className="font-medium text-slate-900">{data?.database ?? "Unknown"}</span>
+            <span className="font-medium text-slate-900">{data?.uptime ?? "Unknown"}</span>
           </div>
         </div>
       )}

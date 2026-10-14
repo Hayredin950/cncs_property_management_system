@@ -1,7 +1,7 @@
 import { ClipboardCheck, Download, History, MapPinOff, MinusCircle, Plus } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { downloadAuditReport, saveReport } from "../../api/reports";
+import { describeDownloadFailure, downloadAuditReport, saveReport } from "../../api/reports";
 import { useAuth } from "../../app/AuthContext";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
@@ -66,7 +66,8 @@ export function AuditListPage() {
       const filename = await saveReport(() => downloadAuditReport(audit.id));
       toast.success(`Downloaded ${filename}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't download the audit report");
+      // Names the download, never this page — see `describeDownloadFailure`.
+      toast.error(describeDownloadFailure(err, "the audit report"));
     } finally {
       setDownloadingId(null);
     }

@@ -6,6 +6,18 @@ import { SkeletonText } from "../../../components/Skeleton";
 import { formatRelativeTime } from "../../../lib/formatters";
 import { useAuditHistoryList } from "../../../hooks/useAudits";
 
+/**
+ * The auditor's dashboard card: the last few audit sessions, from GET /audits.
+ *
+ * The rows are AuditSessionSummary — the same shape the /audits page renders —
+ * because this card and that page now read the same query. It used to guess at a
+ * flatter shape (scope, type) that the API has never returned, which is part of
+ * why the widget answered "No audits completed yet" whatever the server said (see
+ * useAuditHistoryList).
+ *
+ * An unfinished session is shown as such rather than hidden: an audit someone
+ * started and walked away from is the one worth noticing.
+ */
 export function AuditHistoryQuickList() {
   const { data, isPending, isError } = useAuditHistoryList();
 
@@ -26,10 +38,15 @@ export function AuditHistoryQuickList() {
           <SkeletonText lines={3} />
         </div>
       ) : isError ? (
+        /*
+          A failed request is reported as a failed request. The previous version
+          caught every error and returned an empty list, which is how a 401 and a
+          parse failure both came out as "No audits completed yet".
+        */
         <EmptyState
           icon={<History className="h-8 w-8" />}
           heading="Couldn't load audit history"
-          body="There was a problem loading the audit history."
+          body="There was a problem loading the audit history. Your audit records are not affected — try again in a moment."
         />
       ) : !data || data.length === 0 ? (
         <EmptyState
@@ -39,17 +56,27 @@ export function AuditHistoryQuickList() {
         />
       ) : (
         <ul className="flex flex-col divide-y divide-slate-200">
-          {data.map((audit: { id: string; scope: string; type: string; completedAt: string }) => (
+          {data.map((audit) => (
             <li
               key={audit.id}
               className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0"
             >
               <div className="min-w-0">
-                <p className="truncate font-medium text-slate-900">{audit.scope}</p>
-                <p className="text-xs text-slate-500">{audit.type}</p>
+                <p className="truncate font-medium text-slate-900">
+                  <Link
+                    to={`/audit/${audit.id}/report`}
+                    className="underline-offset-4 hover:underline"
+                  >
+                    {audit.scopeValue || audit.scopeType}
+                  </Link>
+                </p>
+                <p className="text-xs text-slate-500">
+                  {audit.runBy.fullName}
+                  {audit.completed ? "" : " · in progress"}
+                </p>
               </div>
               <span className="text-xs text-slate-400">
-                {formatRelativeTime(audit.completedAt)}
+                {formatRelativeTime(audit.completedAt ?? audit.startedAt)}
               </span>
             </li>
           ))}

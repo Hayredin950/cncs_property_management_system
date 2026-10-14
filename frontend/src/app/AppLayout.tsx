@@ -331,16 +331,32 @@ export function AppLayout() {
                 collapsed ? "p-2" : "p-3",
               )}
             >
-              {/* The role chip and user info, moved out of the header into the navigation panel. */}
+              {/*
+                The role chip and user info, moved out of the header into the
+                navigation panel.
+
+                The three `min-w-0` / `shrink-0` classes are load-bearing, not
+                decoration. A flex item's default `min-width: auto` means it
+                refuses to shrink below its content, so `truncate` on the name
+                did nothing: "Department Head Test" kept its full intrinsic
+                width, pushed the role chip's row wider than the 16rem panel, and
+                the name ran under the chip. `shrink-0` on the chip keeps it at
+                its natural size (the chip is the fixed part), `min-w-0 flex-1`
+                on the name gives it exactly the space that is left, and only
+                then does `truncate` produce an ellipsis instead of a clip.
+              */}
               <div
                 className={cn(
-                  "mb-2 flex items-center gap-2",
+                  "mb-2 flex min-w-0 items-center gap-2",
                   collapsed ? "justify-center" : "justify-start",
                   )}
               >
-                <RoleBadge role={user.role} collapsed={collapsed} />
+                <RoleBadge role={user.role} collapsed={collapsed} className="shrink-0" />
                 {!collapsed && (
-                  <span className="truncate text-sm font-medium text-aau-gray-700">
+                  <span
+                    className="min-w-0 flex-1 truncate text-sm font-medium text-aau-gray-700"
+                    title={user.fullName}
+                  >
                     {user.fullName}
                   </span>
                 )}

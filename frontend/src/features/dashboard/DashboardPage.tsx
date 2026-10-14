@@ -136,7 +136,7 @@ export function DashboardPage() {
               to="/requests"
               className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
             >
-              View all \u2192
+              View all →
             </Link>
           </div>
 

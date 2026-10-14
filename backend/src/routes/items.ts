@@ -6,7 +6,6 @@ import { httpError } from "../lib/httpError.js";
 import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
-  optionalAuthenticate,
   requireCapability,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
@@ -29,46 +28,12 @@ import {
   uploadItemPhoto,
 } from "../services/photoStorage.js";
 import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
+import { itemInScope, itemListScope } from "../services/itemScope.js";
 import { isAuthenticatedViewer, sanitizeItem } from "../utils/filterItemFields.js";
 import { capabilitiesFor } from "../services/permissions.js";
 import { isPhotoSource } from "../utils/photoSource.js";
 
 export const itemsRouter: Router = Router();
-
-/**
- * The `where` fragment limiting a listing to what the viewer may see.
- * `undefined` means "no restriction"; an empty `in` list matches nothing, which
- * is how a role with no asset access is expressed (rather than by omitting a
- * clause and accidentally matching everything).
- */
-function itemListScope(
-  user?: AuthenticatedRequest["user"],
-): Prisma.ItemWhereInput | undefined {
-  if (!user) return undefined; // public listing; the public routes go in a later Phase A step
-  switch (user.role) {
-    // The college-wide operational and read-only roles.
-    case "PROPERTY_OFFICER":
-    case "AUDITOR":
-      return undefined;
-    // Account administration only — sees no asset data (spec 2.1.1).
-    case "SYSTEM_ADMIN":
-      return { id: { in: [] } };
-    // Own holdings only, via either the legacy owner link or the holder fields.
-    case "STAFF":
-      return { OR: [{ ownerId: user.id }, { holderType: "STAFF", holderId: user.id }] };
-    // Their orgUnitId's holdings, plus anything they personally hold.
-    case "DEPARTMENT_HEAD":
-      return user.orgUnitId
-        ? {
-            OR: [
-              { orgUnitId: user.orgUnitId },
-              { holderType: "DEPARTMENT", holderId: user.orgUnitId },
-              { ownerId: user.id },
-            ],
-          }
-        : { ownerId: user.id };
-  }
-}
 
 const ConditionEnum = z.enum(["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"]);
 
@@ -242,7 +207,15 @@ function cleanDefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
 
 itemsRouter.get(
   "/",
-  optionalAuthenticate,
+  /**
+   * `authenticate`, not `optionalAuthenticate`. The optional variant failed open:
+   * a missing *or expired* token continued as a guest, and this handler answered a
+   * guest with the whole register — every tag id, room and condition, no token
+   * needed. Requiring authentication is what makes the scope filter below mean
+   * something, and it fails closed on a stale token instead of degrading to
+   * "everyone".
+   */
+  authenticate,
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
@@ -390,15 +363,33 @@ itemsRouter.get(
       }
 
       /**
+       * The scope check the listing has always had and this route did not (14 Oct
+       * audit, §10.2). Without it a STAFF member's list was correctly empty while
+       * `GET /items/<someone else's id>` answered 200 — the list was never the
+       * boundary, the row is.
+       *
+       * Answered as 404, not 403: a 403 would confirm that the tag exists and turn
+       * this route into an oracle for guessing tag ids (ground rule 3).
+       */
+      if (!itemInScope(req.user, item as unknown as Parameters<typeof itemInScope>[1])) {
+        res.status(404).json({ error: "Item not found" });
+        return;
+      }
+
+      /**
        * SRS F7.3 — "Disposed items are not scannable/viewable by the public (tag
        * lookup for a disposed item shows 'this item is no longer in service',
        * nothing else)." Hence 410 with only that sentence: no tagId, no name, no
        * disposal reason. "Nothing else" is the operative phrase.
        *
-       * Gated on the viewer, though, because F7.2 says a disposed item "remains
-       * queryable in reports/history" and the SRS 3.4 visibility table gives
-       * Staff/Admin every field. An admin scanning a disposed tag needs the
-       * record, not an error — the restriction is on the public, not on the row.
+       * ── Open question this gate now raises ────────────────────────────────
+       * The gate's audience was "the public", and this route requires a token as of
+       * §10.1, so `isAuthenticatedViewer` is true for every caller that reaches it
+       * and the 410 is currently unreachable. It is left in place rather than
+       * deleted because F7.3 is still the spec: what needs deciding is *who* should
+       * be told "no longer in service" now that no anonymous viewer can reach this
+       * route at all — a staff member looking up their own disposed item should get
+       * the record, per F7.2. Flagged for the next phase rather than guessed at here.
        */
       if (item.status === "DISPOSED" && !isAuthenticatedViewer(req.user)) {
         res.status(410).json({ error: DISPOSED_PUBLIC_MESSAGE });

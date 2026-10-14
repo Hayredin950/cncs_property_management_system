@@ -22,16 +22,21 @@ export type TestRole =
   | "AUDITOR";
 
 /**
- * Signs a JWT with the same `{ id, role }` payload routes/auth.ts issues.
+ * Signs a JWT with the same `{ id, role, orgUnitId }` payload routes/auth.ts issues.
  *
  * `ver` is optional and deliberately omitted by most tests: a token with no
  * `ver` takes `authenticate`'s legacy signature-only path and costs no database
  * read, which is what keeps the route suites unchanged. Pass `ver` when the test
- * is specifically about revocation.
+ * is specifically about revocation — and note that a token *with* `ver` makes
+ * `authenticate` read the user row, so the mocked row needs `tokenVersion` and an
+ * `accountStatus` of `ACTIVE` or the request is refused.
+ *
+ * `orgUnitId` is what the middleware and the item scope read for a DEPARTMENT_HEAD.
  */
 export function createToken(payload: {
   id: string;
   role: TestRole;
+  orgUnitId?: string | null;
   departmentId?: string | null;
   ver?: number;
 }): string {

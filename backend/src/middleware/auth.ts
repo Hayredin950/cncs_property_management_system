@@ -165,55 +165,16 @@ export function requireAnyCapability(...capabilities: Capability[]) {
     }
     next();
   };
-}
-
-/**
- * Optional authentication middleware.
- * If a valid JWT is present in the Authorization header, attaches the decoded
- * { id, role } to req.user. If no token is present, or if the token is
- * invalid/expired/revoked, it continues without setting req.user.
+}/*
+ * There used to be an `optionalAuthenticate` here: attach a user when the token is
+ * valid, continue as a guest when it is missing, and — this was the part that
+ * mattered — continue as a guest when the token was *expired*. Its only caller was
+ * `GET /items`, and the handler's guest branch was "no scope filter", so an stale
+ * token read the whole register with a 200 (14 Oct audit, §10.1).
  *
- * Deliberately fail-open, including on a database error while checking `ver`:
- * these are public routes, and a blip must degrade to "guest", never to a 500
- * on the QR destination.
+ * It is deleted rather than kept for a future public route: a fail-open auth
+ * helper next to a fail-closed one is a footgun, and every item route now requires
+ * a token. A new public route should be written knowing it is public, with its own
+ * explicit projection of what may be returned.
  */
-export async function optionalAuthenticate(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
-  const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    // No token? No problem. Just continue as a guest.
-    next();
-    return;
-  }
-
-  const token = authHeader.slice("Bearer ".length);
-  const secret = process.env.JWT_SECRET;
-  req.user = undefined;
-  if (!secret) {
-    next();
-    return;
-  }
-
-  try {
-    const decoded = jwt.verify(token, secret) as JwtPayload;
-    if (typeof decoded.ver === "number") {
-      const user = await prisma.user.findUnique({
-        where: { id: decoded.id },
-        select: { role: true, tokenVersion: true, orgUnitId: true },
-      });
-      if (user && user.tokenVersion === decoded.ver) {
-        req.user = { id: decoded.id, role: user.role, orgUnitId: user.orgUnitId };
-      }
-    } else {
-      req.user = { id: decoded.id, role: decoded.role, orgUnitId: decoded.orgUnitId ?? null };
-    }
-  } catch {
-    // Invalid, expired or revoked — treat the request as unauthenticated.
-    req.user = undefined;
-  }
-  next();
-}

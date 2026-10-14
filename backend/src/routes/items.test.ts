@@ -84,9 +84,35 @@ function listWhere(): Record<string, unknown> {
   >;
 }
 
+const officerAuth = { Authorization: `Bearer ${officerToken}` };
+
 describe("GET /items", () => {
-  it("defaults to page 1 / limit 20 and only ever lists ACTIVE items", async () => {
+  /**
+   * §10.1 of the design doc. This endpoint used to answer a caller with no token —
+   * and, worse, a caller with an *expired* token — with the whole register, because
+   * `optionalAuthenticate` demoted a bad token to "guest" and the guest branch had
+   * no scope filter. Both cases are pinned here so neither can come back silently.
+   */
+  it("refuses an anonymous caller instead of listing the register", async () => {
     const res = await request(app).get("/items");
+
+    expect(res.status).toBe(401);
+    expect(res.body).not.toHaveProperty("data");
+    expect(prisma.item.findMany).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on an invalid or expired token", async () => {
+    const res = await request(app)
+      .get("/items")
+      .set("Authorization", "Bearer not-a-real-token");
+
+    expect(res.status).toBe(401);
+    expect(res.body).not.toHaveProperty("data");
+    expect(prisma.item.findMany).not.toHaveBeenCalled();
+  });
+
+  it("defaults to page 1 / limit 20 and only ever lists ACTIVE items", async () => {
+    const res = await request(app).get("/items").set(officerAuth);
 
     expect(res.status).toBe(200);
     const args = vi.mocked(prisma.item.findMany).mock.calls[0]?.[0];
@@ -103,19 +129,21 @@ describe("GET /items", () => {
   });
 
   it("clamps limit to 100 and floors page at 1", async () => {
-    await request(app).get("/items?page=0&limit=5000");
+    await request(app).get("/items?page=0&limit=5000").set(officerAuth);
     expect(vi.mocked(prisma.item.findMany).mock.calls[0]?.[0]?.take).toBe(100);
     expect(vi.mocked(prisma.item.findMany).mock.calls[0]?.[0]?.skip).toBe(0);
 
     vi.clearAllMocks();
     vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.item.count).mockResolvedValue(0 as never);
-    await request(app).get("/items?page=3&limit=10");
+    await request(app).get("/items?page=3&limit=10").set(officerAuth);
     expect(vi.mocked(prisma.item.findMany).mock.calls[0]?.[0]?.skip).toBe(20);
   });
 
   it("turns search, categoryId and orgUnitId into filters", async () => {
-    await request(app).get("/items?search=laptop&categoryId=cat-electronics&orgUnitId=org-unit-cs");
+    await request(app)
+      .get("/items?search=laptop&categoryId=cat-electronics&orgUnitId=org-unit-cs")
+      .set(officerAuth);
 
     const where = listWhere();
     expect(where.OR).toEqual([
@@ -131,34 +159,53 @@ describe("GET /items", () => {
     // `?status=DISPOSED` is not a supported filter, so it should be ignored
     // rather than honoured — and even if a later change starts reading it, the
     // pin in activeItemsWhere() lands last.
-    await request(app).get("/items?status=DISPOSED");
+    await request(app).get("/items?status=DISPOSED").set(officerAuth);
     expect(listWhere().status).toBe("ACTIVE");
   });
 
-  it("strips restricted fields for a guest and keeps them for staff (SDS 3.2)", async () => {
-    const guest = await request(app).get("/items");
-    for (const field of STRIPPED_FOR_PUBLIC) {
-      expect(guest.body.data[0]).not.toHaveProperty(field);
-    }
-    // The acceptance criterion is about values, not key names: a guest must not
-    // be able to read the cost or the custodian's name off the wire at all.
-    expect(JSON.stringify(guest.body)).not.toContain("45000");
-    expect(JSON.stringify(guest.body)).not.toContain("Demo Staff");
-    // What the public does see, per SRS 3.4 — including the photo.
-    expect(guest.body.data[0]).toMatchObject({
-      tagId: "CNCS-DEMO-0001",
-      name: "Dell Latitude Laptop",
-      orgUnitId: "org-unit-cs",
-      room: "312",
-      condition: "GOOD",
-      photoUrl: "https://example.com/laptop.jpg",
-    });
-    expect(guest.body.pagination).toEqual({ page: 1, limit: 20, total: 1, totalPages: 1 });
-
+  /**
+   * Keeps the SDS 3.2 field-visibility contract, minus the audience it used to
+   * have. `staff-1` is `FULL_ITEM`'s custodian, so staff is the role that may read
+   * this row in full; the *restricted* view is now what somebody in scope but not
+   * a full-detail role gets — which the row-level tests below cover, because with
+   * the scope check in place the only way to reach a restricted view of somebody
+   * else's item is to be its department head.
+   */
+  it("gives the item's custodian the full row and never a password hash", async () => {
     const staff = await request(app).get("/items").set("Authorization", `Bearer ${staffToken}`);
+
+    expect(staff.status).toBe(200);
     expect(staff.body.data[0].purchaseCost).toBe(45000);
     expect(staff.body.data[0].owner.fullName).toBe("Demo Staff");
     expect(JSON.stringify(staff.body)).not.toContain("passwordHash");
+    expect(staff.body.pagination).toEqual({ page: 1, limit: 20, total: 1, totalPages: 1 });
+  });
+
+  it("scopes the listing by role instead of returning everybody's rows", async () => {
+    await request(app).get("/items").set("Authorization", `Bearer ${staffToken}`);
+    // A staff member's window is the items they hold — expressed as an AND term so
+    // it composes with the search filter rather than replacing it.
+    expect(listWhere().AND).toEqual([
+      { OR: [{ ownerId: "staff-1" }, { holderType: "STAFF", holderId: "staff-1" }] },
+    ]);
+
+    vi.clearAllMocks();
+    vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.item.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: "admin-1",
+      role: "SYSTEM_ADMIN",
+      tokenVersion: 0,
+      orgUnitId: null,
+      accountStatus: "ACTIVE",
+    } as never);
+    const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN", ver: 0 });
+    const admin = await request(app).get("/items").set("Authorization", `Bearer ${adminToken}`);
+
+    // An account role sees no asset data at all — an empty `in` list, not a
+    // missing clause, because a missing clause matches everything.
+    expect(admin.status).toBe(200);
+    expect(listWhere().AND).toEqual([{ id: { in: [] } }]);
   });
 });
 
@@ -183,6 +230,80 @@ describe("GET /items/:tagId", () => {
     expect(staff.status).toBe(200);
     expect(staff.body.serialNumber).toBe("SN-998822");
     expect(JSON.stringify(staff.body)).not.toContain("passwordHash");
+  });
+
+  /**
+   * §10.2 — the IDOR the audit found. The listing was scoped but this route was
+   * not, so a staff member's list correctly came back empty while this route
+   * answered 200 for any row whose id they could name. Out-of-scope is reported as
+   * 404, never 403: a 403 confirms the tag exists.
+   *
+   * `FULL_ITEM` is held by `staff-1` in `org-unit-cs`.
+   */
+  it("404s a row outside the caller's scope instead of serving it", async () => {
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({
+      ...FULL_ITEM,
+      ownerId: "staff-2",
+      holderType: "STAFF",
+      holderId: "staff-2",
+      owner: { id: "staff-2", fullName: "Somebody Else", email: "other@cncs.aau.edu.et" },
+      orgUnitId: "org-unit-bio",
+    } as never);
+
+    // A staff member naming somebody else's item by tag id.
+    const otherStaff = await request(app)
+      .get("/items/CNCS-DEMO-0001")
+      .set("Authorization", `Bearer ${createToken({ id: "staff-9", role: "STAFF" })}`);
+    expect(otherStaff.status).toBe(404);
+    expect(otherStaff.body).toEqual({ error: "Item not found" });
+
+    // An account role sees no asset data, by the same rule as the listing.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: "admin-1",
+      role: "SYSTEM_ADMIN",
+      tokenVersion: 0,
+      orgUnitId: null,
+      accountStatus: "ACTIVE",
+    } as never);
+    const admin = await request(app)
+      .get("/items/CNCS-DEMO-0001")
+      .set("Authorization", `Bearer ${createToken({ id: "admin-1", role: "SYSTEM_ADMIN", ver: 0 })}`);
+    expect(admin.status).toBe(404);
+
+    // A head from another unit is out of scope for this item too. The item sits in
+    // `org-unit-bio`, so this head is from Chemistry — using the item's own unit
+    // here would be asserting that head *can* read it.
+    const otherHead = await request(app)
+      .get("/items/CNCS-DEMO-0001")
+      .set(
+        "Authorization",
+        `Bearer ${createToken({ id: "head-chem", role: "DEPARTMENT_HEAD", orgUnitId: "org-unit-chem" })}`,
+      );
+    expect(otherHead.status).toBe(404);
+  });
+
+  it("still serves a row the caller holds, and every row to an officer", async () => {
+    // The custodian: `FULL_ITEM` is held by staff-1.
+    const owner = await request(app)
+      .get("/items/CNCS-DEMO-0001")
+      .set("Authorization", `Bearer ${staffToken}`);
+    expect(owner.status).toBe(200);
+    expect(owner.body.tagId).toBe("CNCS-DEMO-0001");
+
+    // The college-wide roles are unrestricted, by design.
+    const officer = await request(app)
+      .get("/items/CNCS-DEMO-0001")
+      .set("Authorization", `Bearer ${officerToken}`);
+    expect(officer.status).toBe(200);
+
+    // The head of the item's own unit.
+    const ownHead = await request(app)
+      .get("/items/CNCS-DEMO-0001")
+      .set(
+        "Authorization",
+        `Bearer ${createToken({ id: "head-cs", role: "DEPARTMENT_HEAD", orgUnitId: "org-unit-cs" })}`,
+      );
+    expect(ownHead.status).toBe(200);
   });
 
   it("answers a disposed tag with 401 for guest; staff gets 410 for public view", async () => {
@@ -627,8 +748,8 @@ describe("PUT /items/:id", () => {
 
 describe("mount paths", () => {
   it("serves the same handler under /items and /api/v1/items", async () => {
-    const bare = await request(app).get("/items");
-    const versioned = await request(app).get("/api/v1/items");
+    const bare = await request(app).get("/items").set(officerAuth);
+    const versioned = await request(app).get("/api/v1/items").set(officerAuth);
 
     expect(bare.status).toBe(200);
     expect(versioned.status).toBe(200);

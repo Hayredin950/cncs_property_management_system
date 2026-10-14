@@ -3,7 +3,6 @@ import jwt from "jsonwebtoken";
 import { describe, expect, it, vi } from "vitest";
 import {
   authenticate,
-  optionalAuthenticate,
   requireCapability,
   type AuthenticatedRequest,
 } from "./auth.js";
@@ -77,44 +76,6 @@ describe("requireCapability", () => {
 
     requireCapability("ITEM_CREATE")(req, res, next);
 
-    expect(next).toHaveBeenCalled();
-  });
-});
-
-describe("optionalAuthenticate", () => {
-  it("allows requests with no Authorization header and doesn't set req.user", () => {
-    const req = { headers: {} } as unknown as AuthenticatedRequest;
-    const res = mockRes();
-    const next = vi.fn();
-
-    optionalAuthenticate(req, res, next);
-
-    expect(req.user).toBeUndefined();
-    expect(next).toHaveBeenCalled();
-  });
-
-  it("attaches req.user for a valid token", () => {
-    const token = jwt.sign({ id: "user-1", role: "STAFF" }, "test_secret");
-    const req = {
-      headers: { authorization: `Bearer ${token}` },
-    } as unknown as AuthenticatedRequest;
-    const res = mockRes();
-    const next = vi.fn();
-
-    optionalAuthenticate(req, res, next);
-
-    expect(req.user).toEqual({ id: "user-1", role: "STAFF", orgUnitId: null });
-    expect(next).toHaveBeenCalled();
-  });
-
-  it("allows requests with an invalid token and doesn't set req.user", () => {
-    const req = { headers: { authorization: "Bearer garbage" } } as unknown as AuthenticatedRequest;
-    const res = mockRes();
-    const next = vi.fn();
-
-    optionalAuthenticate(req, res, next);
-
-    expect(req.user).toBeUndefined();
     expect(next).toHaveBeenCalled();
   });
 });

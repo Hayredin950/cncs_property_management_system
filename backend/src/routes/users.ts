@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
   requireCapability,
+  requireAnyCapability,
   type AuthenticatedRequest,
   type UserRole,
 } from "../middleware/auth.js";
@@ -126,7 +127,7 @@ function toAdminUser(user: {
 usersRouter.get(
   "/approvals",
   authenticate,
-  requireCapability("ACCOUNT_APPROVE_ANY"),
+  requireAnyCapability("ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const user = req.user!;
@@ -185,7 +186,7 @@ usersRouter.get(
 usersRouter.post(
   "/:id/approve",
   authenticate,
-  requireCapability("ACCOUNT_APPROVE_ANY"),
+  requireAnyCapability("ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -286,7 +287,7 @@ usersRouter.post(
 usersRouter.post(
   "/:id/reject",
   authenticate,
-  requireCapability("ACCOUNT_APPROVE_ANY"),
+  requireAnyCapability("ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

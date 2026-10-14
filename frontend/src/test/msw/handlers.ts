@@ -21,6 +21,8 @@ import {
   REQUEST_DETAIL_FIXTURE,
   REQUEST_FIXTURE,
   REQUESTS_LIST,
+  SYSTEM_EVENTS,
+  SYSTEM_STATUS,
 } from "../fixtures";
 import { getToken } from "../../lib/storage";
 import type { UserSummary } from "../../types/user";
@@ -350,4 +352,16 @@ export const handlers = [
   http.get(`${API}/reports/inventory`, () => (getToken() ? csv() : unauthorized())),
   http.get(`${API}/reports/disposals`, () => (getToken() ? csv() : unauthorized())),
   http.get(`${API}/reports/audit/:auditId`, () => (getToken() ? csv() : unauthorized())),
+
+  /**
+   * The System Admin's two dashboard tiles. Both are behind `SYSTEM_CONFIG`, so
+   * the token check is the same 401 the backend's `authenticate` sends — a widget
+   * that forgets the header must fail here rather than render empty state.
+   *
+   * `events` is a bare array because that is what the route returns: the old
+   * `{ data: [...] }` envelope is what made the consuming tile call `.map` on an
+   * object (see `routes/systemConfig.ts`).
+   */
+  http.get(`${API}/system/status`, () => (getToken() ? HttpResponse.json(SYSTEM_STATUS) : unauthorized())),
+  http.get(`${API}/system/events`, () => (getToken() ? HttpResponse.json(SYSTEM_EVENTS) : unauthorized())),
 ];

@@ -6,21 +6,25 @@ import {
   requireCapability,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
-import { httpError } from "../lib/httpError.js";
+import { validateQuery, validatedQuery } from "../middleware/validate.js";
 
 export const systemConfigRouter: ExpressRouter = Router();
 
 /**
- * GET /admin/system — System status (System Admin only).
+ * GET /system/status — build and runtime facts (SYSTEM_ADMIN only).
+ *
+ * Note the mount: this router is mounted at `/system` (`app.ts:116`), not
+ * `/admin/system`. The widget used to call the latter and got a 404 that the
+ * hook quietly turned into "Unknown" for all three fields — the silent-zero
+ * failure mode §13 forbids. `frontend/src/api/system.ts` now calls this path
+ * through `apiClient`.
  */
-
 systemConfigRouter.get(
   "/status",
   authenticate,
   requireCapability("SYSTEM_CONFIG"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      // System status endpoint - returns environment info, deploy info, uptime
       const status = {
         environment: process.env.NODE_ENV ?? "development",
         version: process.env.APP_VERSION ?? "unknown",
@@ -33,47 +37,82 @@ systemConfigRouter.get(
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 /**
- * GET /admin/system/events — Recent system events (System Admin only).
+ * GET /system/events?limit= — recent account-level events (SYSTEM_ADMIN only).
+ *
+ * §10.4: this endpoint must never carry asset or audit activity. It used to
+ * answer with `auditSession` rows relabelled `type: "AUDIT"` — each session's
+ * scope, its operator and whether it completed — which handed the one role the
+ * rules say sees zero asset data a running history of the college's audits.
+ *
+ * The source is now `AdminActionLog` (schema.prisma:243), the append-only
+ * account log §0.4 requires, so every row is account-level *by construction* and
+ * there is no asset-shaped filter left to get wrong. It is also the honest
+ * answer to "what has this role been doing": nothing writes it yet — the account
+ * flows (T5–T7) are what will — and an empty list is the true state until then,
+ * not a placeholder.
+ *
+ * The response is a bare array, not `{ data }`: the only caller is
+ * `frontend/src/api/system.ts`, and an envelope that one route in the codebase
+ * uses is what made the consuming widget treat the object as a list.
  */
+
+/**
+ * `catch(10)` before `.default(10)`, and the clamp below, keep the behaviour the
+ * route already had: `?limit=abc` and `?limit=999` mean "what you asked for,
+ * within reason" rather than a 400 on a widget refresh. The caller is a
+ * dashboard tile, and refusing to draw it over a stray query string would be a
+ * worse failure than showing ten rows.
+ */
+const eventsQuerySchema = z.object({
+  limit: z.coerce.number().int().catch(10).default(10),
+});
+type EventsQuery = z.infer<typeof eventsQuerySchema>;
+
+/**
+ * `action` is stored as a slug (`ACCOUNT_APPROVED`). Sent as `type` unchanged —
+ * greppable and stable — with a sentence carrying the person it happened to, so
+ * a reader gets "who" without the widget having to join two fields itself.
+ */
+function describeAction(action: string, targetName: string | null): string {
+  const readable = action.replaceAll("_", " ").toLowerCase();
+  return targetName ? `${readable} — ${targetName}` : readable;
+}
+
 systemConfigRouter.get(
   "/events",
   authenticate,
   requireCapability("SYSTEM_CONFIG"),
+  validateQuery(eventsQuerySchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 10));
+      const query = validatedQuery<EventsQuery>(req);
+      const limit = Math.min(50, Math.max(1, query.limit));
 
-      // Fetch recent system events (audits, errors, migrations, etc.)
-      // For now, we'll use audit sessions as a proxy for system events
-      const events = await prisma.auditSession.findMany({
+      const events = await prisma.adminActionLog.findMany({
         take: limit,
-        orderBy: { startedAt: "desc" },
-        include: {
-          runBy: {
-            select: { id: true, fullName: true, email: true },
-          },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          action: true,
+          createdAt: true,
+          targetUser: { select: { fullName: true } },
         },
       });
 
-      const eventsMapped = events.map((session) => ({
-        id: session.id,
-        type: "AUDIT",
-        message: `Audit ${session.scopeType} ${session.scopeValue ? `(${session.scopeValue})` : ""}`,
-        status: session.completedAt ? "COMPLETED" : "IN_PROGRESS",
-        timestamp: session.startedAt,
-        completedAt: session.completedAt,
-        runBy: session.runBy ? session.runBy.fullName : null,
-      }));
-
-      res.status(200).json({ data: eventsMapped });
+      res.status(200).json(
+        events.map((event) => ({
+          id: event.id,
+          type: event.action,
+          message: describeAction(event.action, event.targetUser?.fullName ?? null),
+          timestamp: event.createdAt,
+        })),
+      );
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
-
-

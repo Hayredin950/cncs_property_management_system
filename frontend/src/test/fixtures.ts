@@ -23,6 +23,7 @@ import type {
   AuditSessionSummary,
 } from "../types/audit";
 import type { ItemsHistoryResponse } from "../types/history";
+import type { SystemEvent, SystemStatus } from "../api/system";
 
 /**
  * Fixtures shaped exactly like the backend's responses (docs/backend-handoff.md
@@ -449,3 +450,33 @@ export const REQUEST_DETAIL_FIXTURE: RequestDetail = {
   },
   reviewedBy: null,
 };
+
+/** `GET /system/status` — the build facts the System Admin's dashboard shows. */
+export const SYSTEM_STATUS: SystemStatus = {
+  environment: "production",
+  version: "1.0.0",
+  uptime: 4321,
+  lastDeploy: "2026-10-13T06:00:00.000Z",
+  database: "connected",
+};
+
+/**
+ * `GET /system/events` — rows of the account log (§10.4). Two of them, both
+ * account-level, because that is the whole point of the endpoint now: it cannot
+ * carry an audit session, a tag id or a room. There is no asset-shaped fixture
+ * here to accidentally assert against.
+ */
+export const SYSTEM_EVENTS: SystemEvent[] = [
+  {
+    id: "log-1",
+    type: "ACCOUNT_APPROVED",
+    message: "account approved — Sara Staff",
+    timestamp: "2026-10-10T09:00:00.000Z",
+  },
+  {
+    id: "log-2",
+    type: "ACCOUNT_DEACTIVATED",
+    message: "account deactivated — Sara Staff",
+    timestamp: "2026-10-09T09:00:00.000Z",
+  },
+];

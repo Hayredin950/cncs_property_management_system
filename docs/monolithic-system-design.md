@@ -264,8 +264,15 @@ Every item below is mandatory, server-side, verified live before being marked do
    `[BROKEN — live, confirmed]`: `/requests` returns item names/tag IDs to SYSTEM_ADMIN,
    including a transfer the admin's own account requested. Fix at generation/query time —
    SYSTEM_ADMIN's request list should be empty or account-related only, never asset-joined.
-4. **`/system/events` must exclude asset/audit activity.** `[BROKEN — live, confirmed]`:
-   currently returns `type:"AUDIT"` rows. Fix: filter to account/system-level events only.
+4. **`/system/events` must exclude asset/audit activity.** `[DONE — fixed 14 Oct, verified
+   live]`: it answered with `auditSession` rows relabelled `type:"AUDIT"`, and the database
+   held 20 sessions and 33 result rows behind that handler. It now reads `AdminActionLog`
+   (§0.4's append-only account log), so every row is account-level *by construction* and
+   there is no asset-shaped filter left to get wrong; `systemConfig.test.ts` asserts the
+   audit table is never queried. Live: SYSTEM_ADMIN → `200 []` (nothing writes the account
+   log until T5–T7), PROPERTY_OFFICER → 403, no token → 401. The tile was fixed with it —
+   `api/system.ts` calls `/system/*` through `apiClient`, where it used to call the unmounted
+   `/admin/system/*` with no token and paint the 404/401 as "Unknown".
 5. **`/reports/inventory` and `/requests/pending` currently 500 in production** — fix as
    part of correcting the deployment (§11), then re-verify; don't assume these are code
    bugs until confirmed against the *correct* deployed revision.

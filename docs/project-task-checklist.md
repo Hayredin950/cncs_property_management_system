@@ -356,19 +356,30 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 - [x] All nine widget files exist — `frontend/src/features/dashboard/widgets/`: SystemStatus,
       RecentSystemEvents, RecentlyRegisteredItems, OverdueLoans, HeldItems, DepartmentRoster,
       CurrentAuditProgress, OpenFindings, AuditHistoryQuickList.
-- [~] Only PROPERTY_OFFICER and DEPARTMENT_HEAD branches are explicitly wired in
-      `DashboardPage.tsx:93,101`; the SYSTEM_ADMIN/AUDITOR branches were not verified.
+- [x] SYSTEM_ADMIN's branch is wired — `DashboardPage.tsx:120` renders `<SystemStatus />`
+      and `<RecentSystemEvents />` under `isSystemAdmin && canManageAcc`, and
+      `frontend/src/test/systemDashboard.test.tsx` renders `/dashboard` as the System Admin
+      and asserts both tiles draw real data. (`DashboardPage.tsx:93,101` is PROPERTY_OFFICER
+      and DEPARTMENT_HEAD; the AUDITOR branch is still unverified.)
 - [~] `/items/recent` and `/items/held-by-me` were added but are **unreachable at HEAD**:
       `/:tagId` is registered at `items.ts:366`, *before* `/recent` (`:982`) and
       `/held-by-me` (`:1014`), so Express matches the generic route first and answers
       `{"error":"Item not found"}`. Live behaviour confirms the mechanism — in the deployed
       revision (`personal/main`) `/recent` is declared *before* `/:tagId` and works, while
       `/held-by-me` is declared *after* it and 404s exactly like this.
-- [ ] `/admin/system/status` — the widget calls `/api/v1/admin/system/status`, but the backend
-      mounts the router at `/api/v1/system` (`app.ts:116`), and live
-      `/admin/system/status` → 404 "Route not found" while `/system/status` → 200.
-- [ ] Live `/system/events` returns rows with `type: "AUDIT"` — the spec says system events must
-      be "explicitly NOT asset/item/request activity".
+- [x] `/system/status` — fixed 14 Oct. The tiles called the unmounted `/admin/system/*`
+      (`app.ts:116` mounts the router at `/system`) and sent no `Authorization` header, then
+      rendered the 404/401 as `"Unknown"` for every field. `api/system.ts` now goes through
+      `apiClient`, so the token is attached and a refusal is an error rather than a tidy
+      empty tile. Live: `/api/v1/system/status` → 200 for SYSTEM_ADMIN; the old
+      `/api/v1/admin/system/status` still 404s, which is correct.
+- [x] `/system/events` no longer carries asset/audit activity (§10.4) — fixed 14 Oct.
+      It answered with `auditSession` rows relabelled `type: "AUDIT"`; at the time of the fix
+      the database held 20 audit sessions and 33 result rows behind that handler. It now
+      reads `AdminActionLog`, the append-only account log, and returns a bare array.
+      `backend/src/routes/systemConfig.test.ts` asserts the audit table is never queried.
+      Live: SYSTEM_ADMIN → `200 []` (the account log is empty until T5–T7 write it),
+      PROPERTY_OFFICER → 403, no token → 401, `?limit=9999` → 200 clamped.
 
 ### Notification rules (§9)
 - [~] Generation-time capability targeting partially exists —

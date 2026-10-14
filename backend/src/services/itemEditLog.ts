@@ -30,8 +30,8 @@ import type { DbClient } from "../lib/dbClient.js";
 export const TRACKED_ITEM_FIELDS = [
   "name",
   "categoryId",
-  "department",
-  "building",
+  "orgUnitId",
+  "buildingId",
   "floor",
   "room",
   "ownerId",

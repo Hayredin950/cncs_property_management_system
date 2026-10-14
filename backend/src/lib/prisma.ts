@@ -1,6 +1,7 @@
 import path from "node:path";
 import dotenv from "dotenv";
 import { PrismaClient } from "../generated/prisma/client.js";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 /**
  * Load the repo-root `.env` before the client reads `DATABASE_URL`.
@@ -19,24 +20,9 @@ import { PrismaClient } from "../generated/prisma/client.js";
 dotenv.config({ path: path.resolve(import.meta.dirname, "../../../.env") });
 
 /**
- * Use PrismaNeon adapter only in development (long-running server).
- * In production (Vercel serverless), WebSockets aren't supported,
- * so use standard PrismaClient with the pooled connection string directly.
+ * Use PrismaPg adapter with pooled connection string in ALL environments.
+ * This works reliably in both development (long-running server) and production
+ * (Vercel serverless).
  */
-const isProduction = process.env.NODE_ENV === "production";
-
-let prisma: PrismaClient;
-
-if (isProduction) {
-  // Production: use pooled connection directly (no WebSocket adapter)
-  prisma = new PrismaClient({
-    datasourceUrl: process.env.DATABASE_URL,
-  });
-} else {
-  // Development: use Neon WebSocket adapter for better performance
-  const { PrismaNeon } = await import("@prisma/adapter-neon");
-  const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
-  prisma = new PrismaClient({ adapter });
-}
-
-export { prisma };
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+export const prisma = new PrismaClient({ adapter });

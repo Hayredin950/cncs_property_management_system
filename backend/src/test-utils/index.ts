@@ -116,8 +116,8 @@ export interface TestItem {
   name: string;
   status: "ACTIVE" | "DISPOSED";
   categoryId: string;
-  department: string;
-  building: string;
+  orgUnitId: string;
+  buildingId: string;
   floor: string;
   room: string;
   ownerId: string;
@@ -135,8 +135,8 @@ export function makeItem(overrides: Partial<TestItem> = {}): TestItem {
     name: "Dell Latitude Laptop",
     status: "ACTIVE",
     categoryId: "cat-electronics",
-    department: "Computer Science",
-    building: "CNCS Building",
+    orgUnitId: "org-unit-cs",
+    buildingId: "building-cncs",
     floor: "3",
     room: "312",
     ownerId: "staff-1",

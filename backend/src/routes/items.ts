@@ -56,13 +56,13 @@ function itemListScope(
     // Own holdings only, via either the legacy owner link or the holder fields.
     case "STAFF":
       return { OR: [{ ownerId: user.id }, { holderType: "STAFF", holderId: user.id }] };
-    // Their department's holdings, plus anything they personally hold.
+    // Their orgUnitId's holdings, plus anything they personally hold.
     case "DEPARTMENT_HEAD":
-      return user.departmentId
+      return user.orgUnitId
         ? {
             OR: [
-              { departmentId: user.departmentId },
-              { holderType: "DEPARTMENT", holderId: user.departmentId },
+              { orgUnitId: user.orgUnitId },
+              { holderType: "DEPARTMENT", holderId: user.orgUnitId },
               { ownerId: user.id },
             ],
           }
@@ -81,8 +81,8 @@ const ConditionEnum = z.enum(["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"]
 const createItemSchema = z.object({
   name: z.string().trim().min(1, "Item name is required"),
   categoryId: z.string().uuid("Valid categoryId is required"),
-  department: z.string().trim().min(1, "Department is required"),
-  building: z.string().trim().min(1, "Building is required"),
+  orgUnitId: z.string().trim().min(1, "OrgUnit is required"),
+  buildingId: z.string().trim().min(1, "Building is required"),
   floor: z.string().trim().min(1, "Floor is required"),
   room: z.string().trim().min(1, "Room is required"),
   ownerId: z.string().uuid("Valid ownerId (User) is required"),
@@ -154,7 +154,7 @@ const BUNDLE_FIELD_ERROR =
  * Rejected loudly for the same reason `parentItemId` is — a caller who sends one
  * should learn where the field really lives, not watch it disappear.
  */
-const TRANSFER_ONLY_FIELDS = ["building", "floor", "room", "ownerId"] as const;
+const TRANSFER_ONLY_FIELDS = ["buildingId", "floor", "room", "ownerId"] as const;
 
 /**
  * Spec 4.7.1's identity and financial fields. A custodian (STAFF or a head) may
@@ -170,8 +170,8 @@ const IDENTITY_FIELDS = [
   "purchaseCost",
   "currentValue",
   "photoUrl",
-  "department",
-  "departmentId",
+  "orgUnitId",
+  "orgUnitId",
 ] as const;
 
 const TRANSFER_ONLY_ERROR =
@@ -180,7 +180,7 @@ const TRANSFER_ONLY_ERROR =
 /** The transfer-only columns this body actually changes; empty means none. */
 function attemptedTransferFields(
   updates: Partial<Record<string, unknown>>,
-  existing: { building: string; floor: string; room: string; ownerId: string },
+  existing: { buildingId: string | null; floor: string; room: string; ownerId: string },
 ): string[] {
   return TRANSFER_ONLY_FIELDS.filter(
     (field) => field in updates && updates[field] !== existing[field],
@@ -249,7 +249,7 @@ itemsRouter.get(
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
       const skip = (page - 1) * limit;
 
-      const { search, categoryId, department, mine } = req.query;
+      const { search, categoryId, orgUnitId, mine } = req.query;
 
       const filters: Prisma.ItemWhereInput = {};
 
@@ -264,8 +264,8 @@ itemsRouter.get(
         filters.categoryId = categoryId;
       }
 
-      if (typeof department === "string") {
-        filters.department = { contains: department, mode: "insensitive" };
+      if (typeof orgUnitId === "string") {
+        filters.orgUnitId = { contains: orgUnitId, mode: "insensitive" };
       }
 
       // Handle mine=true for "My Items" view
@@ -278,7 +278,7 @@ itemsRouter.get(
             { ownerId: user.id },
           ];
         } else if (user.role === "DEPARTMENT_HEAD") {
-          // Department head's "My Items" = items they personally hold (not department items)
+          // Department head's "My Items" = items they personally hold (not orgUnitId items)
           filters.OR = [
             { holderType: "STAFF", holderId: user.id },
             { ownerId: user.id },
@@ -289,7 +289,7 @@ itemsRouter.get(
       /**
        * Scan/listing visibility (spec 2.2 and Yanet's 11 Oct scan rule): a STAFF
        * member's world is the items they hold, a DEPARTMENT_HEAD's is their
-       * department, and property officers and auditors see the college. A
+       * orgUnitId, and property officers and auditors see the college. A
        * SYSTEM_ADMIN is an account role and sees no asset data at all, so its
        * scope is empty by construction rather than by forgetting a clause.
        *
@@ -747,15 +747,15 @@ itemsRouter.put(
 );
 
 const claimSchema = z.object({
-  // For department head claiming on behalf of department, omit or send null
+  // For orgUnitId head claiming on behalf of orgUnitId, omit or send null
   // The route determines the claimant from the authenticated user's role
 });
 
 /**
  * POST /items/:id/claim — claim a PENDING_CLAIM item.
  *
- * The authenticated user must be the current holder (STAFF) or the department
- * head of the item's department. On success, status becomes ACTIVE and
+ * The authenticated user must be the current holder (STAFF) or the orgUnitId
+ * head of the item's orgUnitId. On success, status becomes ACTIVE and
  * claimedAt is set. A CLAIMED custody event is recorded.
  */
 itemsRouter.post(
@@ -786,7 +786,7 @@ const item = await prisma.item.findUnique({
         holderType: true,
         holderId: true,
         claimDueAt: true,
-        departmentId: true,
+        orgUnitId: true,
       },
     });
 
@@ -819,17 +819,17 @@ const item = await prisma.item.findUnique({
       }
       claimant = { holderType: "STAFF", holderId: req.user!.id };
     } else if (req.user!.role === "DEPARTMENT_HEAD") {
-      if (!req.user!.departmentId || item.departmentId !== req.user!.departmentId) {
-        res.status(403).json({ error: "This item is not in your department" });
+      if (!req.user!.orgUnitId || item.orgUnitId !== req.user!.orgUnitId) {
+        res.status(403).json({ error: "This item is not in your orgUnitId" });
         return;
       }
       if (current.holderType !== "STAFF" && current.holderType !== "DEPARTMENT") {
-        res.status(409).json({ error: "Item cannot be claimed by this department" });
+        res.status(409).json({ error: "Item cannot be claimed by this orgUnitId" });
         return;
       }
-      claimant = { holderType: "DEPARTMENT", holderId: req.user!.departmentId };
+      claimant = { holderType: "DEPARTMENT", holderId: req.user!.orgUnitId };
     } else {
-      res.status(403).json({ error: "Only the assigned holder or department head may claim" });
+      res.status(403).json({ error: "Only the assigned holder or orgUnitId head may claim" });
       return;
     }
 
@@ -853,7 +853,7 @@ const item = await prisma.item.findUnique({
           actingUserId: req.user!.id,
           reason:
             claimant.holderType === "DEPARTMENT"
-              ? "Department head claimed on behalf of department"
+              ? "Department head claimed on behalf of orgUnitId"
               : null,
         });
 
@@ -905,7 +905,7 @@ const item = await prisma.item.findUnique({
         holderType: true,
         holderId: true,
         claimDueAt: true,
-        departmentId: true,
+        orgUnitId: true,
       },
     });
 
@@ -931,16 +931,16 @@ const item = await prisma.item.findUnique({
         return;
       }
     } else if (req.user!.role === "DEPARTMENT_HEAD") {
-      if (!req.user!.departmentId || item.departmentId !== req.user!.departmentId) {
-        res.status(403).json({ error: "This item is not in your department" });
+      if (!req.user!.orgUnitId || item.orgUnitId !== req.user!.orgUnitId) {
+        res.status(403).json({ error: "This item is not in your orgUnitId" });
         return;
       }
       if (current.holderType !== "STAFF" && current.holderType !== "DEPARTMENT") {
-        res.status(409).json({ error: "Item cannot be refused by this department" });
+        res.status(409).json({ error: "Item cannot be refused by this orgUnitId" });
         return;
       }
     } else {
-      res.status(403).json({ error: "Only the assigned holder or department head may refuse" });
+      res.status(403).json({ error: "Only the assigned holder or orgUnitId head may refuse" });
       return;
     }
 

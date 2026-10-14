@@ -371,7 +371,7 @@ router.post(
         {
           id: user.id,
           role: user.role,
-          departmentId: user.departmentId,
+          orgUnitId: user.orgUnitId,
           ver: user.tokenVersion,
         },
         secret,

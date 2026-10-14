@@ -114,8 +114,8 @@ describe("GET /items", () => {
     expect(vi.mocked(prisma.item.findMany).mock.calls[0]?.[0]?.skip).toBe(20);
   });
 
-  it("turns search, categoryId and department into filters", async () => {
-    await request(app).get("/items?search=laptop&categoryId=cat-electronics&department=Computer");
+  it("turns search, categoryId and orgUnitId into filters", async () => {
+    await request(app).get("/items?search=laptop&categoryId=cat-electronics&orgUnitId=org-unit-cs");
 
     const where = listWhere();
     expect(where.OR).toEqual([
@@ -123,7 +123,7 @@ describe("GET /items", () => {
       { tagId: { contains: "laptop", mode: "insensitive" } },
     ]);
     expect(where.categoryId).toBe("cat-electronics");
-    expect(where.department).toEqual({ contains: "Computer", mode: "insensitive" });
+    expect(where.orgUnitId).toEqual({ contains: "org-unit-cs", mode: "insensitive" });
     expect(where.status).toBe("ACTIVE");
   });
 
@@ -148,7 +148,7 @@ describe("GET /items", () => {
     expect(guest.body.data[0]).toMatchObject({
       tagId: "CNCS-DEMO-0001",
       name: "Dell Latitude Laptop",
-      department: "Computer Science",
+      orgUnitId: "org-unit-cs",
       room: "312",
       condition: "GOOD",
       photoUrl: "https://example.com/laptop.jpg",
@@ -231,8 +231,8 @@ const OWNER_UUID = "22222222-2222-4222-8222-222222222222";
 const VALID_CREATE = {
   name: "Dell Latitude Laptop",
   categoryId: CATEGORY_UUID,
-  department: "Computer Science",
-  building: "CNCS Building",
+  orgUnitId: "org-unit-cs",
+  buildingId: "building-cncs",
   floor: "3",
   room: "312",
   ownerId: OWNER_UUID,
@@ -518,7 +518,7 @@ describe("PUT /items/:id", () => {
    */
   it.each([
     ["room", { room: "101" }],
-    ["building", { building: "New Block" }],
+    ["buildingId", { buildingId: "new-building-id" }],
     ["floor", { floor: "1" }],
     ["ownerId", { ownerId: OWNER_UUID }],
   ])("refuses a %s change and points at the transfer flow", async (field, body) => {
@@ -563,7 +563,7 @@ describe("PUT /items/:id", () => {
       .put("/items/item-1")
       .set("Authorization", `Bearer ${staffToken}`)
       .send({
-        building: FULL_ITEM.building,
+        buildingId: FULL_ITEM.buildingId,
         floor: FULL_ITEM.floor,
         room: FULL_ITEM.room,
         ownerId: OWNER_UUID,

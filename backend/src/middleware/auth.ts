@@ -18,12 +18,13 @@ export interface AuthenticatedRequest extends ExpressRequest {
         id: string;
         role: UserRole;
         /**
-         * The account's department, when known. Taken from the database on the
+         * The account's org unit, when known. Taken from the database on the
          * `ver` path and from the token otherwise. Used by the item-scope checks
-         * (a department head reads their own department) — absent is treated as
-         * "no department", never as "every department".
+         * (a department head reads their own unit) — absent is treated as
+         * "no unit", never as "every unit".
          */
-        departmentId?: string | null;
+        orgUnitId?: string | null;
+        accountStatus?: string;
       }
     | undefined;
 }
@@ -31,7 +32,7 @@ export interface AuthenticatedRequest extends ExpressRequest {
 interface JwtPayload {
   id: string;
   role: UserRole;
-  departmentId?: string | null;
+  orgUnitId?: string | null;
   /**
    * `User.tokenVersion` at the moment the token was issued. Absent on tokens
    * minted before the column existed; see the note in `authenticate`.
@@ -108,7 +109,7 @@ export async function authenticate(
     if (typeof decoded.ver === "number") {
       const user = await prisma.user.findUnique({
         where: { id: decoded.id },
-        select: { role: true, tokenVersion: true, departmentId: true, accountStatus: true },
+        select: { role: true, tokenVersion: true, orgUnitId: true, accountStatus: true },
       });
       if (!user || user.tokenVersion !== decoded.ver) {
         res.status(401).json({ error: INVALID_TOKEN });
@@ -118,9 +119,9 @@ export async function authenticate(
         res.status(401).json({ error: INVALID_TOKEN });
         return;
       }
-      req.user = { id: decoded.id, role: user.role, departmentId: user.departmentId };
+      req.user = { id: decoded.id, role: user.role, orgUnitId: user.orgUnitId, accountStatus: user.accountStatus ?? "ACTIVE" };
     } else {
-      req.user = { id: decoded.id, role: decoded.role, departmentId: decoded.departmentId ?? null };
+      req.user = { id: decoded.id, role: decoded.role, orgUnitId: decoded.orgUnitId ?? null };
     }
     next();
   } catch (err) {
@@ -184,13 +185,13 @@ export async function optionalAuthenticate(
     if (typeof decoded.ver === "number") {
       const user = await prisma.user.findUnique({
         where: { id: decoded.id },
-        select: { role: true, tokenVersion: true, departmentId: true },
+        select: { role: true, tokenVersion: true, orgUnitId: true },
       });
       if (user && user.tokenVersion === decoded.ver) {
-        req.user = { id: decoded.id, role: user.role, departmentId: user.departmentId };
+        req.user = { id: decoded.id, role: user.role, orgUnitId: user.orgUnitId };
       }
     } else {
-      req.user = { id: decoded.id, role: decoded.role, departmentId: decoded.departmentId ?? null };
+      req.user = { id: decoded.id, role: decoded.role, orgUnitId: decoded.orgUnitId ?? null };
     }
   } catch {
     // Invalid, expired or revoked — treat the request as unauthenticated.

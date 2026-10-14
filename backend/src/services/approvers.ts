@@ -14,7 +14,7 @@ export async function resolveApprover(
   let currentUnitId: string | null = unitId;
 
   while (currentUnitId) {
-    const unit = await prisma.orgUnit.findUnique({
+    const unit: { id: string; headId: string | null; parentId: string | null; head: { id: string; accountStatus: string } | null } | null = await prisma.orgUnit.findUnique({
       where: { id: currentUnitId },
       select: {
         id: true,
@@ -133,7 +133,7 @@ async function isUnitInScope(headUnitId: string, targetUnitId: string): Promise<
   // Walk up from target to see if we reach head's unit
   let currentId: string | null = targetUnitId;
   while (currentId) {
-    const unit = await prisma.orgUnit.findUnique({
+    const unit: { parentId: string | null } | null = await prisma.orgUnit.findUnique({
       where: { id: currentId },
       select: { parentId: true },
     });

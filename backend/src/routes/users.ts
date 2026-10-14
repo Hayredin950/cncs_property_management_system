@@ -212,7 +212,12 @@ usersRouter.post(
       const reviewer = req.user!;
 
       // Check if reviewer can decide on this request
-      const decision = await canDecide(reviewer, {
+      const decision = await canDecide({
+        id: reviewer.id,
+        role: reviewer.role,
+        accountStatus: reviewer.accountStatus ?? "ACTIVE",
+        orgUnitId: reviewer.orgUnitId ?? null,
+      }, {
         id: existing.id,
         userId: existing.id,
         requestedUnitId: existing.orgUnitId ?? "",
@@ -254,7 +259,6 @@ usersRouter.post(
         reviewNote: null,
         ...(hasExplicitRole ? { role: requestedRole } : {}),
         ...(hasExplicitRole ? { tokenVersion: { increment: 1 } } : {}),
-        orgUnitId: existing.orgUnitId, // Confirm the unit
       };
 
       const approved = await prisma.user.update({
@@ -306,7 +310,12 @@ usersRouter.post(
       const reviewer = req.user!;
 
       // Check if reviewer can decide on this request
-      const decision = await canDecide(reviewer, {
+      const decision = await canDecide({
+        id: reviewer.id,
+        role: reviewer.role,
+        accountStatus: reviewer.accountStatus ?? "ACTIVE",
+        orgUnitId: reviewer.orgUnitId ?? null,
+      }, {
         id: existing.id,
         userId: existing.id,
         requestedUnitId: existing.orgUnitId ?? "",
@@ -374,7 +383,12 @@ usersRouter.post(
         return;
       }
 
-      const decision = await canDecide(reviewer, {
+      const decision = await canDecide({
+        id: reviewer.id,
+        role: reviewer.role,
+        accountStatus: reviewer.accountStatus ?? "ACTIVE",
+        orgUnitId: reviewer.orgUnitId ?? null,
+      }, {
         id: existing.id,
         userId: existing.id,
         requestedUnitId: existing.orgUnitId ?? "",

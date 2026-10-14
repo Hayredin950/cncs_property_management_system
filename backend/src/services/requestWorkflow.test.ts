@@ -115,7 +115,7 @@ describe("buildTransferChanges", () => {
         newOwnerId: "staff-2",
       }),
     ).toEqual({
-      building: "Science Block",
+      buildingId: "Science Block",
       floor: "2",
       room: "204",
       ownerId: "staff-2",

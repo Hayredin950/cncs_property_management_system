@@ -534,16 +534,20 @@ describe("POST /requests/:id/approve", () => {
     });
 
     // Stage 2 approval (final)
-    primeStage2Approval();
+    primeStage2Approval({
+      newLocationBuilding: "CNCS Building",
+      newLocationFloor: "1",
+      newLocationRoom: "101",
+    });
     const res = await request(app)
       .post("/requests/req-1/approve")
       .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.request.status).toBe("APPROVED");
-    expect(res.body.itemChanges).toEqual({ floor: "1", room: "101" });
+    expect(res.body.itemChanges).toEqual({ buildingId: "CNCS Building", floor: "1", room: "101" });
     expect(res.body.cascadedItemIds).toEqual([]);
-    expect(res.body.editLogRowCount).toBe(2);
+    expect(res.body.editLogRowCount).toBe(3);
     expect(res.body.notification.code).toBe("REQUEST_APPROVED");
 
     expect(prisma.request.updateMany).toHaveBeenNthCalledWith(2, {
@@ -552,13 +556,21 @@ describe("POST /requests/:id/approve", () => {
     });
     expect(prisma.item.updateMany).toHaveBeenCalledWith({
       where: { id: "item-1", status: "ACTIVE" },
-      data: { floor: "1", room: "101" },
+      data: { buildingId: "CNCS Building", floor: "1", room: "101" },
     });
 
     const rows = vi.mocked(prisma.itemEditLog.createMany).mock.calls[0]?.[0]?.data as
       | Array<Record<string, unknown>>
       | undefined;
     expect(rows).toEqual([
+      {
+        itemId: "item-1",
+        editedById: "officer-1",
+        fieldChanged: "buildingId",
+        oldValue: "building-cncs",
+        newValue: "CNCS Building",
+        editedAt: expect.any(Date),
+      },
       {
         itemId: "item-1",
         editedById: "officer-1",
@@ -1128,7 +1140,7 @@ describe("POST /requests/:id/approve", () => {
       {
         id: "item-4",
         tagId: "CNCS-DEMO-0004",
-        building: "CNCS Building",
+        buildingId: "building-cncs",
         floor: "3",
         room: "312",
         ownerId: "staff-1",
@@ -1149,7 +1161,7 @@ describe("POST /requests/:id/approve", () => {
     );
     expect(vi.mocked(prisma.item.updateMany).mock.calls[1]?.[0]).toEqual({
       where: { id: { in: ["item-4"] }, status: "ACTIVE" },
-      data: { building: "CNCS Building", floor: "1", room: "101" },
+      data: { buildingId: "CNCS Building", floor: "1", room: "101" },
     });
 
     // One createMany for parent and child together, every row sharing editedAt
@@ -1158,16 +1170,18 @@ describe("POST /requests/:id/approve", () => {
     const rows = vi.mocked(prisma.itemEditLog.createMany).mock.calls[0]?.[0]?.data as
       | Array<{ itemId: string; fieldChanged: string; editedAt: Date; editedById: string }>
       | undefined;
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(6);
     expect(rows?.map((row) => `${row.itemId}:${row.fieldChanged}`)).toEqual([
+      "item-1:buildingId",
       "item-1:floor",
       "item-1:room",
+      "item-4:buildingId",
       "item-4:floor",
       "item-4:room",
     ]);
     expect(new Set(rows?.map((row) => row.editedAt))).toHaveProperty("size", 1);
     expect(new Set(rows?.map((row) => row.editedById))).toEqual(new Set(["officer-1"]));
-    expect(res.body.editLogRowCount).toBe(4);
+    expect(res.body.editLogRowCount).toBe(6);
   });
 
   it("cascades a disposal with a reason naming the parent tag", async () => {
@@ -1181,7 +1195,7 @@ describe("POST /requests/:id/approve", () => {
       {
         id: "item-4",
         tagId: "CNCS-DEMO-0004",
-        building: "CNCS Building",
+        buildingId: "building-cncs",
         floor: "3",
         room: "312",
         ownerId: "staff-1",

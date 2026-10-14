@@ -64,6 +64,8 @@ export type Capability =
   | "ACCOUNT_DEACTIVATE_OWN_UNIT"
   /** Deactivate privileged roles (SYSTEM_ADMIN). */
   | "ACCOUNT_DEACTIVATE_PRIVILEGED"
+  /** System configuration and monitoring (SYSTEM_ADMIN). */
+  | "SYSTEM_CONFIG"
   /**
    * Read the account list. Needed by the Property Officer to pick a holder when
    * registering an item — a name and an email are not asset data, so this does
@@ -80,6 +82,7 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "ACCOUNT_APPROVE_ANY",
     "ACCOUNT_INVITE",
     "ACCOUNT_DEACTIVATE_PRIVILEGED",
+    "SYSTEM_CONFIG",
     "USER_READ",
   ],
   // The single college-level operational role (spec 2.1.2).

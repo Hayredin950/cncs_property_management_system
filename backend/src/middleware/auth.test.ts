@@ -40,7 +40,7 @@ describe("authenticate", () => {
 
     authenticate(req, res, next);
 
-    expect(req.user).toEqual({ id: "user-1", role: "STAFF", departmentId: null });
+    expect(req.user).toEqual({ id: "user-1", role: "STAFF", orgUnitId: null });
     expect(next).toHaveBeenCalled();
   });
 
@@ -103,7 +103,7 @@ describe("optionalAuthenticate", () => {
 
     optionalAuthenticate(req, res, next);
 
-    expect(req.user).toEqual({ id: "user-1", role: "STAFF", departmentId: null });
+    expect(req.user).toEqual({ id: "user-1", role: "STAFF", orgUnitId: null });
     expect(next).toHaveBeenCalled();
   });
 

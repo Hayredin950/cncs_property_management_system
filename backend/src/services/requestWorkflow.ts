@@ -1,6 +1,7 @@
 import type { DbClient } from "../lib/dbClient.js";
 import { httpError } from "../lib/httpError.js";
 import { hasCapability } from "./permissions.js";
+import { Prisma } from "../generated/prisma/client.js";
 import {
   buildEditLogRows,
   writeEditLogRows,
@@ -88,10 +89,10 @@ export function assertDecidable(input: DecidabilityInput): void {
 
 /** The Item columns an approval is allowed to write. Nothing else is touched. */
 export interface ItemChanges {
-  building?: string;
-  floor?: string;
-  room?: string;
-  ownerId?: string;
+  buildingId?: string | null;
+  floor?: string | null;
+  room?: string | null;
+  ownerId?: string | null;
   /**
    * The holder pair (spec 4.1), written alongside `ownerId` and derived from the
    * same `newOwnerId` — see `buildTransferChanges`. They are intentionally absent
@@ -102,11 +103,19 @@ export interface ItemChanges {
    * Nullable because the columns are: disposal returns an item to `COLLEGE`, which
    * is the one holder with no id.
    */
-  holderType?: HolderTypeValue | null;
+  holderType?: "STAFF" | "DEPARTMENT" | "COLLEGE" | null;
   holderId?: string | null;
-  status?: ItemStatusValue;
-  disposalReason?: string;
-  disposedAt?: Date;
+  status?: string | null;
+  disposalReason?: string | null;
+  disposedAt?: Date | null;
+  parentItemId?: string | null;
+  currentValue?: number | null;
+  condition?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
+  photoUrl?: string | null;
+  notes?: string | null;
 }
 
 export interface TransferRequestFields {
@@ -124,7 +133,7 @@ export interface TransferRequestFields {
  */
 export function buildTransferChanges(request: TransferRequestFields): ItemChanges {
   return {
-    ...(request.newLocationBuilding ? { building: request.newLocationBuilding } : {}),
+    ...(request.newLocationBuilding ? { buildingId: request.newLocationBuilding } : {}),
     ...(request.newLocationFloor ? { floor: request.newLocationFloor } : {}),
     ...(request.newLocationRoom ? { room: request.newLocationRoom } : {}),
     ...(request.newOwnerId
@@ -182,9 +191,9 @@ export function buildAccessoryCascade(input: AccessoryCascadeInput): ItemChanges
     };
   }
 
-  const { building, floor, room, ownerId, holderType, holderId } = input.parentChanges;
+  const { buildingId, floor, room, ownerId, holderType, holderId } = input.parentChanges;
   return {
-    ...(building ? { building } : {}),
+    ...(buildingId ? { buildingId } : {}),
     ...(floor ? { floor } : {}),
     ...(room ? { room } : {}),
     // A custodian change moves the whole bundle: an accessory left recorded
@@ -288,7 +297,7 @@ export async function applyDecision(
           tagId: true,
           name: true,
           status: true,
-          building: true,
+          buildingId: true,
           floor: true,
           room: true,
           ownerId: true,
@@ -473,7 +482,7 @@ export async function applyDecision(
     //    request sat in the queue" is race-free rather than a lost update.
     const itemUpdate = await tx.item.updateMany({
       where: { id: request.item.id, status: "ACTIVE" },
-      data: itemChanges,
+      data: itemChanges as Prisma.ItemUpdateManyMutationInput,
     });
     if (itemUpdate.count === 0) {
       throw httpError(409, ERROR_ITEM_DISPOSED);
@@ -496,7 +505,7 @@ export async function applyDecision(
       select: {
         id: true,
         tagId: true,
-        building: true,
+        buildingId: true,
         floor: true,
         room: true,
         ownerId: true,
@@ -517,7 +526,7 @@ export async function applyDecision(
     if (accessories.length > 0 && hasChanges(cascade)) {
       await tx.item.updateMany({
         where: { id: { in: accessories.map((accessory) => accessory.id) }, status: "ACTIVE" },
-        data: cascade,
+        data: cascade as Prisma.ItemUpdateManyMutationInput,
       });
 
       for (const accessory of accessories) {

@@ -139,8 +139,21 @@ enum CustodyEventType {
   EDITED
 }
 
+/// Building model for the Buildings feature (Phase J #1).
+model Building {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String   @unique @db.VarChar(10)
+  description String?
+  address     String?
+  createdAt   DateTime @default(now())
+
+  items Item[] @relation("ItemBuilding")
+
+  @@index([code])
+}
+
 /// OrgUnit hierarchy: College → Department → (future: Lab/Group). One head per unit.
-/// Self-referencing via parentId for tree structure.
 model OrgUnit {
   id                 String    @id @default(uuid())
   name               String    @unique
@@ -331,7 +344,9 @@ model Item {
   /// OrgUnit link for department-level items. Replaces free-text department.
   orgUnitId    String?
   orgUnitRef   OrgUnit?    @relation("ItemOrgUnit", fields: [orgUnitId], references: [id])
-  building     String
+  /// Building relation. Replaces free-text building/floor/room.
+  buildingId   String?
+  buildingRef  Building?   @relation("ItemBuilding", fields: [buildingId], references: [id])
   floor        String
   room         String
 

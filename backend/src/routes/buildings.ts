@@ -7,6 +7,7 @@ import {
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
 import { httpError } from "../lib/httpError.js";
+import type { Prisma } from "../generated/prisma/client.js";
 
 export const buildingsRouter: ExpressRouter = Router();
 
@@ -16,6 +17,8 @@ const buildingSchema = z.object({
   description: z.string().trim().optional().nullable(),
   address: z.string().trim().optional().nullable(),
 });
+
+const buildingUpdateSchema = buildingSchema.partial();
 
 /**
  * GET /buildings — list buildings (Property Officer only).
@@ -32,7 +35,7 @@ buildingsRouter.get(
 
       const { search } = req.query;
 
-      const filters = {};
+      const filters: Prisma.BuildingWhereInput = {};
 
       if (typeof req.query.search === "string" && req.query.search.trim().length > 0) {
         const search = req.query.search.trim();
@@ -122,9 +125,12 @@ buildingsRouter.post(
         return;
       }
 
-      const building = await prisma.building.create({
-        data: parsed.data,
-      });
+      // Remove undefined values for Prisma (exactOptionalPropertyTypes)
+      const data: { name: string; code: string; description?: string | null; address?: string | null } = Object.fromEntries(
+        Object.entries(parsed.data).filter(([, v]) => v !== undefined)
+      ) as { name: string; code: string; description?: string | null; address?: string | null };
+
+      const building = await prisma.building.create({ data });
 
       res.status(201).json(building);
     } catch (err) {
@@ -152,7 +158,7 @@ buildingsRouter.put(
         return;
       }
 
-      const parsed = buildingSchema.partial().safeParse(req.body);
+      const parsed = buildingUpdateSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({
           error: "Validation failed",
@@ -167,9 +173,14 @@ buildingsRouter.put(
         return;
       }
 
+      // Remove undefined values for Prisma (exactOptionalPropertyTypes)
+      const data = Object.fromEntries(
+        Object.entries(parsed.data).filter(([, v]) => v !== undefined)
+      );
+
       const updated = await prisma.building.update({
         where: { id },
-        data: parsed.data,
+        data,
       });
 
       res.status(200).json(updated);

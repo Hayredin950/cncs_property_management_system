@@ -853,6 +853,68 @@ itemsRouter.put(
   },
 );
 
+/**
+ * POST /api/v1/items/:id/reverse-disposal
+ * Property Officer only - reverses a disposal, item returns to IN_STORE.
+ * Workflow-completeness-spec.md §4.3
+ */
+itemsRouter.post(
+  "/:id/reverse-disposal",
+  authenticate,
+  requireCapability("ITEM_EDIT_CUSTODY"),
+  validateBody(z.object({ reason: z.string().min(1, "Reason is required") })),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Item ID is required" });
+        return;
+      }
+      const body = validatedBody<{ reason: string }>(req);
+
+      const item = await prisma.item.findUnique({
+        where: { id },
+      });
+
+      if (!item) {
+        throw httpError(404, "Item not found");
+      }
+
+      if (item.status !== "DISPOSED") {
+        throw httpError(400, "Item is not disposed");
+      }
+
+      await prisma.$transaction(async (tx) => {
+        // Reverse disposal: return to ACTIVE, COLLEGE pool
+        await tx.item.update({
+          where: { id },
+          data: {
+            status: "ACTIVE",
+            holderType: "COLLEGE",
+            holderId: null,
+            disposalReason: null,
+            disposedAt: null,
+          },
+        });
+
+        // Record custody event explaining the correction
+        await recordCustodyEvent(tx, {
+          itemId: id,
+          from: { holderType: item.holderType ?? null, holderId: item.holderId ?? null },
+          to: { holderType: "COLLEGE", holderId: null },
+          eventType: "REVERTED",
+          actingUserId: req.user!.id,
+          reason: body.reason,
+        });
+      });
+
+      res.status(200).json({ message: "Disposal reversed successfully" });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 const claimSchema = z.object({
   // For orgUnitId head claiming on behalf of orgUnitId, omit or send null
   // The route determines the claimant from the authenticated user's role

@@ -1,6 +1,6 @@
 import argon2 from "argon2";
 import crypto from "node:crypto";
-import { Router, type Response, type Router as ExpressRouter } from "express";
+import { Router, type Request, type Response, type Router as ExpressRouter } from "express";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
@@ -548,7 +548,7 @@ router.post(
  */
 router.post(
   "/request-password-reset",
-  async (req: any, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       const parsed = requestPasswordResetSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -584,7 +584,7 @@ router.post(
       }
 
       res.status(200).json({ message: "If the email exists, a reset link has been sent" });
-    } catch (err) {
+    } catch (_err) {
       res.status(500).json({ error: "Failed to process request" });
     }
   }
@@ -596,7 +596,7 @@ router.post(
  */
 router.post(
   "/reset-password",
-  async (req: any, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       const parsed = resetPasswordSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -654,7 +654,7 @@ router.post(
       });
 
       res.status(200).json({ message: "Password reset successfully" });
-    } catch (err) {
+    } catch (_err) {
       res.status(500).json({ error: "Failed to reset password" });
     }
   }

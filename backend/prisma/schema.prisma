@@ -301,6 +301,10 @@ model User {
   reviewedAt   DateTime?
   /// The rejection reason, shown to the person who asked for the account.
   reviewNote   String?
+  /// Escalation fields for department head escalating to SYSTEM_ADMIN
+  escalatedAt   DateTime?
+  escalatedById String?
+  escalatedBy   User?   @relation("EscalatedBy", fields: [escalatedById], references: [id])
 
   /// Bumped whenever this account's sessions must die (password change, admin
   /// reset, and role change — gap-analysis E10). Carried in the JWT as `ver`;
@@ -340,6 +344,7 @@ model User {
   adminActions     AdminActionLog[] @relation("AdminActions")
   adminActionTargets AdminActionLog[] @relation("AdminActionTargets")
   emailTokens      EmailToken[]   @relation("EmailTokens")
+  escalatedByAccounts User[] @relation("EscalatedBy")
 
   /// The approval queue reads by status, oldest first.
   @@index([accountStatus])

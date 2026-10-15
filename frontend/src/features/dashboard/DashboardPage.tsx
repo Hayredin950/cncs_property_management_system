@@ -28,6 +28,7 @@ import { OpenFindings } from "./widgets/OpenFindings";
 import { AuditHistoryQuickList } from "./widgets/AuditHistoryQuickList";
 import { SystemStatus } from "./widgets/SystemStatus";
 import { RecentSystemEvents } from "./widgets/RecentSystemEvents";
+import { useOverdueLoans } from "../../hooks/useLoans";
 
 /**
  * `/dashboard` \u2014 Shell B/C, Staff/Admin (F1.3), frontend-design-system.md \u00a710.4.
@@ -44,6 +45,31 @@ import { RecentSystemEvents } from "./widgets/RecentSystemEvents";
  * stat with fuzzy meaning, this shows the one number the backend answers
  * precisely. Phase 3 adds the rest.
  */
+
+/**
+ * Property Officer widget grid that adjusts layout based on which widgets are visible.
+ * OverdueLoans hides when count is zero, so we conditionally render grid columns.
+ */
+function PropertyOfficerWidgets() {
+  const { data: overdueData, isPending: overduePending, isError: overdueError } = useOverdueLoans();
+  const showOverdue = !overduePending && !overdueError && overdueData && overdueData.count > 0;
+
+  if (showOverdue) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2">
+        <RecentlyRegisteredItems />
+        <OverdueLoans />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-1">
+      <RecentlyRegisteredItems />
+    </div>
+  );
+}
+
 export function DashboardPage() {
   const { user } = useAuth();
   const canDecide = canDecideRequests(user?.role);
@@ -107,10 +133,7 @@ export function DashboardPage() {
 
       {/* PROPERTY_OFFICER specific widgets */}
       {user?.role === "PROPERTY_OFFICER" && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <RecentlyRegisteredItems />
-          <OverdueLoans />
-        </div>
+        <PropertyOfficerWidgets />
       )}
 
       {/* DEPARTMENT_HEAD specific widgets */}

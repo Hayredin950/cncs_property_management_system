@@ -259,6 +259,7 @@ describe("notifyRequesterOfDecision", () => {
     const message = await notifyRequesterOfDecision({ notification: { create } } as never, {
       requestId: "req-1",
       requesterId: "staff-1",
+      requesterRole: "STAFF",
       decision: "APPROVED",
       requestType: "TRANSFER",
       itemTagId: "CNCS-DEMO-0001",

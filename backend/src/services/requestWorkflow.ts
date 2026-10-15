@@ -369,7 +369,7 @@ export async function applyDecision(
       newLocationFloor: true,
       newLocationRoom: true,
       newOwnerId: true,
-      requestedBy: { select: { id: true, fullName: true, email: true } },
+      requestedBy: { select: { id: true, fullName: true, email: true, role: true } },
       item: {
         select: {
           id: true,
@@ -689,6 +689,7 @@ export async function applyDecision(
   const notificationMessage = await notifyRequesterOfDecision(tx, {
     requestId: request.id,
     requesterId: request.requestedById,
+    requesterRole: request.requestedBy.role,
     decision: input.decision,
     requestType: request.type,
     itemTagId: request.item.tagId,

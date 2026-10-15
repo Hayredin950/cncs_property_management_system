@@ -23,33 +23,25 @@ exportRouter.get(
           holderType: "STAFF",
           status: { notIn: ["DISPOSED", "VOIDED"] },
         },
-        select: {
-          id: true,
-          tagId: true,
-          name: true,
-          category: { select: { name: true } },
-          locationBuilding: true,
-          locationFloor: true,
-          locationRoom: true,
-          condition: true,
-          status: true,
-          receivedAt: true,
+        include: {
+          category: true,
+          building: true,
         },
         orderBy: { name: "asc" },
       });
 
       // Generate CSV
-      const headers = ["Tag ID", "Name", "Category", "Building", "Floor", "Room", "Condition", "Status", "Received At"];
+      const headers = ["Tag ID", "Name", "Category", "Building", "Floor", "Room", "Condition", "Status", "Registered At"];
       const rows = items.map((item) => [
         item.tagId || "",
         item.name,
-        item.category.name,
-        item.locationBuilding || "",
-        item.locationFloor || "",
-        item.locationRoom || "",
+        (item as any).category?.name || "",
+        (item as any).building?.name || "",
+        item.floor || "",
+        item.room || "",
         item.condition,
         item.status,
-        String(item.receivedAt || ""),
+        String(item.registeredAt || ""),
       ]);
 
       const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");

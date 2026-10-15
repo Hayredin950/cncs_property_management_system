@@ -165,7 +165,7 @@ const REQUEST_LIST_SELECT = {
   requestedById: true,
   reviewedById: true,
   item: { select: { id: true, tagId: true, name: true, status: true } },
-  requestedBy: { select: { id: true, fullName: true, email: true } },
+  requestedBy: { select: { id: true, fullName: true, email: true, role: true } },
 } as const;
 
 const REQUEST_DETAIL_SELECT = {
@@ -666,7 +666,7 @@ const returnLoanSchema = z.object({
 });
 
 const withdrawSchema = z.object({
-  reason: z.string().optional(),
+  reason: z.string().trim().max(500).optional(),
 });
 
 /**

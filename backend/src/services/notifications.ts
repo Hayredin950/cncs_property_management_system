@@ -42,7 +42,11 @@ export interface RequestSubmittedInput {
 }
 
 /** "[REQUEST_SUBMITTED] Demo Staff requested a TRANSFER for item CNCS-DEMO-0001 (Dell Latitude Laptop) and it needs your review." */
-export function renderRequestSubmitted(input: RequestSubmittedInput): string {
+export function renderRequestSubmitted(input: RequestSubmittedInput, isSystemAdmin = false): string {
+  if (isSystemAdmin) {
+    // SYSTEM_ADMIN must not see asset data - strip item details
+    return `[${NOTIFICATION_CODES.REQUEST_SUBMITTED}] A ${input.requestType} request has been submitted and needs your review.`;
+  }
   return (
     `[${NOTIFICATION_CODES.REQUEST_SUBMITTED}] ${input.requesterName} requested a ` +
     `${input.requestType} for item ${input.itemTagId} (${input.itemName}) ` +
@@ -63,16 +67,22 @@ export interface RequestDecidedInput {
  * "[REQUEST_APPROVED] Your TRANSFER request for item CNCS-DEMO-0001 (Dell Latitude Laptop) was approved by System Admin."
  * "[REQUEST_REJECTED] Your DISPOSAL request for item CNCS-DEMO-0003 (Microscope) was rejected by System Admin. Reason: Item is still serviceable."
  */
-export function renderRequestDecided(input: RequestDecidedInput): string {
+export function renderRequestDecided(input: RequestDecidedInput, isSystemAdmin = false): string {
   const code =
     input.decision === "APPROVED"
       ? NOTIFICATION_CODES.REQUEST_APPROVED
       : NOTIFICATION_CODES.REQUEST_REJECTED;
   const verb = input.decision === "APPROVED" ? "approved" : "rejected";
 
-  let message =
-    `[${code}] Your ${input.requestType} request for item ${input.itemTagId} ` +
-    `(${input.itemName}) was ${verb} by ${input.reviewerName}.`;
+  let message: string;
+  if (isSystemAdmin) {
+    // SYSTEM_ADMIN must not see asset data - strip item details
+    message = `[${code}] Your ${input.requestType} request was ${verb} by ${input.reviewerName}.`;
+  } else {
+    message =
+      `[${code}] Your ${input.requestType} request for item ${input.itemTagId} ` +
+      `(${input.itemName}) was ${verb} by ${input.reviewerName}.`;
+  }
 
   const reason = input.rejectionReason?.trim();
   if (input.decision === "REJECTED" && reason) {
@@ -150,10 +160,10 @@ export async function resolveReviewerRecipients(
   client: DbClient,
   requesterId: string,
   requestType: "TRANSFER" | "DISPOSAL" | "LOAN",
-): Promise<Array<{ id: string; email: string; fullName: string }>> {
+): Promise<Array<{ id: string; email: string; fullName: string; role: string }>> {
   return client.user.findMany({
     where: reviewerRecipientsWhere(requesterId, requestType),
-    select: { id: true, email: true, fullName: true },
+    select: { id: true, email: true, fullName: true, role: true },
   });
 }
 
@@ -169,13 +179,15 @@ export interface NotifyReviewersInput extends RequestSubmittedInput {
  * Call this inside the same transaction that creates the Request so a request
  * can never exist unnotified.
  *
+ * SYSTEM_ADMIN receives stripped notifications without asset data (security rule).
+ *
  * Returns the recipients so the caller can fire the email side-channel after
  * the transaction commits.
  */
 export async function notifyReviewersOfNewRequest(
   client: DbClient,
   input: NotifyReviewersInput,
-): Promise<Array<{ id: string; email: string; fullName: string }>> {
+): Promise<Array<{ id: string; email: string; fullName: string; role: string }>> {
   const recipients = await resolveReviewerRecipients(client, input.requesterId, input.requestType);
 
   if (recipients.length === 0) {
@@ -187,11 +199,10 @@ export async function notifyReviewersOfNewRequest(
     return recipients;
   }
 
-  const message = renderRequestSubmitted(input);
   await client.notification.createMany({
     data: recipients.map((recipient) => ({
       userId: recipient.id,
-      message,
+      message: renderRequestSubmitted(input, recipient.role === "SYSTEM_ADMIN"),
       relatedRequestId: input.requestId,
       createdAt: input.createdAt,
     })),
@@ -203,15 +214,16 @@ export async function notifyReviewersOfNewRequest(
 export interface NotifyRequesterInput extends RequestDecidedInput {
   requestId: string;
   requesterId: string;
+  requesterRole: string;
   decidedAt: Date;
 }
 
-/** Single row back to whoever filed the request (F8.2). */
+/** Single row back to whoever filed the request (F8.2). SYSTEM_ADMIN receives stripped notifications. */
 export async function notifyRequesterOfDecision(
   client: DbClient,
   input: NotifyRequesterInput,
 ): Promise<string> {
-  const message = renderRequestDecided(input);
+  const message = renderRequestDecided(input, input.requesterRole === "SYSTEM_ADMIN");
   await client.notification.create({
     data: {
       userId: input.requesterId,

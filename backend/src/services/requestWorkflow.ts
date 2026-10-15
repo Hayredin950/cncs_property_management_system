@@ -138,6 +138,9 @@ export interface ItemChanges {
   serialNumber?: string | null;
   photoUrl?: string | null;
   notes?: string | null;
+  /// Claim handshake (workflow-completeness-spec.md §2): set when transfer to individual is approved
+  claimedAt?: Date | null;
+  claimDueAt?: Date | null;
 }
 
 export interface TransferRequestFields {
@@ -437,6 +440,16 @@ export async function applyDecision(
           labels[newOwner.id] = newOwner.fullName;
         }
         itemChanges = buildTransferChanges(request);
+        
+        // §2.3: Transfer to individual requires claim handshake
+        // Transfer to department (no newOwnerId) does not need claim
+        if (request.newOwnerId) {
+          itemChanges.status = "PENDING_CLAIM";
+          itemChanges.claimedAt = null;
+          // Default claim window: 7 days (same as registration)
+          const claimWindowDays = 7;
+          itemChanges.claimDueAt = new Date(Date.now() + claimWindowDays * 24 * 60 * 60 * 1000);
+        }
       }
     } else if (request.type === "DISPOSAL") {
       itemChanges = buildDisposalChanges({

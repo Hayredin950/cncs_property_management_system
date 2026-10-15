@@ -395,6 +395,7 @@ requestsRouter.post(
 /**
  * GET /api/v1/requests/pending-count
  * Staff/Admin — the badge count. Declared BEFORE `/:id` (see the header note).
+ * Matches the list endpoint's default "this-week" window for consistency.
  */
 requestsRouter.get(
   "/pending-count",
@@ -402,8 +403,23 @@ requestsRouter.get(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const user = requireUser(req);
+      
+      // Apply same "this-week" window as the list endpoint default
+      const now = new Date();
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
+      const fromDate = new Date(now.setDate(diff));
+      fromDate.setHours(0, 0, 0, 0);
+      const toDate = new Date(fromDate);
+      toDate.setDate(toDate.getDate() + 6);
+      toDate.setHours(23, 59, 59, 999);
+
       const pendingCount = await prisma.request.count({
-        where: { ...scopeToViewer(user), status: "PENDING" },
+        where: {
+          ...scopeToViewer(user),
+          status: "PENDING",
+          createdAt: { gte: fromDate, lte: toDate },
+        },
       });
       res.status(200).json({ pendingCount });
     } catch (err) {

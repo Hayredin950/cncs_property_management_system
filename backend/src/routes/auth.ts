@@ -1,4 +1,5 @@
 import argon2 from "argon2";
+import crypto from "node:crypto";
 import { Router, type Response, type Router as ExpressRouter } from "express";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
@@ -27,6 +28,15 @@ const loginLimiter =
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "At least 8 characters"),
+});
+
+const requestPasswordResetSchema = z.object({
+  email: z.string().trim().min(1, "Email is required"),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().trim().min(1, "Token is required"),
   newPassword: z.string().min(8, "At least 8 characters"),
 });
 
@@ -528,6 +538,124 @@ router.post(
 
       console.error("Accept invite error:", error instanceof Error ? error.message : error);
       return res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+/**
+ * §10.2: POST /auth/request-password-reset
+ * Initiates password reset flow. Anti-enumeration: always returns same response.
+ */
+router.post(
+  "/request-password-reset",
+  async (req: any, res: Response): Promise<void> => {
+    try {
+      const parsed = requestPasswordResetSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Email is required" });
+        return;
+      }
+
+      const email = normalizeEmail(parsed.data.email);
+
+      // Anti-enumeration: always return success, even if email doesn't exist
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, accountStatus: true },
+      });
+
+      if (user && user.accountStatus === "ACTIVE") {
+        // Generate reset token (using emailToken table for single-use expiring tokens)
+        const token = crypto.randomBytes(32).toString("hex");
+        const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        await prisma.emailToken.create({
+          data: {
+            userId: user.id,
+            type: "RESET",
+            tokenHash,
+            expiresAt,
+          },
+        });
+
+        // In production, send email with token. For now, log it.
+        console.log(`Password reset token for ${email}: ${token}`);
+      }
+
+      res.status(200).json({ message: "If the email exists, a reset link has been sent" });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to process request" });
+    }
+  }
+);
+
+/**
+ * §10.2: POST /auth/reset-password
+ * Completes password reset using the token. Bumps tokenVersion to kill old sessions.
+ */
+router.post(
+  "/reset-password",
+  async (req: any, res: Response): Promise<void> => {
+    try {
+      const parsed = resetPasswordSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Token and new password are required" });
+        return;
+      }
+
+      const tokenHash = crypto.createHash("sha256").update(parsed.data.token).digest("hex");
+
+      const tokenRecord = await prisma.emailToken.findFirst({
+        where: { tokenHash, type: "RESET" },
+        select: {
+          id: true,
+          usedAt: true,
+          expiresAt: true,
+          userId: true,
+        },
+      });
+
+      if (!tokenRecord) {
+        res.status(400).json({ error: "Invalid or expired token" });
+        return;
+      }
+
+      if (tokenRecord.usedAt) {
+        res.status(400).json({ error: "Token has already been used" });
+        return;
+      }
+
+      if (tokenRecord.expiresAt.getTime() <= Date.now()) {
+        res.status(400).json({ error: "Token has expired" });
+        return;
+      }
+
+      const passwordHash = await argon2.hash(parsed.data.newPassword, {
+        type: argon2.argon2id,
+      });
+
+      await prisma.$transaction(async (tx) => {
+        // Mark token as used
+        await tx.emailToken.update({
+          where: { id: tokenRecord.id },
+          data: { usedAt: new Date() },
+        });
+
+        // Update password and bump tokenVersion
+        await tx.user.update({
+          where: { id: tokenRecord.userId },
+          data: {
+            passwordHash,
+            tokenVersion: { increment: 1 },
+            mustChangePassword: false,
+          },
+        });
+      });
+
+      res.status(200).json({ message: "Password reset successfully" });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to reset password" });
     }
   }
 );

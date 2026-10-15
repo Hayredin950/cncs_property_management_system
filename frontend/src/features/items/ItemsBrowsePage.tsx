@@ -102,14 +102,22 @@ export function ItemsBrowsePage() {
       */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">
-          {isScoped ? "My items" : "Browse items"}
+          {mine
+            ? "My items"
+            : isScoped && user?.role === "DEPARTMENT_HEAD"
+              ? "Department items"
+              : isScoped
+                ? "My items"
+                : "Browse items"}
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          {isScoped
-            ? user?.role === "DEPARTMENT_HEAD"
-              ? "Items held in your department, plus anything you hold personally. Search by name, tag ID, or category."
-              : "The items currently in your custody. Search by name, tag ID, or category."
-            : "Search the active inventory by name, tag ID, category, or department."}
+          {mine
+            ? "The items currently in your custody. Search by name, tag ID, or category."
+            : isScoped && user?.role === "DEPARTMENT_HEAD"
+              ? "All items in your department. Search by name, tag ID, or category."
+              : isScoped
+                ? "The items currently in your custody. Search by name, tag ID, or category."
+                : "Search the active inventory by name, tag ID, category, or department."}
         </p>
       </div>
 

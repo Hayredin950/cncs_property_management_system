@@ -234,14 +234,15 @@ This document defines the navigation, dashboard widgets, notification rules, and
 ### DEPARTMENT_HEAD Verification
 - [ ] Can access Dashboard
 - [ ] Can access My Items (items they personally hold)
+- [ ] Can access Department Items (all items in their department, unit-scoped)
 - [ ] Can access Department Requests with pending-count badge
 - [ ] Can access Account Requests with pending-count badge
 - [ ] Can access Notifications with unread-notifications badge
 - [ ] Cannot see Scan, Browse Items, Reports, Buildings, Audits navigation
-- [ ] Cannot see "Department Items" in nav (removed per spec)
 - [ ] Dashboard shows Their Own Held Items widget
 - [ ] Dashboard shows Department Roster Snapshot (optional)
 - [ ] "My Items" shows only items they personally hold (not all department items)
+- [ ] "Department Items" shows all items in their department (unit-scoped)
 - [ ] Can approve transfer/disposal/loan requests within their department
 - [ ] Can approve account requests for their department
 - [ ] Cannot see items outside their department in Browse Items

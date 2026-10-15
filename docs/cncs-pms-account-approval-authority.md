@@ -173,7 +173,7 @@ a change in `resolveApprover` and the permission table only, with no schema rewr
 | Role | Nav |
 |---|---|
 | STAFF | Dashboard, My Items, My Requests, Notifications |
-| DEPARTMENT_HEAD | Dashboard, Scan a Tag, My Items, Department Items, Department Requests, Account Requests, Notifications |
+| DEPARTMENT_HEAD | Dashboard, My Items, Department Items, Department Requests, Account Requests, Notifications |
 | PROPERTY_OFFICER | Dashboard, Scan a Tag, Browse Items, Requests, Buildings, Audits, Reports, Notifications |
 | AUDITOR | Dashboard, Active Audit, Audit History, Notifications |
 | SYSTEM_ADMIN | Dashboard, Accounts, Account Requests, System Config, Notifications |

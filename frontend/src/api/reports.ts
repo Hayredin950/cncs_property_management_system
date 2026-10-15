@@ -67,6 +67,17 @@ export async function downloadAuditReport(
   return { blob, filename: `audit-report-${auditId}.${format}` };
 }
 
+/**
+ * `GET /reports/audit-evidence-pack` — consolidated multi-session export over date range (§9.4).
+ */
+export async function downloadAuditEvidencePack(
+  query: { dateFrom: string; dateTo: string },
+  format: ReportFormat = "csv",
+): Promise<ReportDownload> {
+  const blob = await apiClient.blob("/reports/audit-evidence-pack", { ...query, format });
+  return { blob, filename: `audit-evidence-pack-${todayStamp()}.${format}` };
+}
+
 /** Ties a fetched report to the browser download in one call, for click handlers. */
 export async function saveReport(fetchReport: () => Promise<ReportDownload>): Promise<string> {
   const { blob, filename } = await fetchReport();

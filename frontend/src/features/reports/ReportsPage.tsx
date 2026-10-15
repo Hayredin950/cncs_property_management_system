@@ -1,11 +1,11 @@
-import { Download, FileBarChart, FileText, MonitorCheck, ScanLine } from "lucide-react";
+import { Download, FileBarChart, FileText, MonitorCheck, ScanLine, Package } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
-import { downloadDisposalsReport, downloadInventoryReport, downloadAuditReport, saveReport } from "../../api/reports";
+import { downloadDisposalsReport, downloadInventoryReport, downloadAuditReport, downloadAuditEvidencePack, saveReport } from "../../api/reports";
 import { useCategories } from "../../hooks/useCategories";
 import { useDepartments } from "../../hooks/useDepartments";
 import { toast } from "../../lib/toast";
@@ -58,6 +58,7 @@ export function ReportsPage() {
   });
   const [disposals, setDisposals] = useState({ department: "", dateFrom: "", dateTo: "" });
   const [auditId, setAuditId] = useState("");
+  const [evidencePack, setEvidencePack] = useState({ dateFrom: "", dateTo: "" });
 
   const departmentOptions = (departmentsQuery.data ?? []).map((d) => ({ value: d.id, label: d.name }));
   const categoryOptions = (categoriesQuery.data ?? []).map((c) => ({ value: c.id, label: c.name }));
@@ -113,6 +114,23 @@ export function ReportsPage() {
       ...(disposals.dateTo ? { dateTo: disposals.dateTo } : {}),
     };
     void run(`disposals-${format}`, () => downloadDisposalsReport(query, format));
+  }
+
+  function handleEvidencePack(format: ReportFormat) {
+    const invalid = rangeError(evidencePack.dateFrom, evidencePack.dateTo);
+    if (invalid) {
+      setError(invalid);
+      toast.error(invalid);
+      return;
+    }
+    if (!evidencePack.dateFrom || !evidencePack.dateTo) {
+      setError("Both date fields are required for the evidence pack");
+      toast.error("Both date fields are required for the evidence pack");
+      return;
+    }
+    void run(`evidence-pack-${format}`, () =>
+      downloadAuditEvidencePack({ dateFrom: evidencePack.dateFrom, dateTo: evidencePack.dateTo }, format)
+    );
   }
 
   return (
@@ -285,6 +303,49 @@ export function ReportsPage() {
             onClick={() => void run("audit-csv", () => downloadAuditReport(auditId.trim(), "csv"))}
           >
             Download audit CSV
+          </Button>
+        </div>
+      </Card>
+
+      <Card role="region" aria-label="Audit evidence pack" className="flex flex-col gap-4">
+        <SectionHeading icon={<Package className="h-4 w-4" aria-hidden="true" />} title="Audit evidence pack" />
+        <p className="text-sm text-slate-600">
+          Consolidated export of multiple completed audit sessions over a date range. Aggregates sessions for control-test
+          extracts and multi-session reporting.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Date from"
+            type="date"
+            value={evidencePack.dateFrom}
+            onChange={(event) => setEvidencePack({ ...evidencePack, dateFrom: event.target.value })}
+            hint="UTC"
+          />
+          <Input
+            label="Date to"
+            type="date"
+            value={evidencePack.dateTo}
+            onChange={(event) => setEvidencePack({ ...evidencePack, dateTo: event.target.value })}
+            hint="UTC"
+          />
+        </div>
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            leftIcon={<FileText className="h-4 w-4" />}
+            loading={pendingKey === "evidence-pack-pdf"}
+            onClick={() => handleEvidencePack("pdf")}
+          >
+            Download evidence pack PDF
+          </Button>
+          <Button
+            type="button"
+            leftIcon={<Download className="h-4 w-4" />}
+            loading={pendingKey === "evidence-pack-csv"}
+            onClick={() => handleEvidencePack("csv")}
+          >
+            Download evidence pack CSV
           </Button>
         </div>
       </Card>

@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { httpError } from "../lib/httpError.js";
 import { prisma } from "../lib/prisma.js";
 import { normalizeEmail } from "../utils/email.js";
+import { executeHandover } from "./handover.js";
 
 /**
  * Privileged account invites (T6) — the only door a Head, Property Officer,
@@ -591,6 +592,20 @@ export async function acceptInvite(input: {
 
     if (user.role === "DEPARTMENT_HEAD" && user.orgUnitId) {
       /**
+       * §5: Trigger structured handover when a DEPARTMENT_HEAD accepts invite
+       */
+      const unit = await tx.orgUnit.findUnique({
+        where: { id: user.orgUnitId },
+        select: { headId: true },
+      });
+      if (unit && unit.headId && unit.headId !== user.id) {
+        await executeHandover(tx, {
+          unitId: user.orgUnitId,
+          previousHeadId: unit.headId,
+          newHeadId: user.id,
+        });
+      }
+      /**
        * `OrgUnit.headId` is how `resolveApprover` finds a head, so an invitation
        * that never set it would create a head nobody can route a request to —
        * which is exactly the "vacant head" bug in reverse.
@@ -600,24 +615,6 @@ export async function acceptInvite(input: {
         data: { headId: user.id },
       });
       headedUnitId = user.orgUnitId;
-
-      /**
-       * Department-held items lose their verification when the authority that
-       * verified them changes hands (spec 4.2/7). They stay held, and they stay
-       * ACTIVE in every other sense — what they lose is the claim that someone
-       * with authority looked at them, which the new head has not done yet.
-       *
-       * Terminal rows are skipped: a disposed or lost item has nothing left to
-       * re-verify, and moving it would rewrite history that an audit already saw.
-       */
-      await tx.item.updateMany({
-        where: {
-          orgUnitId: user.orgUnitId,
-          holderType: "DEPARTMENT",
-          status: { notIn: ["DISPOSED", "VOIDED", "LOST"] },
-        },
-        data: { status: "REVERTED_UNVERIFIED" },
-      });
     }
 
     await tx.adminActionLog.create({

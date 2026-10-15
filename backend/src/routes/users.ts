@@ -27,6 +27,7 @@ import {
   INVITE_TTL_HOURS,
   type InvitableRole,
 } from "../services/invites.js";
+import { executeHandover } from "../services/handover.js";
 
 export const usersRouter: Router = Router();
 
@@ -70,6 +71,7 @@ const userListSelect = {
   fullName: true,
   email: true,
   role: true,
+  orgUnitId: true,
   createdAt: true,
   accountStatus: true,
   reviewedAt: true,
@@ -276,6 +278,26 @@ usersRouter.post(
         data: updateData,
         select: userListSelect,
       });
+
+      // §5: Trigger structured handover when a DEPARTMENT_HEAD is activated
+      if (requestedRole === "DEPARTMENT_HEAD" && approved.orgUnitId) {
+        const unit = await prisma.orgUnit.findUnique({
+          where: { id: approved.orgUnitId },
+          select: { headId: true },
+        });
+        if (unit && unit.headId && unit.headId !== approved.id) {
+          await executeHandover(prisma, {
+            unitId: approved.orgUnitId,
+            previousHeadId: unit.headId,
+            newHeadId: approved.id,
+          });
+        }
+        // Update the unit's head
+        await prisma.orgUnit.update({
+          where: { id: approved.orgUnitId },
+          data: { headId: approved.id },
+        });
+      }
 
       res.status(200).json(toAdminUser(approved));
     } catch (err) {
@@ -750,6 +772,26 @@ usersRouter.post(
         data: { role: parsed.data.role, tokenVersion: { increment: 1 } },
         select: userListSelect,
       });
+
+      // §5: Trigger structured handover when promoted to DEPARTMENT_HEAD
+      if (parsed.data.role === "DEPARTMENT_HEAD" && updated.orgUnitId) {
+        const unit = await prisma.orgUnit.findUnique({
+          where: { id: updated.orgUnitId },
+          select: { headId: true },
+        });
+        if (unit && unit.headId && unit.headId !== updated.id) {
+          await executeHandover(prisma, {
+            unitId: updated.orgUnitId,
+            previousHeadId: unit.headId,
+            newHeadId: updated.id,
+          });
+        }
+        // Update the unit's head
+        await prisma.orgUnit.update({
+          where: { id: updated.orgUnitId },
+          data: { headId: updated.id },
+        });
+      }
 
       res.status(200).json(toAdminUser(updated));
     } catch (err) {

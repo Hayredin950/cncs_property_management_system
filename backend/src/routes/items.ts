@@ -9,6 +9,7 @@ import {
   requireCapability,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
+import { validateBody, validatedBody } from "../middleware/validate.js";
 import {
   ALLOWED_PHOTO_TYPES,
   PHOTO_FIELD_NAME,

@@ -665,6 +665,10 @@ const returnLoanSchema = z.object({
   notes: z.string().trim().max(1000).nullable().optional(),
 });
 
+const withdrawSchema = z.object({
+  reason: z.string().optional(),
+});
+
 /**
  * POST /api/v1/requests/:id/withdraw
  * Requester only, while status is PENDING, PENDING_STAGE1, or PENDING_STAGE2.
@@ -712,10 +716,6 @@ requestsRouter.post(
     }
   },
 );
-
-const withdrawSchema = z.object({
-  reason: z.string().optional(),
-});
 
 /**
  * POST /api/v1/requests/:id/return

@@ -51,3 +51,10 @@ export function rejectRequest(id: string, rejectionReason: string): Promise<Deci
     rejectionReason,
   });
 }
+
+/** `POST /requests/:id/withdraw` — Requester only, while PENDING/PENDING_STAGE1/PENDING_STAGE2. */
+export function withdrawRequest(id: string, reason?: string): Promise<RequestByIdResponse> {
+  return apiClient.post<RequestByIdResponse>(`/requests/${encodeURIComponent(id)}/withdraw`, {
+    reason,
+  });
+}

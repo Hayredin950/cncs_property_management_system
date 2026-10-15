@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { approveRequest, createRequest, rejectRequest } from "../api/requests";
+import { approveRequest, createRequest, rejectRequest, withdrawRequest } from "../api/requests";
 import { toast } from "../lib/toast";
 import { REQUEST_TYPE_LABELS } from "../types/enums";
-import type { CreateRequestPayload, CreateRequestResponse, DecideRequestResponse } from "../types/request";
+import type { CreateRequestPayload, CreateRequestResponse, DecideRequestResponse, RequestByIdResponse } from "../types/request";
 
 export function useCreateRequest() {
   const queryClient = useQueryClient();
@@ -41,5 +41,18 @@ export function useDecideRequest(requestId: string) {
       void queryClient.invalidateQueries({ queryKey: ["item-history"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't record the decision"),
+  });
+}
+
+export function useWithdrawRequest(requestId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<RequestByIdResponse, Error, { reason?: string }>({
+    mutationFn: ({ reason }: { reason?: string }) => withdrawRequest(requestId, reason),
+    onSuccess: () => {
+      toast.success("Request withdrawn — it will not be reviewed.");
+      void queryClient.invalidateQueries({ queryKey: ["requests"] });
+      void queryClient.invalidateQueries({ queryKey: ["request", requestId] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't withdraw the request"),
   });
 }

@@ -11,7 +11,7 @@ import { Skeleton, SkeletonText } from "../../components/Skeleton";
 import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBadges";
 import { Textarea } from "../../components/Textarea";
 import { fetchRequestById } from "../../api/requests";
-import { useDecideRequest } from "../../hooks/useRequestMutations";
+import { useDecideRequest, useWithdrawRequest } from "../../hooks/useRequestMutations";
 import { canDecideRequests } from "../../lib/permissions";
 import { formatDateTimeUTC, formatRelativeTime } from "../../lib/formatters";
 import { ApiError, NetworkError } from "../../types/api";
@@ -76,7 +76,8 @@ export function RequestDetailPage() {
   }
 
   const request = requestQuery.data.request;
-  const decided = request.status !== "PENDING";
+  const decided = request.status !== "PENDING" && request.status !== "PENDING_STAGE1" && request.status !== "PENDING_STAGE2";
+  const isOwnRequest = user?.id === request.requestedBy.id;
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -132,6 +133,8 @@ export function RequestDetailPage() {
       </Card>
 
       {canDecide && !decided && <DecisionPanel requestId={request.id} itemLabel={`${request.item.name} (${request.item.tagId})`} onDecisionComplete={setDecisionResult} />}
+
+      {isOwnRequest && !decided && !canDecide && <WithdrawPanel requestId={request.id} itemLabel={`${request.item.name} (${request.item.tagId})`} />}
 
       {decisionResult && (
         <Card className="border-brand-200 bg-brand-50">
@@ -217,6 +220,58 @@ function DecisionPanel({ requestId, itemLabel, onDecisionComplete }: { requestId
         loading={decide.isPending}
         itemLabel={itemLabel}
       />
+    </>
+  );
+}
+
+function WithdrawPanel({ requestId, itemLabel }: { requestId: string; itemLabel: string }) {
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const withdraw = useWithdrawRequest(requestId);
+
+  const handleWithdraw = () => {
+    withdraw.mutate({ reason: reason.trim() || undefined }, {
+      onSuccess: () => {
+        setWithdrawOpen(false);
+        setReason("");
+      },
+    });
+  };
+
+  return (
+    <>
+      <Card className="flex justify-end">
+        <Button variant="outline" onClick={() => setWithdrawOpen(true)} loading={withdraw.isPending}>
+          Withdraw Request
+        </Button>
+      </Card>
+
+      <Modal open={withdrawOpen} onClose={() => setWithdrawOpen(false)} title="Withdraw this request?">
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-slate-600">
+            This will cancel your request for <strong>{itemLabel}</strong>. The reviewers will be notified that you've withdrawn it.
+          </p>
+          <Textarea
+            label="Reason (optional)"
+            hint="Explain why you're withdrawing this request."
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setWithdrawOpen(false)} disabled={withdraw.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              loading={withdraw.isPending}
+              onClick={handleWithdraw}
+            >
+              Withdraw
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

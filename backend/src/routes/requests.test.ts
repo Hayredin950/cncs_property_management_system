@@ -32,6 +32,7 @@ vi.mock("../lib/prisma.js", () => {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
       updateMany: vi.fn(),
       count: vi.fn(),
     },
@@ -1366,6 +1367,88 @@ describe("POST /requests/:id/reject", () => {
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: "You cannot decide your own request" });
     expectNoWrites();
+  });
+});
+
+describe("POST /requests/:id/withdraw", () => {
+  it("allows the original requester to withdraw a pending request", async () => {
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({ id: "req-1", requestedById: "staff-1", status: "PENDING" }) as never,
+    );
+    vi.mocked(prisma.request.update).mockResolvedValueOnce({
+      id: "req-1",
+      status: "WITHDRAWN",
+      withdrawnAt: new Date(),
+      withdrawnById: "staff-1",
+      reason: "No longer needed",
+    } as never);
+
+    const staffToken = createToken(makeUser({ id: "staff-1", role: "STAFF" }));
+
+    const res = await request(app)
+      .post("/requests/req-1/withdraw")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ reason: "No longer needed" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("WITHDRAWN");
+    expect(prisma.request.update).toHaveBeenCalledWith({
+      where: { id: "req-1" },
+      data: {
+        status: "WITHDRAWN",
+        withdrawnAt: expect.any(Date),
+        withdrawnById: "staff-1",
+        reason: "No longer needed",
+      },
+    });
+  });
+
+  it("forbids non-requester from withdrawing", async () => {
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({ id: "req-1", requestedById: "staff-1", status: "PENDING" }) as never,
+    );
+
+    const officerToken = createToken(makeOfficer());
+
+    const res = await request(app)
+      .post("/requests/req-1/withdraw")
+      .set("Authorization", `Bearer ${officerToken}`)
+      .send({ reason: "Not needed" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Only the original requester can withdraw this request");
+  });
+
+  it("forbids withdrawal of already approved requests", async () => {
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({ id: "req-1", requestedById: "staff-1", status: "APPROVED" }) as never,
+    );
+
+    const staffToken = createToken(makeUser({ id: "staff-1", role: "STAFF" }));
+
+    const res = await request(app)
+      .post("/requests/req-1/withdraw")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ reason: "Changed mind" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Can only withdraw requests that have not been approved");
+  });
+
+  it("forbids withdrawal of rejected requests", async () => {
+    vi.mocked(prisma.request.findUnique).mockResolvedValueOnce(
+      makeRequest({ id: "req-1", requestedById: "staff-1", status: "REJECTED" }) as never,
+    );
+
+    const staffToken = createToken(makeUser({ id: "staff-1", role: "STAFF" }));
+
+    const res = await request(app)
+      .post("/requests/req-1/withdraw")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ reason: "Changed mind" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Can only withdraw requests that have not been approved");
   });
 });
 

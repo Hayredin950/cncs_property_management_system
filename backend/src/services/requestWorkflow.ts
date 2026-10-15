@@ -60,6 +60,28 @@ export const ERROR_DANGLING_OWNER = "newOwnerId does not match an existing user"
 export const ERROR_REQUEST_NOT_FOUND = "Request not found";
 export const ERROR_ITEM_NOT_FOUND = "Item not found";
 
+/**
+ * Invalidate pending requests when item status changes.
+ * Workflow-completeness-spec.md §1.4
+ */
+export async function invalidateStaleRequests(
+  prisma: DbClient,
+  itemId: string,
+  reason: string,
+): Promise<void> {
+  await prisma.request.updateMany({
+    where: {
+      itemId,
+      status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2", "WAITLISTED"] },
+    },
+    data: {
+      status: "INVALIDATED",
+      invalidatedAt: new Date(),
+      invalidatedReason: reason,
+    },
+  });
+}
+
 export interface DecidabilityInput {
   requestStatus: RequestStatusValue;
   itemStatus: ItemStatusValue;
@@ -486,6 +508,15 @@ export async function applyDecision(
     });
     if (itemUpdate.count === 0) {
       throw httpError(409, ERROR_ITEM_DISPOSED);
+    }
+
+    // Invalidate pending requests on this item (workflow-completeness-spec.md §1.4)
+    if (itemChanges.status === "DISPOSED" || itemChanges.status === "VOIDED") {
+      await invalidateStaleRequests(
+        tx,
+        request.item.id,
+        `Item status changed to ${itemChanges.status} before this request could be decided`,
+      );
     }
 
     editLogRows = buildEditLogRows({

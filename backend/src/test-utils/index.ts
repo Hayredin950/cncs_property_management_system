@@ -166,7 +166,7 @@ export function makeItem(overrides: Partial<TestItem> = {}): TestItem {
 export interface TestRequest {
   id: string;
   type: "TRANSFER" | "DISPOSAL" | "LOAN";
-  status: "PENDING" | "PENDING_STAGE1" | "PENDING_STAGE2" | "APPROVED" | "REJECTED" | "WAITLISTED";
+  status: "PENDING" | "PENDING_STAGE1" | "PENDING_STAGE2" | "APPROVED" | "REJECTED" | "WAITLISTED" | "WITHDRAWN" | "INVALIDATED";
   reason: string;
   rejectionReason: string | null;
   itemId: string;
@@ -187,6 +187,10 @@ export interface TestRequest {
   stage2ApprovedAt: Date | null;
   loanReturnedAt: Date | null;
   loanReturnedById: string | null;
+  withdrawnAt: Date | null;
+  withdrawnById: string | null;
+  invalidatedAt: Date | null;
+  invalidatedReason: string | null;
 }
 
 export function makeRequest(overrides: Partial<TestRequest> = {}): TestRequest {
@@ -214,6 +218,10 @@ export function makeRequest(overrides: Partial<TestRequest> = {}): TestRequest {
     stage2ApprovedAt: null,
     loanReturnedAt: null,
     loanReturnedById: null,
+    withdrawnAt: null,
+    withdrawnById: null,
+    invalidatedAt: null,
+    invalidatedReason: null,
     ...overrides,
     item,
   };

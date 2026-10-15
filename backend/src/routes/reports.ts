@@ -597,3 +597,81 @@ reportsRouter.get(
     }
   },
 );
+
+/**
+ * §9.4: GET /reports/audit-evidence-pack - Auditor consolidated date-range evidence pack
+ * Aggregates multiple completed audit sessions for a scope over a date range
+ */
+reportsRouter.get(
+  "/audit-evidence-pack",
+  authenticate,
+  requireCapability("AUDIT_VIEW"),
+  validateQuery(
+    z.object({
+      dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      format: FORMAT,
+    }),
+  ),
+  async (req: ValidatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const query = validatedQuery(req) as { dateFrom: string; dateTo: string; format: "csv" | "pdf" };
+      const dateFrom = new Date(query.dateFrom);
+      const dateTo = new Date(query.dateTo);
+      dateTo.setHours(23, 59, 59, 999);
+
+      const sessions = await prisma.auditSession.findMany({
+        where: {
+          startedAt: { gte: dateFrom, lte: dateTo },
+          completedAt: { not: null },
+        },
+        select: {
+          id: true,
+          sessionNumber: true,
+          type: true,
+          startedAt: true,
+          completedAt: true,
+          runBy: { select: { fullName: true, email: true } },
+          scope: true,
+          itemCount: true,
+        },
+      });
+
+      const headers = [
+        "Session Number",
+        "Type",
+        "Auditor Name",
+        "Auditor Email",
+        "Scope",
+        "Started At",
+        "Completed At",
+        "Item Count",
+      ];
+      const rows: Array<Record<string, CsvValue>> = sessions.map((s) => ({
+        sessionNumber: s.sessionNumber,
+        type: s.type,
+        auditorName: s.runBy.fullName,
+        auditorEmail: s.runBy.email,
+        scope: s.scope,
+        startedAt: s.startedAt.toISOString(),
+        completedAt: s.completedAt?.toISOString() ?? "",
+        itemCount: s.itemCount,
+      }));
+
+      if (query.format === "pdf") {
+        sendPdf(
+          res,
+          `audit-evidence-pack-${todayStamp()}.pdf`,
+          "CNCS Property - Audit Evidence Pack",
+          headers,
+          rows,
+          metaLines(rows.length)
+        );
+        return;
+      }
+      sendCsv(res, `audit-evidence-pack-${todayStamp()}.csv`, toCsv(headers, rows));
+    } catch (err) {
+      next(err);
+    }
+  }
+);

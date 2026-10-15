@@ -118,6 +118,7 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "TRANSFER_APPROVE_STAGE2",
     "ACCOUNT_APPROVE_OWN_UNIT",
     "ACCOUNT_DEACTIVATE_OWN_UNIT",
+    "REPORT_VIEW_ALL",
   ],
   // Scoped to one department. Holds and claims items, files requests, edits
   // condition and notes of what they hold — nothing else.

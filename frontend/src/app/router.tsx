@@ -1,6 +1,7 @@
 import { createBrowserRouter, Outlet, type RouteObject } from "react-router-dom";
 import { AdminCategoriesPage } from "../features/admin/AdminCategoriesPage";
 import { AdminUsersPage } from "../features/admin/AdminUsersPage";
+import { SystemStatusPage } from "../features/admin/SystemStatusPage";
 import { AuditListPage } from "../features/audits/AuditListPage";
 import { AuditNewPage } from "../features/audits/AuditNewPage";
 import { AuditReportPage } from "../features/audits/AuditReportPage";
@@ -198,7 +199,10 @@ export const appRoutes: RouteObject[] = [
                 <Outlet />
               </RequireAuth>
             ),
-            children: [{ path: "/admin/users", element: <AdminUsersPage /> }],
+            children: [
+              { path: "/admin/users", element: <AdminUsersPage /> },
+              { path: "/admin/system", element: <SystemStatusPage /> },
+            ],
           },
         ],
       },

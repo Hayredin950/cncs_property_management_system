@@ -2,6 +2,15 @@ import { Card } from "../../../components/Card";
 import { SkeletonText } from "../../../components/Skeleton";
 import { useSystemStatus } from "../../../hooks/useSystem";
 
+function formatUptime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
 export function SystemStatus() {
   const { data, isPending, isError } = useSystemStatus();
 
@@ -27,7 +36,9 @@ export function SystemStatus() {
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-slate-600">Uptime:</span>
-            <span className="font-medium text-slate-900">{data?.uptime ?? "Unknown"}</span>
+            <span className="font-medium text-slate-900">
+              {typeof data?.uptime === "number" ? formatUptime(data.uptime) : "Unknown"}
+            </span>
           </div>
         </div>
       )}

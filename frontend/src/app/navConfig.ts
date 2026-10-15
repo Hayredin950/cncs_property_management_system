@@ -76,10 +76,11 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "New item", to: "/items/new", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
   { label: "Active Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["AUDITOR"], phase: 3 },
   { label: "Audit history", to: "/audits", icon: History, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
-  { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER"], phase: 3 },
+  { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
   // The queue and the account list are one screen, so they are one row: the
   // "Waiting for approval" panel sits above "Create an account" on `/admin/users`.
   { label: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN"], phase: 2, badge: "pending-count" },
+  { label: "System Status", to: "/admin/system", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN"], phase: 3 },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
 ];
 

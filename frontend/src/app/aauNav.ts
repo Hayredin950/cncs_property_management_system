@@ -140,7 +140,10 @@ export function staffNav(role: Role): AauNavEntry[] {
       sections: [
         {
           heading: "Access",
-          links: [{ label: "Accounts", to: "/admin/users" }],
+          links: [
+            { label: "Accounts", to: "/admin/users" },
+            { label: "System Status", to: "/admin/system" },
+          ],
         },
         {
           heading: "Notifications",

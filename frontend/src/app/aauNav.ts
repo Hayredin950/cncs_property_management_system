@@ -13,6 +13,7 @@ import {
   canViewAudits,
   canViewReports,
   hasCapability,
+  seesAllItems,
 } from "../lib/permissions";
 import type { Role } from "../types/enums";
 
@@ -150,7 +151,20 @@ export function staffNav(role: Role): AauNavEntry[] {
     return entries;
   }
 
-  const assetLinks: AauNavLink[] = [{ label: "All items", to: "/items" }];
+  /**
+   * "All items" is only true for a role that is given the college's register.
+   *
+   * `/items` is the same URL for every role — the server scopes it
+   * (`services/itemScope.ts`) — so a Staff member following a link labelled "All
+   * items" arrives at a list of only their own holdings and concludes the
+   * register is empty. The label now says which of the two they are about to see,
+   * and points at the sidebar's own "My Items" address so the two agree.
+   */
+  const assetLinks: AauNavLink[] = [
+    seesAllItems(role)
+      ? { label: "All items", to: "/items" }
+      : { label: "My items", to: "/items?mine=true" },
+  ];
   if (canCreateItems(role)) {
     assetLinks.push({ label: "Register new item", to: "/items/new" });
   }

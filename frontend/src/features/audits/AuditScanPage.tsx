@@ -115,7 +115,7 @@ export function AuditScanPage() {
         const item = await fetchItemByTagId(tagId);
         const row = await scanMutation.mutateAsync(item.id);
         const next = appendScan(walkthrough, {
-          itemId: row.item.id,
+          itemId: row.itemId,
           tagId: row.item.tagId,
           name: row.item.name,
           room: row.item.room,

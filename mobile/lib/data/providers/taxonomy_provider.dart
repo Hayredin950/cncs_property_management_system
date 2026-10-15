@@ -48,6 +48,14 @@ class ApprovalsListNotifier extends AsyncNotifier<List<UserSummary>> {
 final approvalsProvider =
     AsyncNotifierProvider<ApprovalsListNotifier, List<UserSummary>>(ApprovalsListNotifier.new);
 
+/// `GET /departments/invitable` — the unit picker on the invite form (T6).
+///
+/// A plain `FutureProvider`: the college's departments change rarely, and every
+/// consumer wants all of them.
+final invitableUnitsProvider = FutureProvider<List<InvitableUnit>>((ref) {
+  return ref.watch(usersApiProvider).invitableUnits();
+});
+
 /// Admin-only account mutations. Every one of these is **Admin only**, enforced
 /// server-side; this class does not check the role, because a client-side role
 /// check is theatre — the screen's job is simply not to *offer* the action to a
@@ -57,23 +65,32 @@ class UserActions {
 
   final Ref _ref;
 
-  /// `POST /auth/register`. A duplicate email answers `409`, which the caller shows
-  /// inline under the email field rather than as a toast: it is a field-level
-  /// validation failure, not a system event.
-  Future<AuthUser> create({
-    required String fullName,
+  /// `POST /users/invite` — the privileged invite (T6), which replaced
+  /// `POST /auth/register` on 14 Oct. There is no password parameter, and that is
+  /// the requirement rather than an omission: only the invitee ever sets one.
+  ///
+  /// A refusal the server raises (an email that already has an account, a
+  /// department that already has a head, an address inviting itself) is a field or
+  /// form-level failure the caller shows inline — the same rule the categories
+  /// screen follows for a duplicate name.
+  Future<InviteResult> invite({
     required String email,
-    required String password,
     required String role,
+    String? unitId,
+    required String authorizedBy,
+    required String authorizationRef,
+    String? authorizationNote,
   }) async {
-    final user = await _ref.read(authApiProvider).register(
-          fullName: fullName,
+    final result = await _ref.read(usersApiProvider).invite(
           email: email,
-          password: password,
           role: role,
+          unitId: unitId,
+          authorizedBy: authorizedBy,
+          authorizationRef: authorizationRef,
+          authorizationNote: authorizationNote,
         );
     _ref.invalidate(usersProvider);
-    return user;
+    return result;
   }
 
   /// `PATCH /users/:id` — correct a name or email. A taken email is a `409` again.

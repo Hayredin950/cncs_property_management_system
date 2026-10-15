@@ -6,7 +6,6 @@ import { httpError } from "../lib/httpError.js";
 import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
-  optionalAuthenticate,
   requireCapability,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
@@ -29,46 +28,12 @@ import {
   uploadItemPhoto,
 } from "../services/photoStorage.js";
 import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
+import { itemInScope, itemListScope } from "../services/itemScope.js";
 import { isAuthenticatedViewer, sanitizeItem } from "../utils/filterItemFields.js";
 import { capabilitiesFor } from "../services/permissions.js";
 import { isPhotoSource } from "../utils/photoSource.js";
 
 export const itemsRouter: Router = Router();
-
-/**
- * The `where` fragment limiting a listing to what the viewer may see.
- * `undefined` means "no restriction"; an empty `in` list matches nothing, which
- * is how a role with no asset access is expressed (rather than by omitting a
- * clause and accidentally matching everything).
- */
-function itemListScope(
-  user?: AuthenticatedRequest["user"],
-): Prisma.ItemWhereInput | undefined {
-  if (!user) return undefined; // public listing; the public routes go in a later Phase A step
-  switch (user.role) {
-    // The college-wide operational and read-only roles.
-    case "PROPERTY_OFFICER":
-    case "AUDITOR":
-      return undefined;
-    // Account administration only — sees no asset data (spec 2.1.1).
-    case "SYSTEM_ADMIN":
-      return { id: { in: [] } };
-    // Own holdings only, via either the legacy owner link or the holder fields.
-    case "STAFF":
-      return { OR: [{ ownerId: user.id }, { holderType: "STAFF", holderId: user.id }] };
-    // Their orgUnitId's holdings, plus anything they personally hold.
-    case "DEPARTMENT_HEAD":
-      return user.orgUnitId
-        ? {
-            OR: [
-              { orgUnitId: user.orgUnitId },
-              { holderType: "DEPARTMENT", holderId: user.orgUnitId },
-              { ownerId: user.id },
-            ],
-          }
-        : { ownerId: user.id };
-  }
-}
 
 const ConditionEnum = z.enum(["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"]);
 
@@ -242,7 +207,15 @@ function cleanDefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
 
 itemsRouter.get(
   "/",
-  optionalAuthenticate,
+  /**
+   * `authenticate`, not `optionalAuthenticate`. The optional variant failed open:
+   * a missing *or expired* token continued as a guest, and this handler answered a
+   * guest with the whole register — every tag id, room and condition, no token
+   * needed. Requiring authentication is what makes the scope filter below mean
+   * something, and it fails closed on a stale token instead of degrading to
+   * "everyone".
+   */
+  authenticate,
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
@@ -252,6 +225,12 @@ itemsRouter.get(
       const { search, categoryId, orgUnitId, mine } = req.query;
 
       const filters: Prisma.ItemWhereInput = {};
+      /**
+       * Every term that must hold. Collected as a list rather than assigned
+       * straight to `filters.AND` so the role scope and the `mine` narrowing
+       * compose instead of one overwriting the other.
+       */
+      const conditions: Prisma.ItemWhereInput[] = [];
 
       if (typeof search === "string" && search.trim().length > 0) {
         filters.OR = [
@@ -268,22 +247,37 @@ itemsRouter.get(
         filters.orgUnitId = { contains: orgUnitId, mode: "insensitive" };
       }
 
-      // Handle mine=true for "My Items" view
-      if (mine === "true" && req.user) {
-        const user = req.user;
-        if (user.role === "STAFF") {
-          // Staff sees only their own items
-          filters.OR = [
-            { holderType: "STAFF", holderId: user.id },
-            { ownerId: user.id },
-          ];
-        } else if (user.role === "DEPARTMENT_HEAD") {
-          // Department head's "My Items" = items they personally hold (not orgUnitId items)
-          filters.OR = [
-            { holderType: "STAFF", holderId: user.id },
-            { ownerId: user.id },
-          ];
-        }
+      /**
+       * `mine=true` — the "My Items" view.
+       *
+       * A **narrowing**, never a permission. It is pushed as an `AND` term on top
+       * of the role scope below, so it can only ever shrink what the caller may
+       * already see; it cannot grant a row the scope withholds.
+       *
+       * It used to be assigned to `filters.OR`, which had two defects. It wiped
+       * out the search `OR` above, so a search typed inside "My Items" was
+       * silently ignored and the whole list came back — a wrong-result bug users
+       * hit by doing the obvious thing. And it was the *only* filter for a Staff
+       * caller, so "mine" meant "no scope clause", which is the wrong shape for a
+       * visibility rule even when the result coincides. Composing fixes both.
+       *
+       * Only Staff and Department Head have a personal "mine": for them the
+       * personally-held rows are the entire point of the view (a head's personal
+       * items, not their whole department's). Other roles gain nothing — an
+       * officer's general scope already includes their own, and the
+       * SYSTEM_ADMIN's scope is empty by construction.
+       */
+      if (
+        mine === "true" &&
+        req.user &&
+        (req.user.role === "STAFF" || req.user.role === "DEPARTMENT_HEAD")
+      ) {
+        conditions.push({
+          OR: [
+            { holderType: "STAFF", holderId: req.user.id },
+            { ownerId: req.user.id },
+          ],
+        });
       }
 
       /**
@@ -298,7 +292,11 @@ itemsRouter.get(
        */
       const scope = itemListScope(req.user);
       if (scope) {
-        filters.AND = [scope];
+        conditions.push(scope);
+      }
+
+      if (conditions.length > 0) {
+        filters.AND = conditions;
       }
 
       /**
@@ -347,37 +345,94 @@ itemsRouter.get(
 );
 
 /**
- * GET /items/recent — last N registered items (Property Officer only).
- * Used for the "Recently registered items" dashboard widget.
+ * `GET /items/recent?limit=5` — the last few registered items, for the Property
+ * Officer's dashboard tile (`ITEM_READ_ALL`, so Officer/Admin only).
+ *
+ * **Declared above `GET /:tagId` on purpose, and it has to stay there.** Express
+ * matches in registration order, so a literal path sitting below a single-segment
+ * param route is unreachable: `/items/recent` matched `/:tagId` with
+ * `tagId === "recent"`, the lookup below found no such tag, and the tile was told
+ * the item did not exist — which it renders as "no items registered yet"
+ * (14 Oct audit). `items.test.ts` pins the order through the real app, so moving
+ * this back down fails the suite rather than quietly emptying a dashboard.
  */
 itemsRouter.get(
   "/recent",
   authenticate,
-  requireCapability("ITEM_CREATE"),
+  requireCapability("ITEM_READ_ALL"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const limit = Math.min(10, Math.max(1, parseInt(req.query.limit as string, 10) || 5));
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 5));
 
       const items = await prisma.item.findMany({
+        where: { status: "ACTIVE" },
         take: limit,
         orderBy: { registeredAt: "desc" },
-        include: {
-          category: true,
-          owner: {
-            select: { id: true, fullName: true, email: true },
-          },
+        select: {
+          id: true,
+          name: true,
+          tagId: true,
+          registeredAt: true,
         },
       });
 
-      const sanitizedItems = items.map((item) =>
-        sanitizeItem(item as unknown as Record<string, unknown>, req.user),
-      );
-
-      res.status(200).json({ data: sanitizedItems });
+      res.status(200).json(items);
     } catch (err) {
       next(err);
     }
-  },
+  }
+);
+
+/**
+ * `GET /items/held-by-me?summary=true` — how many active items this account holds
+ * (as `holderId` or as `ownerId`), for its dashboard tile. Any signed-in role: the
+ * question it answers is "mine", which needs no capability.
+ *
+ * Declared above `GET /:tagId` for the same reason as `/recent` — see the comment
+ * there. Below it, `/:tagId` matched with `tagId === "held-by-me"` and answered
+ * 404, so the tile counted zero whatever the register held.
+ */
+itemsRouter.get(
+  "/held-by-me",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+
+      const summary = req.query.summary === "true";
+
+      const where: Prisma.ItemWhereInput = {
+        OR: [
+          { holderType: "STAFF", holderId: req.user.id },
+          { ownerId: req.user.id },
+        ],
+        status: "ACTIVE",
+      };
+
+      if (summary) {
+        const count = await prisma.item.count({ where });
+        res.status(200).json({ count });
+      } else {
+        const items = await prisma.item.findMany({
+          where,
+          select: {
+            id: true,
+            name: true,
+            tagId: true,
+            status: true,
+            category: { select: { name: true } },
+          },
+          orderBy: { registeredAt: "desc" },
+        });
+        res.status(200).json(items);
+      }
+    } catch (err) {
+      next(err);
+    }
+  }
 );
 
 /** Matches a v4-ish uuid. Used to tell `GET /items/:id` from `GET /items/:tagId`. */
@@ -424,15 +479,33 @@ itemsRouter.get(
       }
 
       /**
+       * The scope check the listing has always had and this route did not (14 Oct
+       * audit, §10.2). Without it a STAFF member's list was correctly empty while
+       * `GET /items/<someone else's id>` answered 200 — the list was never the
+       * boundary, the row is.
+       *
+       * Answered as 404, not 403: a 403 would confirm that the tag exists and turn
+       * this route into an oracle for guessing tag ids (ground rule 3).
+       */
+      if (!itemInScope(req.user, item as unknown as Parameters<typeof itemInScope>[1])) {
+        res.status(404).json({ error: "Item not found" });
+        return;
+      }
+
+      /**
        * SRS F7.3 — "Disposed items are not scannable/viewable by the public (tag
        * lookup for a disposed item shows 'this item is no longer in service',
        * nothing else)." Hence 410 with only that sentence: no tagId, no name, no
        * disposal reason. "Nothing else" is the operative phrase.
        *
-       * Gated on the viewer, though, because F7.2 says a disposed item "remains
-       * queryable in reports/history" and the SRS 3.4 visibility table gives
-       * Staff/Admin every field. An admin scanning a disposed tag needs the
-       * record, not an error — the restriction is on the public, not on the row.
+       * ── Open question this gate now raises ────────────────────────────────
+       * The gate's audience was "the public", and this route requires a token as of
+       * §10.1, so `isAuthenticatedViewer` is true for every caller that reaches it
+       * and the 410 is currently unreachable. It is left in place rather than
+       * deleted because F7.3 is still the spec: what needs deciding is *who* should
+       * be told "no longer in service" now that no anonymous viewer can reach this
+       * route at all — a staff member looking up their own disposed item should get
+       * the record, per F7.2. Flagged for the next phase rather than guessed at here.
        */
       if (item.status === "DISPOSED" && !isAuthenticatedViewer(req.user)) {
         res.status(410).json({ error: DISPOSED_PUBLIC_MESSAGE });
@@ -773,44 +846,7 @@ itemsRouter.put(
         { maxWait: 5000, timeout: 15000 },
       );
 
-res.status(200).json(updatedItem);
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-/**
- * GET /items/held-by-me — items currently held by the authenticated user.
- * Used for the "Their own held items" widget (Department Head and Staff).
- */
-itemsRouter.get(
-  "/held-by-me",
-  authenticate,
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const user = req.user!;
-      const where: Record<string, unknown> = {
-        status: "ACTIVE",
-        OR: [
-          { holderType: "STAFF", holderId: user.id },
-          ...(user.orgUnitId ? [{ holderType: "DEPARTMENT", holderId: user.orgUnitId }] : []),
-        ],
-      };
-
-      const items = await prisma.item.findMany({
-        where,
-        orderBy: { registeredAt: "desc" },
-        include: {
-          category: true,
-        },
-      });
-
-      const sanitizedItems = items.map((item) =>
-        sanitizeItem(item as unknown as Record<string, unknown>, req.user),
-      );
-
-      res.status(200).json({ data: sanitizedItems, total: items.length });
+      res.status(200).json(updatedItem);
     } catch (err) {
       next(err);
     }
@@ -1043,3 +1079,5 @@ const item = await prisma.item.findUnique({
     }
   }
 );
+
+

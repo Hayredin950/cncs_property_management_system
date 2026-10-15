@@ -22,16 +22,21 @@ export type TestRole =
   | "AUDITOR";
 
 /**
- * Signs a JWT with the same `{ id, role }` payload routes/auth.ts issues.
+ * Signs a JWT with the same `{ id, role, orgUnitId }` payload routes/auth.ts issues.
  *
  * `ver` is optional and deliberately omitted by most tests: a token with no
  * `ver` takes `authenticate`'s legacy signature-only path and costs no database
  * read, which is what keeps the route suites unchanged. Pass `ver` when the test
- * is specifically about revocation.
+ * is specifically about revocation — and note that a token *with* `ver` makes
+ * `authenticate` read the user row, so the mocked row needs `tokenVersion` and an
+ * `accountStatus` of `ACTIVE` or the request is refused.
+ *
+ * `orgUnitId` is what the middleware and the item scope read for a DEPARTMENT_HEAD.
  */
 export function createToken(payload: {
   id: string;
   role: TestRole;
+  orgUnitId?: string | null;
   departmentId?: string | null;
   ver?: number;
 }): string {
@@ -118,6 +123,13 @@ export interface TestItem {
   categoryId: string;
   orgUnitId: string;
   buildingId: string;
+  /**
+   * The relations `ITEM_LOCATION_SELECT` asks for, which is where an item's
+   * department and building names now live. Routes reshape them back to
+   * `department`/`building` before responding (`utils/itemLocation.ts`).
+   */
+  orgUnitRef?: { name: string } | null;
+  buildingRef?: { name: string } | null;
   floor: string;
   room: string;
   ownerId: string;
@@ -137,6 +149,8 @@ export function makeItem(overrides: Partial<TestItem> = {}): TestItem {
     categoryId: "cat-electronics",
     orgUnitId: "org-unit-cs",
     buildingId: "building-cncs",
+    orgUnitRef: { name: "Computer Science" },
+    buildingRef: { name: "CNCS Building" },
     floor: "3",
     room: "312",
     ownerId: "staff-1",

@@ -4,6 +4,12 @@ import { prisma } from "../lib/prisma.js";
 import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
 import { collapseAuditRows, computeAuditResults } from "../services/auditCompletion.js";
+import {
+  ITEM_LOCATION_SELECT,
+  buildingWhere,
+  departmentWhere,
+  withRowItemNames,
+} from "../utils/itemLocation.js";
 
 export const auditsRouter: Router = Router();
 
@@ -274,10 +280,18 @@ auditsRouter.post(
  * by the caller rather than guessed at.
  *
  * Both match **case-insensitively**. The scope value the UI sends comes from a
- * fixed list, but `Item.department`/`Item.building` are free text, so an item
- * filed as "computer science" would otherwise be invisible to a "Computer
- * Science" audit and counted MISSING — a false report, which is worse than a
- * missing feature. Insensitive matching closes exactly that hole.
+ * fixed list, while the value it matches is a name an operator typed when the
+ * item was registered, so an item filed as "computer science" would otherwise be
+ * invisible to a "Computer Science" audit and counted MISSING — a false report,
+ * which is worse than a missing feature. Insensitive matching closes exactly
+ * that hole.
+ *
+ * The columns behind them are the item's OrgUnit and Building (`Item.orgUnitRef`
+ * / `Item.buildingRef`); the free-text `department`/`building` columns these
+ * filters used to name are gone, and matching on them was one of the ways an
+ * audit could answer 500. Both helpers come from `utils/itemLocation.ts`, so the
+ * audit's "what is in this department" and the inventory report's are the same
+ * question asked once.
  */
 function scopeItemFilter(
   scopeType: string,
@@ -289,16 +303,14 @@ function scopeItemFilter(
       where:
         scopeValue === null
           ? null
-          : { department: { equals: scopeValue, mode: "insensitive" }, status: "ACTIVE" },
+          : { ...departmentWhere(scopeValue, "insensitive"), status: "ACTIVE" },
     };
   }
   if (scopeType === "BUILDING") {
     return {
       supported: true,
       where:
-        scopeValue === null
-          ? null
-          : { building: { equals: scopeValue, mode: "insensitive" }, status: "ACTIVE" },
+        scopeValue === null ? null : { ...buildingWhere(scopeValue), status: "ACTIVE" },
     };
   }
   return { supported: false, where: null };
@@ -345,6 +357,57 @@ auditsRouter.get(
       }
 
       const query = validatedQuery<ListQuery>(req);
+      const dashboard = req.query.dashboard === "true";
+
+      if (dashboard) {
+        // Dashboard widget mode: return simplified list with counts
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 3));
+        const sort = (req.query.sort as string) || "completedAt:desc";
+
+        const [sortField, sortOrder] = sort.split(":");
+        if (!sortField) {
+          res.status(400).json({ error: "Invalid sort parameter" });
+          return;
+        }
+        const orderBy: Record<string, "asc" | "desc"> = {};
+        orderBy[sortField] = sortOrder === "desc" ? "desc" : "asc";
+
+        const dashboardWhere = {
+          ...(query.mine === "true" ? { runById: user.id } : {}),
+          completedAt: { not: null },
+        };
+
+        const audits = await prisma.auditSession.findMany({
+          where: dashboardWhere,
+          take: limit,
+          orderBy,
+          include: {
+            runBy: {
+              select: { id: true, fullName: true, email: true },
+            },
+            results: {
+              select: { result: true },
+            },
+          },
+        });
+
+        const enriched = audits.map((audit) => ({
+          id: audit.id,
+          scopeType: audit.scopeType,
+          scopeValue: audit.scopeValue,
+          startedAt: audit.startedAt,
+          completedAt: audit.completedAt,
+          runBy: audit.runBy,
+          counts: {
+            found: audit.results.filter((r) => r.result === "FOUND").length,
+            missing: audit.results.filter((r) => r.result === "MISSING").length,
+            locationMismatch: audit.results.filter((r) => r.result === "LOCATION_MISMATCH").length,
+          },
+        }));
+
+        res.status(200).json(enriched);
+        return;
+      }
 
       const where = {
         // Anyone with AUDIT_VIEW (an auditor or the property officer acting on
@@ -411,6 +474,114 @@ auditsRouter.get(
 );
 
 /**
+ * `GET /audits/active` — the session this auditor has open, for the dashboard
+ * tile (`AUDIT_RUN`, so Auditor only).
+ *
+ * **Declared above `GET /:id` on purpose, and it has to stay there.** Express
+ * matches in registration order, so with the param route first `/audits/active`
+ * reached `/:id` with `id === "active"`, which looked up a session by that name
+ * and 404'd — the tile was a permanent "no active audit" (14 Oct audit).
+ * `audits.test.ts` exercises it through the real app, so the order is pinned.
+ */
+auditsRouter.get(
+  "/active",
+  authenticate,
+  requireCapability("AUDIT_RUN"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+
+      const activeSession = await prisma.auditSession.findFirst({
+        where: {
+          runById: req.user.id,
+          completedAt: null,
+        },
+        include: {
+          runBy: {
+            select: { id: true, fullName: true, email: true },
+          },
+          results: {
+            select: {
+              result: true,
+            },
+          },
+        },
+        orderBy: { startedAt: "desc" },
+      });
+
+      if (!activeSession) {
+        res.status(200).json({ active: false });
+        return;
+      }
+
+      const scannedCount = activeSession.results.filter((r) => r.result === "FOUND").length;
+      const totalInScope = await prisma.auditItemResultRow.count({
+        where: { auditSessionId: activeSession.id },
+      });
+
+      res.status(200).json({
+        active: true,
+        session: {
+          id: activeSession.id,
+          scopeType: activeSession.scopeType,
+          scopeValue: activeSession.scopeValue,
+          startedAt: activeSession.startedAt,
+          runBy: activeSession.runBy,
+        },
+        progress: {
+          scanned: scannedCount,
+          total: totalInScope,
+          remaining: totalInScope - scannedCount,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * `GET /audits/findings?status=OPEN` — items marked MISSING inside their grace
+ * window, for the "open findings" tile (`AUDIT_RUN`, so Auditor only). `status`
+ * is required: anything else is a 400 rather than a silently different number.
+ *
+ * Declared above `GET /:id` for the same reason as `/active` — see the comment
+ * there. Below it, `/:id` matched with `id === "findings"` and the count request
+ * came back as "no such session".
+ */
+auditsRouter.get(
+  "/findings",
+  authenticate,
+  requireCapability("AUDIT_RUN"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const status = req.query.status as string;
+
+      if (status === "OPEN") {
+        const count = await prisma.auditItemResultRow.count({
+          where: {
+            result: "MISSING",
+            auditSession: {
+              completedAt: { not: null },
+              graceEndsAt: { gt: new Date() },
+            },
+          },
+        });
+
+        res.status(200).json({ count });
+      } else {
+        res.status(400).json({ error: "Invalid status parameter" });
+      }
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
  * `GET /api/v1/audits/:id` — read a session back, completed or not.
  *
  * Closes gap G1: before this, a completed audit existed only in the response
@@ -447,8 +618,12 @@ auditsRouter.get(
             select: {
               tagId: true,
               name: true,
-              department: true,
-              building: true,
+              /**
+               * `department`/`building` are the item's OrgUnit and Building —
+               * selecting the old free-text columns is what answered 500 here,
+               * exactly as it did for the exports (`utils/itemLocation.ts`).
+               */
+              ...ITEM_LOCATION_SELECT,
               floor: true,
               room: true,
             },
@@ -482,10 +657,16 @@ auditsRouter.get(
         found: byResult("FOUND"),
         missing: byResult("MISSING"),
         locationMismatch: byResult("LOCATION_MISMATCH"),
-        rows: collapsedRows,
+        // Each row keeps its own `itemId`/`result`/`scannedAt`, with the nested
+        // item reshaped to the `department`/`building` names both clients read.
+        rows: collapsedRows.map((row) => withRowItemNames(row)),
       });
     } catch (err) {
       next(err);
     }
   },
 );
+
+
+
+

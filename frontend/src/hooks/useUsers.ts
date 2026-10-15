@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fetchInvitableUnits } from "../api/departments";
 import { fetchApprovals, fetchUsers } from "../api/users";
 
 /**
@@ -28,5 +29,22 @@ export function useApprovals(enabled = true) {
     queryFn: ({ signal }) => fetchApprovals(signal),
     enabled,
     staleTime: 15_000,
+  });
+}
+
+/**
+ * `GET /departments/invitable` — the unit picker on the invite form (T6).
+ *
+ * A unit list changes when the college opens or closes a department, which is
+ * rare, so it is cached for longer than the account lists: the picker being one
+ * department out of date costs nothing, and refetching it on every invite would
+ * not make it more correct.
+ */
+export function useInvitableUnits(enabled = true) {
+  return useQuery({
+    queryKey: ["departments", "invitable"],
+    queryFn: ({ signal }) => fetchInvitableUnits(signal),
+    enabled,
+    staleTime: 5 * 60_000,
   });
 }

@@ -36,6 +36,30 @@ export type Capability =
   | "ACCOUNT_DEACTIVATE_PRIVILEGED"
   | "USER_READ";
 
+/**
+ * Everyone except the SYSTEM_ADMIN — the roles that may see asset data at all
+ * (spec 2.1.1). Declared once, here, and imported wherever a screen has to ask
+ * "is this viewer an asset role?": `app/router.tsx` guards the asset routes with
+ * it, and the dashboard gates its asset tiles on it. It used to be a local const
+ * inside the router, so the dashboard had no such name to reach for and wrote
+ * `!isAuditor` instead — which is how the SYSTEM_ADMIN got the Scan/Browse tiles.
+ */
+export const ASSET_ROLES: Role[] = ["PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"];
+
+/**
+ * Does this role see asset data at all? The SYSTEM_ADMIN is an account role and
+ * sees none — the rule the whole server-side scope is built around
+ * (`backend/src/services/itemScope.ts`). This is the client-side twin, and the
+ * check any asset UI should make before rendering. It is never a control: the
+ * server still scopes every response, and the SYSTEM_ADMIN's scope is empty there
+ * too. It exists so a new tile has an obvious predicate to call instead of
+ * re-deriving the rule — and re-deriving it wrong, which is what happened three
+ * times (the dashboard request list, `/system/events`, and the quick-action
+ * tiles).
+ */
+export const seesAssetData = (role: Role | undefined | null): boolean =>
+  role != null && ASSET_ROLES.includes(role);
+
 const GRANTS: Record<Role, readonly Capability[]> = {
   SYSTEM_ADMIN: [
     "ACCOUNT_MANAGE",

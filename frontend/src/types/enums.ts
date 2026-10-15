@@ -14,6 +14,24 @@ export const ROLES = [
 export type Role = (typeof ROLES)[number];
 
 /**
+ * The roles that are **never self-registered** (authority doc D2): a Head,
+ * Property Officer, Auditor and System Admin account comes only through an invite
+ * an administrator issues with a recorded outside authorization. Everyone else
+ * asks for an account through `/request-account`.
+ *
+ * Mirrors `INVITABLE_ROLES` in `backend/src/services/invites.ts`, which is the
+ * server's half of the same rule — the client decides which roles the form
+ * *offers*, the server decides which the API *accepts*.
+ */
+export const INVITABLE_ROLES = [
+  "DEPARTMENT_HEAD",
+  "PROPERTY_OFFICER",
+  "AUDITOR",
+  "SYSTEM_ADMIN",
+] as const;
+export type InvitableRole = (typeof INVITABLE_ROLES)[number];
+
+/**
  * Account lifecycle (spec 3.1.2). `PENDING_APPROVAL` is the state a self-request
  * lands in: it cannot sign in, and a SYSTEM_ADMIN decides it from the queue.
  */

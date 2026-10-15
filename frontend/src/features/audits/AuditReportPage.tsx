@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, Download, FileText, HelpCircle, MapPinOff 
 import { type ReactNode, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { fetchAuditSession } from "../../api/audits";
-import { saveReport, downloadAuditReport } from "../../api/reports";
+import { describeDownloadFailure, saveReport, downloadAuditReport } from "../../api/reports";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { EmptyState } from "../../components/EmptyState";
@@ -163,7 +163,9 @@ export function AuditReportPage() {
       const filename = await saveReport(() => downloadAuditReport(id, format));
       toast.success(`Downloaded ${filename}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't download the audit report");
+      // The download is a copy of the report above it; a failure is a failure of
+      // the copy, and the toast says so (see `describeDownloadFailure`).
+      toast.error(describeDownloadFailure(err, "the audit report"));
     } finally {
       setDownloading(null);
     }
@@ -221,6 +223,18 @@ export function AuditReportPage() {
       */}
       <Card className="flex flex-col gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
+          {/*
+            This section is the one place the page can show an error beside data
+            that looks fine, so it says which of the two is in question.
+
+            The three counts above come from the completion response (router
+            state or its sessionStorage mirror) and are the figures the audit was
+            completed with — not recomputed here, and not in doubt. What fails is
+            the read-back that supplies the per-item rows. A bare "couldn't be
+            loaded" next to a full-looking report reads as "these numbers may be
+            wrong", which is the opposite of the truth: the breakdown is missing,
+            the counts are not.
+          */}
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
             Items in this audit
           </h2>
@@ -236,9 +250,21 @@ export function AuditReportPage() {
             Loading the per-item breakdown…
           </p>
         ) : sessionQuery.isError ? (
-          <p className="text-sm text-slate-500">
-            The per-item breakdown couldn&apos;t be loaded. The CSV export still contains every row.
-          </p>
+          <div className="flex flex-col items-start gap-3">
+            <p className="text-sm text-slate-600">
+              The counts above stand — they are the figures this audit was completed with. Only the
+              item-by-item breakdown behind them failed to load, so that list is missing, not wrong.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              loading={sessionQuery.isFetching}
+              onClick={() => void sessionQuery.refetch()}
+            >
+              Load the breakdown again
+            </Button>
+          </div>
         ) : rows.length === 0 ? (
           <p className="text-sm text-slate-500">
             No result rows are stored for this session yet. An audit that was started but never completed records

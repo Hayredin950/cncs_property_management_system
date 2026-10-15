@@ -1,41 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
+import { fetchOverdueLoans } from "../api/loans";
 
 /**
- * Fetch overdue loans count for the dashboard widget.
- * Endpoint: GET /loans/overdue
- * Falls back gracefully if endpoint doesn't exist yet.
+ * The Property Officer's "Overdue loans" tile (`GET /loans/overdue`).
+ *
+ * Rewritten for the same reason as the rest of the dashboard tiles: it called the
+ * endpoint with a bare, root-relative `fetch` — no `Authorization` header, an
+ * origin that only works under `pnpm dev` — and folded every failure into
+ * `{ count: 0 }`. The tile hides itself at zero, so a 401 looked exactly like a
+ * clean loan register.
+ *
+ * Through `apiClient`, the token is attached and a real failure throws; the tile
+ * renders that as an error rather than hiding as though there were nothing overdue.
+ * `retry: false` for the same reason as the others: the API answers 401/403/500
+ * here, never a "not built yet" 404 to tolerate.
  */
 export function useOverdueLoans() {
   return useQuery({
     queryKey: ["loans", "overdue"],
-    queryFn: async ({ signal }) => {
-      try {
-        const response = await fetch("/api/v1/loans/overdue", {
-          signal,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        if (!response.ok) {
-          // Endpoint doesn't exist yet - return zero count gracefully
-          if (response.status === 404) {
-            return { count: 0 };
-          }
-          throw new Error(`Failed to fetch overdue loans: ${response.statusText}`);
-        }
-        return response.json();
-      } catch (error) {
-        // If fetch fails, return zero count gracefully
-        console.error("Failed to fetch overdue loans:", error);
-        return { count: 0 };
-      }
-    },
-    // Don't retry on 404 - endpoint might not exist yet
-    retry: (failureCount, error) => {
-      if (error instanceof Error && error.message.includes("404")) {
-        return false;
-      }
-      return failureCount < 3;
-    },
+    queryFn: ({ signal }) => fetchOverdueLoans(signal),
+    retry: false,
   });
 }

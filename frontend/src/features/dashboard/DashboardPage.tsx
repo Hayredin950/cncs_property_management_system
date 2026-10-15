@@ -11,7 +11,13 @@ import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBad
 import { StatCard } from "../../components/StatCard";
 import { usePendingCount, useRequests } from "../../hooks/useRequests";
 import { formatRelativeTime } from "../../lib/formatters";
-import { canDecideRequests, canViewOwnRequests, canManageAccounts, canRunAudits } from "../../lib/permissions";
+import {
+  canDecideRequests,
+  canViewOwnRequests,
+  canManageAccounts,
+  canRunAudits,
+  seesAssetData,
+} from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
 import { RecentlyRegisteredItems } from "./widgets/RecentlyRegisteredItems";
 import { OverdueLoans } from "./widgets/OverdueLoans";
@@ -70,9 +76,19 @@ export function DashboardPage() {
         }
       />
 
-      {/* The portal's action tiles, doing the portal's job: the two things a
-          staff member arrives on this screen to do. Auditors don't see these. */}
-      {!isAuditor && (
+      {/*
+        The portal's action tiles, doing the portal's job: the two things a staff
+        member arrives on this screen to do.
+
+        Gated by `seesAssetData`, not the `!isAuditor` this used to be. "Not an
+        auditor" admits the SYSTEM_ADMIN, which is an account role and must render
+        **no asset UI at all** (spec 2.1.1) — so its dashboard showed "Scan a tag"
+        and "Browse items", both of which lead to asset screens it can only read
+        as empty. Auditors stay excluded: their dashboard is the audit tiles below,
+        and browsing items is not a step in an audit here. `seesAssetData` is the
+        shared predicate every asset-UI call site now reaches for, so this is
+        stated once instead of re-derived per tile. */}
+      {seesAssetData(user?.role) && !isAuditor && (
         <div className="grid gap-4 sm:grid-cols-2">
           <PortalTile
             to="/scan"
@@ -136,7 +152,7 @@ export function DashboardPage() {
               to="/requests"
               className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
             >
-              View all \u2192
+              View all →
             </Link>
           </div>
 

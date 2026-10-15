@@ -237,6 +237,9 @@ importers:
       multer:
         specifier: ^2.4.0
         version: 2.4.0
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -265,6 +268,9 @@ importers:
       '@types/node':
         specifier: ^26.4.0
         version: 26.4.0
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
       '@types/qrcode':
         specifier: ^1.5.6
         version: 1.5.6

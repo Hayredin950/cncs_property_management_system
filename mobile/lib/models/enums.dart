@@ -51,6 +51,20 @@ enum Role {
     staff,
     auditor,
   ];
+
+  /// The roles that are **never self-registered** (authority doc D2): Heads,
+  /// Property Officers, Auditors and System Admins arrive only through an invite an
+  /// administrator issues with a recorded outside authorization.
+  ///
+  /// Mirrors `INVITABLE_ROLES` in `frontend/src/types/enums.ts` and
+  /// `backend/src/services/invites.ts`. Staff is absent on purpose — Staff ask for
+  /// an account and a head approves it.
+  static const List<Role> invitable = [
+    departmentHead,
+    propertyOfficer,
+    auditor,
+    systemAdmin,
+  ];
 }
 
 /// Account lifecycle (spec 3.1.2). `pendingApproval` is the state a self-request

@@ -1,6 +1,5 @@
 import {
   Bell,
-  Building2,
   ClipboardCheck,
   ClipboardList,
   FileBarChart,
@@ -8,10 +7,8 @@ import {
   LayoutDashboard,
   Package,
   ScanLine,
-  Settings,
   ShieldCheck,
   Tag,
-  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "../types/enums";
@@ -49,26 +46,39 @@ export const CURRENT_PHASE = 3;
  * Role lists mirror the backend permission matrix (spec 2.2). The System Admin is
  * an account role and sees no asset data, so it only gets Dashboard,
  * Notifications and Accounts — not Items or Scan.
+ *
+ * ── Every `to` here must resolve to a route `app/router.tsx` declares ──────
+ * A sidebar row that opens the 404 page is worse than no row at all: it tells the
+ * user the feature exists and then denies it, and it hides the real answer
+ * ("not built yet"). Four rows were removed for exactly that reason —
+ * `/account-requests`, `/buildings`, `/admin/account-requests` and
+ * `/admin/system` were declared in neither `appRoutes` nor any spec deliverable
+ * (monolithic design §12, "No route declared — fix routing"), and the screens
+ * they promise (the T5 approval queue, building management, system config) are
+ * still `[BUILD]` in §5.1/§12. They come back one at a time, each in the same
+ * commit as its route; `test/navRoutes.test.tsx` fails the build if one returns
+ * ahead of its page.
+ *
+ * The System Admin's pending-approval queue is not lost with those rows: it is
+ * the "Waiting for approval" panel on `/admin/users`, which is why that row
+ * carries the same `pending-count` badge the removed row had.
  */
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 1 },
-  { label: "Scan a Tag", to: "/scan", icon: ScanLine, roles: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"], phase: 1, emphasized: true },
+  { label: "Scan a Tag", to: "/scan", icon: ScanLine, roles: ["PROPERTY_OFFICER"], phase: 1, emphasized: true },
   { label: "Browse Items", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER"], phase: 1 },
   { label: "My Items", to: "/items?mine=true", icon: Package, roles: ["STAFF", "DEPARTMENT_HEAD"], phase: 1 },
-  { label: "Department Items", to: "/department-items", icon: Users, roles: ["DEPARTMENT_HEAD"], phase: 1 },
   { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["PROPERTY_OFFICER"], phase: 2, badge: "pending-count" },
   { label: "Department Requests", to: "/requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
   { label: "My Requests", to: "/requests?mine=true", icon: ClipboardList, roles: ["STAFF"], phase: 2 },
-  { label: "Account Requests", to: "/account-requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
   { label: "Notifications", to: "/notifications", icon: Bell, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 2, badge: "unread-notifications" },
-  { label: "Buildings", to: "/buildings", icon: Building2, roles: ["PROPERTY_OFFICER"], phase: 2 },
   { label: "New item", to: "/items/new", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
   { label: "Active Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["AUDITOR"], phase: 3 },
   { label: "Audit history", to: "/audits", icon: History, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
   { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER"], phase: 3 },
-  { label: "Account Admins", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN"], phase: 2 },
-  { label: "Account Requests", to: "/admin/account-requests", icon: ClipboardList, roles: ["SYSTEM_ADMIN"], phase: 2, badge: "pending-count" },
-  { label: "System Config", to: "/admin/system", icon: Settings, roles: ["SYSTEM_ADMIN"], phase: 2 },
+  // The queue and the account list are one screen, so they are one row: the
+  // "Waiting for approval" panel sits above "Create an account" on `/admin/users`.
+  { label: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN"], phase: 2, badge: "pending-count" },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
 ];
 

@@ -5,13 +5,7 @@ import { EmptyState } from "../../../components/EmptyState";
 import { SkeletonText } from "../../../components/Skeleton";
 import { formatRelativeTime } from "../../../lib/formatters";
 import { useRecentItems } from "../../../hooks/useItems";
-
-interface RecentItem {
-  id: string;
-  name: string;
-  tagId: string;
-  createdAt: string;
-}
+import type { RecentItem } from "../../../api/items";
 
 export function RecentlyRegisteredItems() {
   const { data, isPending, isError } = useRecentItems({ limit: 5 });
@@ -56,7 +50,7 @@ export function RecentlyRegisteredItems() {
                 <p className="tag-id text-xs text-slate-500">{item.tagId}</p>
               </div>
               <span className="text-xs text-slate-400">
-                {formatRelativeTime(item.createdAt)}
+                {formatRelativeTime(item.registeredAt)}
               </span>
             </li>
           ))}

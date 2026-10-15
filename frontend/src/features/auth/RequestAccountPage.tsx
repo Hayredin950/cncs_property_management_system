@@ -6,6 +6,7 @@ import { Link, Navigate } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "../../app/AuthContext";
 import { requestAccount } from "../../api/auth";
+import { fetchDepartments } from "../../api/departments";
 import { PortalPageHeader } from "../../components/aau/PortalPageHeader";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
@@ -42,26 +43,42 @@ export function RequestAccountPage() {
     formState: { errors, isSubmitting },
   } = useForm<RequestFormValues>({ resolver: zodResolver(requestSchema) });
 
-  if (user) {
-    return <Navigate to={user.mustChangePassword ? "/change-password" : "/dashboard"} replace />;
-  }
-
+  /**
+   * The department list is fetched for the form's own select, so it is a plain
+   * effect — not a query keyed on the signed-in user. It must run before the
+   * redirect below: an early `return` above a hook makes the hook order depend on
+   * whether someone is signed in, which is the one thing React forbids
+   * (`react-hooks/rules-of-hooks`). Moving the redirect under it keeps both the
+   * hook order and the behaviour — a signed-in visitor still never sees the form.
+   */
   useEffect(() => {
+    let cancelled = false;
     async function loadDepartments() {
       try {
-        const res = await fetch("/api/v1/departments");
-        if (res.ok) {
-          const data = await res.json();
-          setDepartments(data);
-        }
+        /**
+         * Through `apiClient`, not a bare `fetch`: the raw relative path resolved
+         * against the *web* origin, so on a deployed build it asked the static host
+         * for `/api/v1/departments` and came back 404 — an empty department list and
+         * a form nobody could submit. The client is what knows the API's base URL.
+         */
+        const data = await fetchDepartments();
+        if (!cancelled) setDepartments(data);
       } catch {
-        // Silently fail - form will show empty select
+        // The select stays empty and the required-field check blocks the submit; the
+        // endpoint is public, so a failure here is a server or network problem.
       } finally {
-        setDepartmentsLoading(false);
+        if (!cancelled) setDepartmentsLoading(false);
       }
     }
     loadDepartments();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  if (user) {
+    return <Navigate to={user.mustChangePassword ? "/change-password" : "/dashboard"} replace />;
+  }
 
   async function onSubmit(values: RequestFormValues) {
     setFormError(null);

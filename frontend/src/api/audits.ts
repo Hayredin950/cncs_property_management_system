@@ -85,3 +85,56 @@ export function scanAuditItem(auditId: string, itemId: string): Promise<AuditSca
 export function completeAuditSession(auditId: string): Promise<AuditCompletionResponse> {
   return apiClient.post<AuditCompletionResponse>(`/audits/${encodeURIComponent(auditId)}/complete`);
 }
+
+/**
+ * What the dashboard's "Current audit" tile renders: four flat fields.
+ *
+ * The endpoint's own shape is `{ active, session, progress }` — a state
+ * discriminant plus two objects — and both of the old tile's bugs lived in the gap
+ * between the two. It read `data.id`/`data.scope`/`data.scanned`/`data.total`, none
+ * of which the server has ever sent, and it folded "no active audit" and "the
+ * request failed" into the same `null`. Mapping once here keeps the widget flat and
+ * leaves `null` meaning exactly one thing: there is nothing open.
+ */
+export interface ActiveAudit {
+  id: string;
+  /** `scopeValue` — the department being audited. */
+  scope: string;
+  scanned: number;
+  total: number;
+}
+
+/** `GET /audits/active` — the shape the route answers with, before mapping. */
+export interface ActiveAuditResponse {
+  active: boolean;
+  session?: { id: string; scopeType: string; scopeValue: string | null };
+  progress?: { scanned: number; total: number; remaining: number };
+}
+
+/**
+ * `GET /audits/active` — this auditor's open session, or `null` when there is none.
+ *
+ * `null` is a real answer, not a failure: an auditor with nothing open is the
+ * normal state and the tile says so. A failed request throws `ApiError` instead, so
+ * the tile can tell "nothing to show" from "couldn't ask".
+ */
+export async function fetchActiveAudit(signal?: AbortSignal): Promise<ActiveAudit | null> {
+  const res = await apiClient.get<ActiveAuditResponse>("/audits/active", undefined, signal);
+  if (!res.active || !res.session || !res.progress) return null;
+  return {
+    id: res.session.id,
+    scope: res.session.scopeValue ?? res.session.scopeType,
+    scanned: res.progress.scanned,
+    total: res.progress.total,
+  };
+}
+
+/**
+ * `GET /audits/findings?status=OPEN` — items marked MISSING inside their grace
+ * window. `status` is required by the route (anything else is a 400), so it is
+ * sent as a query rather than left to the caller: there is only one question this
+ * tile asks.
+ */
+export function fetchOpenFindings(signal?: AbortSignal): Promise<{ count: number }> {
+  return apiClient.get<{ count: number }>("/audits/findings", { status: "OPEN" }, signal);
+}

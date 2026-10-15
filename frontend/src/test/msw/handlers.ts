@@ -1,25 +1,36 @@
 import { http, HttpResponse } from "msw";
 import {
+  ACCEPTED_INVITE_USER,
   ACCOUNTS,
+  ACTIVE_AUDIT,
   AUDIT_COMPLETION_BODY,
   AUDIT_READBACK,
   AUDIT_SCAN_ROW,
   AUDIT_SESSION,
   AUDITS_LIST,
   CSV_BODY,
+  DEPARTMENTS,
+  DEPARTMENT_ROSTER,
   DISPOSED_ITEM,
   HISTORY_FIXTURE,
+  HELD_ITEMS_SUMMARY,
+  INVITABLE_UNITS,
   ITEMS_LIST,
   LOGIN_RESPONSE,
   ME_RESPONSE,
   NOTIFICATIONS_LIST,
+  OPEN_FINDINGS_COUNT,
+  OVERDUE_LOANS,
   PENDING_ACCOUNT,
   PENDING_COUNT,
+  RECENT_ITEMS,
   PRIVILEGED_ITEM,
   PUBLIC_ITEM,
   REQUEST_DETAIL_FIXTURE,
   REQUEST_FIXTURE,
   REQUESTS_LIST,
+  SYSTEM_EVENTS,
+  SYSTEM_STATUS,
 } from "../fixtures";
 import { getToken } from "../../lib/storage";
 import type { UserSummary } from "../../types/user";
@@ -95,7 +106,81 @@ export const handlers = [
 
   http.get(`${API}/health`, healthOk),
 
+  /**
+   * Public, like the real route: an anonymous visitor picks their department
+   * before they have an account. No token check here on purpose.
+   */
+  /**
+   * `GET /departments/invitable` — the head-appointment picker (T6). Behind
+   * `ACCOUNT_INVITE`, so a missing token is the same 401 every admin read sends.
+   *
+   * Declared before the `/departments` handler so the more specific path is the
+   * one that reads first — the two are distinct patterns (MSW matches a literal
+   * path exactly), but a reader looking for "where does /departments/invitable go"
+   * should find its answer above the list it is not part of.
+   */
+  http.get(`${API}/departments/invitable`, () =>
+    getToken() ? HttpResponse.json(INVITABLE_UNITS) : unauthorized(),
+  ),
+
+  http.get(`${API}/departments`, () => HttpResponse.json(DEPARTMENTS)),
+
+  /**
+   * `GET /departments/:id/roster` — the Department Head's roster tile. Behind
+   * `authenticate`, and the id is the head's own unit, so the fixture echoes the id
+   * it was asked for. Declared after the literal `/departments/invitable` for the
+   * ordering discipline the router uses, though the patterns are distinct.
+   */
+  http.get(`${API}/departments/:id/roster`, ({ params }) =>
+    getToken()
+      ? HttpResponse.json({ ...DEPARTMENT_ROSTER, department: { ...DEPARTMENT_ROSTER.department, id: params.id as string } })
+      : unauthorized(),
+  ),
+
+  /**
+   * `POST /auth/accept-invite` — public, like the real route: the person does not
+   * have an account to authenticate with, which is what the invitation is for. It
+   * answers with a session, so the invitee does not have to sign in twice.
+   */
+  http.post(`${API}/auth/accept-invite`, () =>
+    HttpResponse.json({ token: "invite-session-token", user: ACCEPTED_INVITE_USER }),
+  ),
+
   http.get(`${API}/categories`, () => HttpResponse.json([{ id: "cat-1", name: "Laptops", itemCount: 2 }])),
+
+  /**
+   * `POST /users/invite` — the privileged invite (T6). There is no password in
+   * the request or the response, and that is the contract under test: an
+   * administrator learns the email result and gets the single-use link back, and
+   * nothing here can be signed into until the invitee accepts it.
+   */
+  http.post(`${API}/users/invite`, async ({ request }) => {
+    if (!getToken()) return unauthorized();
+    const body = (await request.json()) as {
+      email?: string;
+      role?: string;
+      unitId?: string | null;
+    };
+    return HttpResponse.json(
+      {
+        invite: {
+          userId: "invitee-1",
+          email: body.email ?? "",
+          role: body.role ?? "DEPARTMENT_HEAD",
+          unitId: body.unitId ?? null,
+          status: "PENDING_EMAIL_VERIFICATION",
+          expiresAt: "2026-10-17T08:00:00.000Z",
+          renewed: false,
+        },
+        inviteUrl: "http://localhost:5173/accept-invite?token=test-invite-token",
+        // The live default while no mail transport is configured.
+        email: "skipped",
+      },
+      { status: 201 },
+    );
+  }),
+
+
 
   http.put(`${API}/categories/:id`, ({ params }) =>
     getToken()
@@ -193,6 +278,20 @@ export const handlers = [
   }),
 
   /**
+   * The Property Officer's two tiles. Both are declared **before**
+   * `${API}/items/:idOrTag` below, and that ordering is load-bearing in exactly the
+   * way the router's was: a one-segment literal under a one-segment param pattern
+   * is unreachable, which is how `/items/recent` came back as "no such item" and the
+   * tile read it as an empty register (14 Oct). A handler declared after it would
+   * make these tests pass for the wrong reason.
+   */
+  http.get(`${API}/items/recent`, () => (getToken() ? HttpResponse.json(RECENT_ITEMS) : unauthorized())),
+
+  http.get(`${API}/items/held-by-me`, () =>
+    getToken() ? HttpResponse.json(HELD_ITEMS_SUMMARY) : unauthorized(),
+  ),
+
+  /**
    * The same physical item, filtered per the Authorization header — that
    * filtering is the *server's* job (`sanitizeItem`). The frontend tests exist
    * to prove each variant renders correctly and the client never re-hides
@@ -235,6 +334,15 @@ export const handlers = [
 
   http.get(`${API}/items/:id/history`, () =>
     getToken() ? HttpResponse.json(HISTORY_FIXTURE) : unauthorized(),
+  ),
+
+  /**
+   * `GET /loans/overdue` — the Property Officer's overdue-loan count. Behind
+   * `authenticate`, so a tile that forgets the token must fail here rather than
+   * hide itself as though nothing were overdue.
+   */
+  http.get(`${API}/loans/overdue`, () =>
+    getToken() ? HttpResponse.json(OVERDUE_LOANS) : unauthorized(),
   ),
 
   http.get(`${API}/requests`, () => (getToken() ? HttpResponse.json(REQUESTS_LIST) : unauthorized())),
@@ -299,6 +407,17 @@ export const handlers = [
   http.get(`${API}/audits`, () => (getToken() ? HttpResponse.json(AUDITS_LIST) : unauthorized())),
 
   /**
+   * The auditor's two tiles, declared **before** `${API}/audits/:id` — the same
+   * ordering the router needs for the same reason (`/:id` matched "active" and
+   * 404'd, which the tile rendered as "no active audit").
+   */
+  http.get(`${API}/audits/active`, () => (getToken() ? HttpResponse.json(ACTIVE_AUDIT) : unauthorized())),
+
+  http.get(`${API}/audits/findings`, () =>
+    getToken() ? HttpResponse.json(OPEN_FINDINGS_COUNT) : unauthorized(),
+  ),
+
+  /**
    * `GET /audits/:id` — the read-back. A completed session reports itself as
    * completed, which is what lets the walkthrough stop offering "Complete audit"
    * for a session the server would 409.
@@ -343,4 +462,16 @@ export const handlers = [
   http.get(`${API}/reports/inventory`, () => (getToken() ? csv() : unauthorized())),
   http.get(`${API}/reports/disposals`, () => (getToken() ? csv() : unauthorized())),
   http.get(`${API}/reports/audit/:auditId`, () => (getToken() ? csv() : unauthorized())),
+
+  /**
+   * The System Admin's two dashboard tiles. Both are behind `SYSTEM_CONFIG`, so
+   * the token check is the same 401 the backend's `authenticate` sends — a widget
+   * that forgets the header must fail here rather than render empty state.
+   *
+   * `events` is a bare array because that is what the route returns: the old
+   * `{ data: [...] }` envelope is what made the consuming tile call `.map` on an
+   * object (see `routes/systemConfig.ts`).
+   */
+  http.get(`${API}/system/status`, () => (getToken() ? HttpResponse.json(SYSTEM_STATUS) : unauthorized())),
+  http.get(`${API}/system/events`, () => (getToken() ? HttpResponse.json(SYSTEM_EVENTS) : unauthorized())),
 ];

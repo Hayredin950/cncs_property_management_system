@@ -167,7 +167,7 @@ describe("/admin/users — the accounts screen", () => {
     expect(await screen.findByText("Page not found")).toBeInTheDocument();
   });
 
-  it("renders the pending approval queue above the create form", async () => {
+  it("renders the pending approval queue above the invite form", async () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
 
@@ -177,12 +177,12 @@ describe("/admin/users — the accounts screen", () => {
     expect(within(main).getByText(PENDING_ACCOUNT.email)).toBeInTheDocument();
     expect(within(main).getByText(/Requested/)).toBeInTheDocument();
 
-    // The queue sits above "Create an account" so waiting people are not buried
-    // under the invite form.
+    // The queue sits above "Invite an account" (T6) so waiting people are not
+    // buried under the form an administrator uses for privileged appointments.
     const waiting = within(main).getByText(/Waiting for approval/);
-    const create = within(main).getByText("Create an account");
+    const invite = within(main).getByText("Invite an account");
     expect(
-      waiting.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING,
+      waiting.compareDocumentPosition(invite) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 

@@ -11,6 +11,7 @@ vi.mock("../lib/prisma.js", () => {
     prisma: {
       auditSession: {
         findUnique: vi.fn(),
+        findFirst: vi.fn(),
         findMany: vi.fn(),
         count: vi.fn(),
         create: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("../lib/prisma.js", () => {
         updateMany: vi.fn(),
         createMany: vi.fn(),
         groupBy: vi.fn(),
+        count: vi.fn(),
       },
       item: {
         findUnique: vi.fn(),
@@ -46,6 +48,38 @@ describe("Audit Endpoints", () => {
   // the `runById` assertions below keep their meaning.
   const adminToken = createToken({ id: "user-admin-1", role: "AUDITOR" });
   const staffToken = createToken({ id: "user-staff-1", role: "AUDITOR" });
+
+  /**
+   * `GET /active` and `GET /findings` are single-segment literals, and both are
+   * declared *above* `GET /:id` — which is the only thing that makes them
+   * reachable. With the param route first, `/audits/active` reached `/:id` with
+   * `id === "active"` and answered 404, and the dashboard tile read that as "no
+   * active audit". `findUnique` is the tell: `/:id` is its only caller here, so
+   * "never called" is what proves the literal path was matched.
+   */
+  describe("static paths declared above the :id route", () => {
+    const auditorAuth = { Authorization: `Bearer ${createToken({ id: "user-auditor-9", role: "AUDITOR" })}` };
+
+    it("answers GET /audits/active instead of looking up a session named \"active\"", async () => {
+      vi.mocked(prisma.auditSession.findFirst).mockResolvedValueOnce(null as never);
+
+      const res = await request(app).get("/api/v1/audits/active").set(auditorAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ active: false });
+      expect(prisma.auditSession.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("answers GET /audits/findings?status=OPEN instead of a session named \"findings\"", async () => {
+      vi.mocked(prisma.auditItemResultRow.count).mockResolvedValueOnce(3 as never);
+
+      const res = await request(app).get("/api/v1/audits/findings?status=OPEN").set(auditorAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ count: 3 });
+      expect(prisma.auditSession.findUnique).not.toHaveBeenCalled();
+    });
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -495,8 +529,10 @@ describe("GET /audits/:id", () => {
   const item = {
     tagId: "CNCS-0001",
     name: "Dell Laptop",
-    department: "CNCS",
-    building: "CNCS Building",
+    // The item's OrgUnit and Building, which is what the route selects — the
+    // free-text `department`/`building` columns no longer exist.
+    orgUnitRef: { name: "CNCS" },
+    buildingRef: { name: "CNCS Building" },
     floor: "3",
     room: "312",
   };
@@ -524,5 +560,7 @@ describe("GET /audits/:id", () => {
     expect(res.body.counts).toEqual({ found: 1, missing: 1, locationMismatch: 0 });
     expect(res.body.found).toEqual(["item-1"]);
     expect(res.body.rows).toHaveLength(2);
+    // Both clients read the location off the row's nested item under these keys.
+    expect(res.body.rows[0].item).toMatchObject({ department: "CNCS", building: "CNCS Building" });
   });
 });

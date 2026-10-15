@@ -1,9 +1,15 @@
 # CNCS PMS — Account Approval Authority (Who Approves Which Account)
 
-Audience: the coding agent. This file **amends** `cncs-pms-registration-hierarchy-task-list.md`
+Audience: the coding agent. This file **amends** `archive/cncs-pms-registration-hierarchy-task-list.md`
 (sections 1, 4, 5, 6, 9) and takes precedence over it where they differ.
-Sources: `cncs_pms_revised_plan_v2.md` §2–§3, `full-work-plan-and-roadmap.md` (12 Oct decisions),
-`property-hierarchy-and-roles-plan.md` §7, §9.1, §17, `supervisor-feedback.md` §1.
+Sources (all archived as of 14 Oct — the decisions they produced are now stated in
+`monolithic-system-design.md`): `archive/cncs_pms_revised_plan_v2.md` §2–§3,
+`archive/full-work-plan-and-roadmap.md` (12 Oct decisions),
+`archive/property-hierarchy-and-roles-plan.md` §7, §9.1, §17, `archive/supervisor-feedback.md` §1.
+
+**This file is active**: §5 of `monolithic-system-design.md` builds the T1–T9 sequence from it,
+and §5.2 says its 20-row live-verification table still applies unchanged. Everything it says
+about *who approves what* is settled — see D1 below. Do not re-open the decision.
 
 ---
 
@@ -23,7 +29,7 @@ Sources: `cncs_pms_revised_plan_v2.md` §2–§3, `full-work-plan-and-roadmap.md
 
 | ID | Decision | Status |
 |---|---|---|
-| D1 | Staff self-registrations are approved by the **head of the applicant's selected unit**. SYSTEM_ADMIN is fallback only. | **Recommended, not yet confirmed.** Overrides the 12 Oct "SYSTEM_ADMIN approves everyone" decision. Confirm with Yanet and the supervisor. |
+| D1 | Staff self-registrations are approved by the **head of the applicant's selected unit**. SYSTEM_ADMIN is fallback only. | **DECIDED and final.** `monolithic-system-design.md` §5 makes it the decision: finish the `AccountRequest` flow, retire the legacy `User.accountStatus` flow. The earlier "not yet confirmed" status is closed. |
 | D2 | Privileged accounts (Head, Property Officer, Auditor, SYSTEM_ADMIN) are **never self-registered**. SYSTEM_ADMIN issues invites. | Decided (v2 §3.2). |
 | D3 | Every privileged invite must record **who authorized it outside the system and a reference** (letter number or equivalent). | Recommended. |
 | D4 | A SYSTEM_ADMIN account is created or approved only by a **different** SYSTEM_ADMIN. | Recommended. |
@@ -110,18 +116,34 @@ a change in `resolveApprover` and the permission table only, with no schema rewr
 - [ ] Escalation job (or lazy on read): requests older than the threshold become visible to SYSTEM_ADMIN with a
       notification; the head keeps decision rights.
 
-### T6. Privileged invites backend
-- [ ] `POST /users/invite` (SYSTEM_ADMIN only). Body: `email, role, unitId (required for DEPARTMENT_HEAD),
-      authorizedBy, authorizationRef, authorizationNote?`.
-- [ ] Reject the invite with 400 if `authorizedBy` or `authorizationRef` is missing for any privileged role.
-- [ ] Reject: role not in {DEPARTMENT_HEAD, PROPERTY_OFFICER, AUDITOR, SYSTEM_ADMIN}; unit already has an active
-      head; inviting a user who would hold both PROPERTY_OFFICER and AUDITOR; a SYSTEM_ADMIN inviting themselves
-      or approving their own invite.
-- [ ] Invite email carries a single-use expiring link. `POST /auth/accept-invite`: invitee sets their own
-      password. No admin ever sees or sets a password.
-- [ ] Activating a new head: set the unit's `headUserId`; move department-held items to
-      `REVERTED_UNVERIFIED` for the new head; reassign the previous head's pending approvals.
-- [ ] Log every invite, resend, accept, expiry and revoke.
+### T6. Privileged invites backend — **built 14 Oct** (unit-tested; live verification blocked, see T1)
+- [x] `POST /users/invite` (SYSTEM_ADMIN only, `ACCOUNT_INVITE`). Body: `email, role,
+      unitId (required for DEPARTMENT_HEAD), authorizedBy, authorizationRef, authorizationNote?`.
+      Rules in `backend/src/services/invites.ts` (`assertInvitable`), route in `routes/users.ts`.
+- [x] Rejects with 400 if `authorizedBy` or `authorizationRef` is missing — required for every
+      privileged role, enforced at the route *and* in the service.
+- [x] Rejects: role not in {DEPARTMENT_HEAD, PROPERTY_OFFICER, AUDITOR, SYSTEM_ADMIN} (400); a unit
+      that already has a **working** head (400 — an inactive head does not count); the same person as
+      PROPERTY_OFFICER and AUDITOR (409, against an outstanding invite as well as a live account); a
+      SYSTEM_ADMIN inviting their own address (400).
+- [x] `POST /auth/accept-invite`: single-use, expiring (72 h), hashed-at-rest token in `EmailToken`;
+      the invitee sets their own password and their own name. **No administrator ever sees or sets a
+      password** — the invite payload has no password field, and `POST /auth/register` (the old
+      admin-sets-password path) has been deleted from the API, not merely deprecated.
+      The invite link is returned to the issuing administrator as well as emailed, because no SMTP
+      transport is configured yet (`NOTIFY_EMAIL` off) and an undeliverable invitation is not sent.
+- [~] Activating a new head: sets `OrgUnit.headId` and moves the unit's department-held items to
+      `REVERTED_UNVERIFIED` (terminal rows skipped) in the acceptance transaction. **"Reassign the
+      previous head's pending approvals" is not implemented and should not be:** the queue is derived
+      from status and unit on read (`GET /users/approvals`), not assigned to a person, so there is no
+      per-approver list to move — what changes is `resolveApprover`, which now resolves to the new head.
+- [~] Logged: every invite, renewal and acceptance writes `AdminActionLog` with the outside
+      authorization on the row. **Not logged yet:** expiry (a token that ran out is never written) and
+      revoke/resend (neither exists — see below).
+- [ ] Not built: resend, revoke, and the invite status list (sent/accepted/expired).
+- [ ] `GET /departments/invitable` was added for the head picker — all active departments with
+      `hasActiveHead`, deliberately *not* the self-registration list, which hides the headless units
+      an invite exists for.
 
 ### T7. Deactivation backend
 - [ ] Head deactivates STAFF in own unit; SYSTEM_ADMIN deactivates heads and auditors; another SYSTEM_ADMIN
@@ -141,6 +163,11 @@ a change in `resolveApprover` and the permission table only, with no schema rewr
       Accounts area with **Invite account** form: role selector, unit picker for heads, required
       **Authorized by** and **Authorization reference** fields, invite status list (sent, accepted, expired)
       with resend and revoke.
+
+> **The nav list below is *not* the final word.** `monolithic-system-design.md` §13 restates it
+> for all five roles and is the later statement; where the two differ, §13 wins. This table is
+> kept only as the text T8 was written against.
+
 - [ ] Nav per role (every item must open a working page):
 
 | Role | Nav |
@@ -193,7 +220,8 @@ a change in `resolveApprover` and the permission table only, with no schema rewr
 - [ ] T1–T9 complete and all 20 rows pass live, with real responses pasted in the PR.
 - [ ] Backend, web and mobile capability lists match (automated test).
 - [ ] No hardcoded department list remains in any client.
-- [ ] Docs updated: v2 §3.1 and §3.2, the §21 contradiction register (record D1–D4), and the roadmap decision log.
+- [ ] Docs updated: D1–D4 recorded in `project-task-checklist.md`, and each row ticked in
+      `monolithic-system-design.md` §5/§15 as it passes live.
 - [ ] Anything not verified is listed explicitly as unverified.
 
 ## 6. Open items for the supervisor

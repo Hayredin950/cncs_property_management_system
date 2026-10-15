@@ -5,6 +5,7 @@ import { AuditListPage } from "../features/audits/AuditListPage";
 import { AuditNewPage } from "../features/audits/AuditNewPage";
 import { AuditReportPage } from "../features/audits/AuditReportPage";
 import { AuditScanPage } from "../features/audits/AuditScanPage";
+import { AcceptInvitePage } from "../features/auth/AcceptInvitePage";
 import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { RequestAccountPage } from "../features/auth/RequestAccountPage";
@@ -28,6 +29,7 @@ import { PublicLayout } from "./PublicLayout";
 import { RequireAuth } from "./RequireAuth";
 import { RootProviders } from "./RootProviders";
 import type { Role } from "../types/enums";
+import { ASSET_ROLES } from "../lib/permissions";
 import { SmartLayout } from "./SmartLayout";
 
 /**
@@ -67,8 +69,13 @@ const ALL_ROLES: Role[] = [
   "STAFF",
   "AUDITOR",
 ];
-/** Everyone except the SYSTEM_ADMIN — the roles that may see asset data. */
-const ASSET_ROLES: Role[] = ["PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"];
+/*
+ * `ASSET_ROLES` — everyone except the SYSTEM_ADMIN — is imported from
+ * `lib/permissions.ts` rather than declared here, so the guard below and the
+ * dashboard's tile gate share one list. It was local to this file, which is
+ * exactly why the dashboard could not reference it and wrote `!isAuditor`
+ * instead. A single source also means a future sixth role is added once.
+ */
 
 export const appRoutes: RouteObject[] = [
   {
@@ -86,6 +93,10 @@ export const appRoutes: RouteObject[] = [
           { path: "/map", element: <MapPage /> },
           { path: "/login", element: <LoginPage /> },
           { path: "/request-account", element: <RequestAccountPage /> },
+          // The invited person is not signed in and has no account to sign in
+          // with — the invitation is what creates one (T6), so this belongs to
+          // the public shell rather than behind `RequireAuth`.
+          { path: "/accept-invite", element: <AcceptInvitePage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

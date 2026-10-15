@@ -1,6 +1,6 @@
 import { apiClient } from "../lib/apiClient";
-import type { Role } from "../types/enums";
-import type { UserSummary } from "../types/user";
+import type { InvitableRole, Role } from "../types/enums";
+import type { InviteAccountResponse, UserSummary } from "../types/user";
 
 /**
  * `GET /users` — requires `USER_READ` (spec 2.1.1): the System Admin and the
@@ -48,6 +48,39 @@ export function approveUser(id: string, role?: Role): Promise<UserSummary> {
  */
 export function rejectUser(id: string, reason: string): Promise<UserSummary> {
   return apiClient.post<UserSummary>(`/users/${encodeURIComponent(id)}/reject`, { reason });
+}
+
+export interface InviteUserPayload {
+  email: string;
+  role: InvitableRole;
+  /**
+   * Required when the role is DEPARTMENT_HEAD: one head per unit. `| undefined`
+   * is spelled out for `exactOptionalPropertyTypes` (see `components/Input.tsx`)
+   * so an optional value can be forwarded without a cast.
+   */
+  unitId?: string | null | undefined;
+  /** Who authorized this appointment outside the system (D3). Required. */
+  authorizedBy: string;
+  /** The letter number or equivalent (D3). Required. */
+  authorizationRef: string;
+  authorizationNote?: string | null | undefined;
+}
+
+/**
+ * `POST /users/invite` — create a privileged account by invitation (T6).
+ *
+ * **There is no password in this payload, and that is the point.** The account is
+ * created `PENDING_EMAIL_VERIFICATION` with a password nobody knows, and the
+ * invitee chooses their own through `/accept-invite`. An administrator supplying
+ * a password here would be the legacy flow this endpoint replaces.
+ *
+ * The response carries the single-use link as well as the email result, so an
+ * administrator can hand it over directly while the mail transport is still a
+ * stub — an invitation that cannot be delivered is an invitation that was not
+ * sent.
+ */
+export function inviteUser(payload: InviteUserPayload): Promise<InviteAccountResponse> {
+  return apiClient.post<InviteAccountResponse>("/users/invite", payload);
 }
 
 /** `PATCH /users/:id` — correct a name or email. A taken email answers 409. */

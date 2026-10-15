@@ -10,9 +10,11 @@ import { Pagination } from "../../components/Pagination";
 import { SearchBar } from "../../components/SearchBar";
 import { Select } from "../../components/Select";
 import { SkeletonCard } from "../../components/Skeleton";
+import { useAuth } from "../../app/AuthContext";
 import { useCategories } from "../../hooks/useCategories";
 import { useItems } from "../../hooks/useItems";
 import { DEPARTMENT_OPTIONS } from "../../lib/departments";
+import { seesAllItems } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
 
 /**
@@ -24,6 +26,18 @@ import { NetworkError } from "../../types/api";
  */
 export function ItemsBrowsePage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
+
+  /**
+   * Whether this viewer's `/items` is the whole register or a scoped list.
+   *
+   * The server decides that, not this flag (`services/itemScope.ts`): a Property
+   * Officer and an Auditor get the college, a Department Head gets their unit plus
+   * their own holdings, and a Staff member gets only what they hold. This reads the
+   * same capability the sidebar does, so the two screens cannot disagree, and it
+   * exists because they did — see `isScoped` below.
+   */
+  const isScoped = !seesAllItems(user?.role);
 
   const page = Number(searchParams.get("page") ?? "1") || 1;
   const search = searchParams.get("search") ?? "";
@@ -71,10 +85,31 @@ export function ItemsBrowsePage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/*
+        One URL, two honest readings.
+
+        `/items` is reachable by every role — the header links it as "All items"
+        and the QR scanner lands here — but the server scopes it, so a Staff
+        member browsing `/items` sees only their own holdings. The page used to
+        say "Browse items · search the active inventory" regardless, and its empty
+        state said "No items registered yet" — which told a Staff member that the
+        register was empty while the same URL with `?mine=true` (or the
+        department's own list) showed items. The data was never wrong; the copy
+        was, and it read as a bug in the data.
+
+        So the heading states the scope the server actually applied. Nothing about
+        the request changes — the server has always scoped it; only the words do.
+      */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Browse items</h1>
+        <h1 className="text-2xl font-bold text-slate-900">
+          {isScoped ? "My items" : "Browse items"}
+        </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Search the active inventory by name, tag ID, category, or department.
+          {isScoped
+            ? user?.role === "DEPARTMENT_HEAD"
+              ? "Items held in your department, plus anything you hold personally. Search by name, tag ID, or category."
+              : "The items currently in your custody. Search by name, tag ID, or category."
+            : "Search the active inventory by name, tag ID, category, or department."}
         </p>
       </div>
 
@@ -145,8 +180,12 @@ export function ItemsBrowsePage() {
         ) : (
           <EmptyState
             icon={<PackageSearch className="h-8 w-8" />}
-            heading="No items registered yet"
-            body="Registered items will show up here."
+            heading={isScoped ? "Nothing is assigned to you yet" : "No items registered yet"}
+            body={
+              isScoped
+                ? "Items you hold will appear here. A transfer request is how an item moves from the college pool to you."
+                : "Registered items will show up here."
+            }
           />
         )
       ) : (

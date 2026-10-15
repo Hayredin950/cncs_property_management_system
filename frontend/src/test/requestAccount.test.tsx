@@ -11,6 +11,11 @@ const API = "http://localhost:4000/api/v1";
 /**
  * `/request-account` — public form that asks for an account. Success shows a
  * confirmation and never stores a token: the account is pending until approved.
+ *
+ * The department list comes from `GET /departments` (the default MSW handler), not
+ * from a constant in the component, so selecting "Biology" here proves the options
+ * were rendered from the API response — and that what the form submits is the unit
+ * the option carries, which is what the request is scoped by.
  */
 describe("RequestAccountPage", () => {
   it("submits to account-requests and shows the confirmation", async () => {
@@ -43,7 +48,9 @@ describe("RequestAccountPage", () => {
     await user.type(screen.getByLabelText("Full name"), "New Person");
     await user.type(screen.getByLabelText("Email"), "new.person@aau.edu.et");
     await user.type(screen.getByLabelText("Password"), "SecurePass1");
-    await user.selectOptions(screen.getByLabelText("Department"), "Biology");
+    const select = await screen.findByLabelText<HTMLSelectElement>("Department");
+    await screen.findByRole("option", { name: "Biology" });
+    await user.selectOptions(select, "unit-bio");
     await user.click(screen.getByRole("button", { name: "Submit request" }));
 
     await waitFor(() =>
@@ -51,7 +58,8 @@ describe("RequestAccountPage", () => {
         fullName: "New Person",
         email: "new.person@aau.edu.et",
         password: "SecurePass1",
-        department: "Biology",
+        /** The unit id from the API, not a display name baked into the client. */
+        department: "unit-bio",
       }),
     );
 

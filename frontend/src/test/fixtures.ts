@@ -1,6 +1,12 @@
 import type { Item } from "../types/item";
 import type { Category } from "../types/category";
-import type { AuthUser, LoginResponse, MeResponse, UserSummary } from "../types/user";
+import type {
+  AuthUser,
+  DepartmentOption,
+  LoginResponse,
+  MeResponse,
+  UserSummary,
+} from "../types/user";
 import type {
   PendingCountResponse,
   RequestDetail,
@@ -17,6 +23,10 @@ import type {
   AuditSessionSummary,
 } from "../types/audit";
 import type { ItemsHistoryResponse } from "../types/history";
+import type { SystemEvent, SystemStatus } from "../api/system";
+import type { DepartmentRoster, InvitableUnit } from "../api/departments";
+import type { ActiveAuditResponse } from "../api/audits";
+import type { RecentItem } from "../api/items";
 
 /**
  * Fixtures shaped exactly like the backend's responses (docs/backend-handoff.md
@@ -68,6 +78,21 @@ export const AUDITOR_USER: AuthUser = {
   fullName: "Almaz Auditor",
   email: "auditor@cncs.aau.edu.et",
   role: "AUDITOR",
+  createdAt: "2026-09-01T08:00:00.000Z",
+};
+
+/**
+ * The Department Head (spec 2.2): sees its own department's held items, the roster,
+ * and the requests it may decide. It is the only role whose dashboard renders the
+ * "Your held items" tile, which is why the tile's tests sign in as this account.
+ */
+export const HEAD_USER: AuthUser = {
+  id: "00000000-0000-4000-8000-000000000005",
+  fullName: "Hana Head",
+  email: "head@cncs.aau.edu.et",
+  role: "DEPARTMENT_HEAD",
+  /** Computer Science — the unit its roster tile and its `/departments/:id/roster` call use. */
+  departmentId: "unit-cs",
   createdAt: "2026-09-01T08:00:00.000Z",
 };
 
@@ -299,6 +324,57 @@ export const AUDITS_LIST: AuditListResponse = {
 };
 
 /**
+ * `GET /audits/active` — the server's own discriminated shape (`active` plus two
+ * objects), not the flat one the tile renders. `fetchActiveAudit` is the mapping
+ * between them, so the fixture has to be the server side of it or the mapping is
+ * the one thing the tests never exercise.
+ */
+export const ACTIVE_AUDIT: ActiveAuditResponse = {
+  active: true,
+  session: {
+    id: AUDIT_SESSION.id,
+    scopeType: AUDIT_SESSION.scopeType,
+    scopeValue: AUDIT_SESSION.scopeValue,
+  },
+  progress: { scanned: 2, total: 5, remaining: 3 },
+};
+
+/** `GET /audits/findings?status=OPEN` — the count alone, which is all the tile shows. */
+export const OPEN_FINDINGS_COUNT = { count: 4 };
+
+/**
+ * `GET /items/recent?limit=` — `registeredAt`, the field the handler selects. A
+ * fixture with `createdAt` would have hidden the tile's wrong-field bug.
+ *
+ * Its own item, not a copy of `PRIVILEGED_ITEM`: the officer's dashboard renders
+ * this row *and* a request preview that names `PRIVILEGED_ITEM`, so sharing a name
+ * made a page-wide query on the dashboard ambiguous.
+ */
+export const RECENT_ITEMS: RecentItem[] = [
+  {
+    id: "item-recent-1",
+    name: "Epson Projector EB-970",
+    tagId: "CNCS-RECENT01",
+    registeredAt: "2026-09-20T10:00:00.000Z",
+  },
+];
+
+/** `GET /items/held-by-me?summary=true` — the count, not the rows. */
+export const HELD_ITEMS_SUMMARY = { count: 3 };
+
+/** `GET /loans/overdue` — the Property Officer's overdue-loan count. */
+export const OVERDUE_LOANS = { count: 2 };
+
+/**
+ * `GET /departments/:id/roster` — the Department Head's roster snapshot, for the
+ * head's own unit (`HEAD_USER.departmentId`).
+ */
+export const DEPARTMENT_ROSTER: DepartmentRoster = {
+  department: { id: "unit-cs", name: "Computer Science" },
+  staffCount: 5,
+};
+
+/**
  * `GET /audits/:id` — the read-back, **empty by default**.
  *
  * Empty is the right default because the walkthrough tests scan `PRIVILEGED_ITEM`
@@ -411,6 +487,22 @@ export const HISTORY_FIXTURE: ItemsHistoryResponse = {
 export const CSV_BODY = "tagId,name\nCNCS-AB12CD34,Dell Latitude 5440\n";
 
 /**
+ * `GET /departments` — the public list the request-account form loads, in the
+ * live shape (`[{ id, name, code }]`, verified against the deployed API). The ids
+ * are readable slugs rather than uuids so a test that selects "Biology" can assert
+ * on the value the form actually submits instead of on an opaque identifier.
+ *
+ * Physics is present and headless on purpose: it is the unit the vacant-head
+ * fallback is tested against.
+ */
+export const DEPARTMENTS: DepartmentOption[] = [
+  { id: "unit-bio", name: "Biology", code: "BIO" },
+  { id: "unit-chem", name: "Chemistry", code: "CHEM" },
+  { id: "unit-cs", name: "Computer Science", code: "CS" },
+  { id: "unit-phys", name: "Physics", code: "PHYS" },
+];
+
+/**
  * `GET /requests/:id` returns a richer shape than the list (`REQUEST_DETAIL_SELECT`
  * in the backend): the item row carries its location fields, and `reviewedBy`
  * appears (null while pending).
@@ -427,3 +519,61 @@ export const REQUEST_DETAIL_FIXTURE: RequestDetail = {
   },
   reviewedBy: null,
 };
+
+/** `GET /system/status` — the build facts the System Admin's dashboard shows. */
+export const SYSTEM_STATUS: SystemStatus = {
+  environment: "production",
+  version: "1.0.0",
+  uptime: 4321,
+  lastDeploy: "2026-10-13T06:00:00.000Z",
+  database: "connected",
+};
+
+/**
+ * `GET /system/events` — rows of the account log (§10.4). Two of them, both
+ * account-level, because that is the whole point of the endpoint now: it cannot
+ * carry an audit session, a tag id or a room. There is no asset-shaped fixture
+ * here to accidentally assert against.
+ */
+/**
+ * `GET /departments/invitable` — the head-appointment picker (T6).
+ *
+ * Deliberately not the same list as `DEPARTMENTS`: that one is the units open to
+ * *self-registration*, and an invite is most needed where a unit has no working
+ * head. Chemistry carries `hasActiveHead: true` so a test can assert the picker
+ * marks the unit the server will refuse, and Physics — headless by design — is the
+ * one a head is actually appointed into.
+ */
+export const INVITABLE_UNITS: InvitableUnit[] = [
+  { id: "unit-chem", name: "Chemistry", code: "CHEM", hasActiveHead: true },
+  { id: "unit-cs", name: "Computer Science", code: "CS", hasActiveHead: true },
+  { id: "unit-phys", name: "Physics", code: "PHYS", hasActiveHead: false },
+];
+
+/**
+ * `POST /auth/accept-invite` — the session an invitee gets back after choosing
+ * their own password. A Department Head, because that is the case with the most
+ * moving parts (the unit it heads is returned too).
+ */
+export const ACCEPTED_INVITE_USER: AuthUser = {
+  id: "invitee-1",
+  fullName: "New Head",
+  email: "newhead@cncs.aau.edu.et",
+  role: "DEPARTMENT_HEAD",
+  createdAt: "2026-10-14T08:00:00.000Z",
+};
+
+export const SYSTEM_EVENTS: SystemEvent[] = [
+  {
+    id: "log-1",
+    type: "ACCOUNT_APPROVED",
+    message: "account approved — Sara Staff",
+    timestamp: "2026-10-10T09:00:00.000Z",
+  },
+  {
+    id: "log-2",
+    type: "ACCOUNT_DEACTIVATED",
+    message: "account deactivated — Sara Staff",
+    timestamp: "2026-10-09T09:00:00.000Z",
+  },
+];

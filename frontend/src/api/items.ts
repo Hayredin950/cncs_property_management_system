@@ -30,6 +30,38 @@ export function fetchItemById(id: string, signal?: AbortSignal): Promise<Item> {
   return apiClient.get<Item>(`/items/${encodeURIComponent(id)}`, undefined, signal);
 }
 
+/**
+ * One row of the dashboard's "Recently registered items" tile.
+ *
+ * `registeredAt`, not `createdAt`: that is the column the endpoint selects and
+ * orders by, and the tile renders the date as "registered …". The old hook typed
+ * the field `createdAt` and got `undefined` for it, which is why the rows showed a
+ * blank time.
+ */
+export interface RecentItem {
+  id: string;
+  name: string;
+  tagId: string;
+  registeredAt: string;
+}
+
+/**
+ * `GET /items/recent?limit=` — the last few registered items, for the Property
+ * Officer's dashboard (`ITEM_READ_ALL`, so Officer/Admin only; a Staff caller gets
+ * a 403, which the tile renders as an error rather than an empty list).
+ */
+export function fetchRecentItems(limit: number, signal?: AbortSignal): Promise<RecentItem[]> {
+  return apiClient.get<RecentItem[]>("/items/recent", { limit }, signal);
+}
+
+/**
+ * `GET /items/held-by-me?summary=true` — how many active items this account holds,
+ * as holder or owner. Any signed-in role; the question it answers is "mine".
+ */
+export function fetchHeldItemsSummary(signal?: AbortSignal): Promise<{ count: number }> {
+  return apiClient.get<{ count: number }>("/items/held-by-me", { summary: "true" }, signal);
+}
+
 /** Body of `POST /items` — mirrors the backend's `createItemSchema` (items.ts). */
 export interface CreateItemPayload {
   name: string;

@@ -59,8 +59,8 @@ describe("Report Endpoints", () => {
           tagId: "CNCS-0001",
           name: "Dell Laptop",
           category: { name: "Electronics" },
-          department: "Computer Science",
-          building: "CNCS Building",
+          orgUnitRef: { name: "Computer Science" },
+          buildingRef: { name: "CNCS Building" },
           floor: "3",
           room: "312",
           owner: { fullName: "Demo Staff", email: "staff@cncs.aau.edu.et" },
@@ -97,8 +97,8 @@ describe("Report Endpoints", () => {
           tagId: "CNCS-0001",
           name: "Dell Laptop",
           category: { name: "Electronics" },
-          department: "Computer Science",
-          building: "CNCS Building",
+          orgUnitRef: { name: "Computer Science" },
+          buildingRef: { name: "CNCS Building" },
           floor: "3",
           room: "312",
           owner: { fullName: "Demo Staff", email: "staff@cncs.aau.edu.et" },
@@ -145,8 +145,8 @@ describe("Report Endpoints", () => {
           tagId: "CNCS-0001",
           name: "Dell Laptop",
           category: { name: "Electronics" },
-          department: "Computer Science",
-          building: "CNCS Building",
+          orgUnitRef: { name: "Computer Science" },
+          buildingRef: { name: "CNCS Building" },
           floor: "3",
           room: "312",
           owner: { fullName: "Demo Staff", email: "staff@cncs.aau.edu.et" },
@@ -175,6 +175,9 @@ describe("Report Endpoints", () => {
       expect(res.text).toContain("tagId,name,category");
       expect(res.text).toContain("CNCS-0001,Dell Laptop,Electronics");
       expect(res.text).toContain("18000");
+      // The item's OrgUnit and Building relations arrive as the `department` and
+      // `building` names the CSV columns have always held.
+      expect(res.text).toContain("Computer Science,CNCS Building");
     });
 
     it("passes department, categoryId, status and date filters into the where clause", async () => {
@@ -189,7 +192,9 @@ describe("Report Endpoints", () => {
       expect(prisma.item.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            department: "Biology",
+            // `?department=` matches the item's OrgUnit by name; the free-text
+            // column it used to read was dropped from `Item`.
+            orgUnitRef: { is: { name: { equals: "Biology" } } },
             categoryId: "cat-1",
             status: "DISPOSED",
             registeredAt: {
@@ -250,8 +255,8 @@ describe("Report Endpoints", () => {
           item: {
             tagId: "CNCS-0001",
             name: "Dell Laptop",
-            department: "CNCS",
-            building: "CNCS Building",
+            orgUnitRef: { name: "CNCS" },
+            buildingRef: { name: "CNCS Building" },
             floor: "3",
             room: "312",
           },
@@ -268,6 +273,7 @@ describe("Report Endpoints", () => {
       expect(res.text).toContain("scopeType,scopeValue");
       expect(res.text).toContain("DEPARTMENT,CNCS");
       expect(res.text).toContain("CNCS-0001,Dell Laptop");
+      expect(res.text).toContain("CNCS-0001,Dell Laptop,CNCS,CNCS Building");
       expect(res.text).toContain("FOUND");
     });
 
@@ -288,8 +294,8 @@ describe("Report Endpoints", () => {
           item: {
             tagId: "CNCS-0001",
             name: "Dell Laptop",
-            department: "CNCS",
-            building: "CNCS Building",
+            orgUnitRef: { name: "CNCS" },
+            buildingRef: { name: "CNCS Building" },
             floor: "3",
             room: "312",
           },
@@ -301,8 +307,8 @@ describe("Report Endpoints", () => {
           item: {
             tagId: "CNCS-0001",
             name: "Dell Laptop",
-            department: "CNCS",
-            building: "CNCS Building",
+            orgUnitRef: { name: "CNCS" },
+            buildingRef: { name: "CNCS Building" },
             floor: "3",
             room: "312",
           },
@@ -389,7 +395,9 @@ describe("Report Endpoints", () => {
 
       expect(prisma.request.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ item: { department: "Biology" } }),
+          where: expect.objectContaining({
+            item: { orgUnitRef: { is: { name: { equals: "Biology" } } } },
+          }),
         }),
       );
     });
@@ -404,8 +412,8 @@ describe("Report Endpoints", () => {
           item: {
             tagId: "CNCS-0002",
             name: "Old Printer",
-            department: "CNCS",
-            building: "CNCS Building",
+            orgUnitRef: { name: "CNCS" },
+            buildingRef: { name: "CNCS Building" },
             floor: "1",
             room: "101",
           },
@@ -419,6 +427,7 @@ describe("Report Endpoints", () => {
       expect(res.status).toBe(200);
       expect(res.headers["content-disposition"]).toContain("disposals-report");
       expect(res.text).toContain("CNCS-0002,Old Printer");
+      expect(res.text).toContain("CNCS-0002,Old Printer,CNCS,CNCS Building");
       expect(res.text).toContain("Beyond repair");
       expect(res.text).toContain("Demo Staff");
       expect(res.text).toContain("System Admin");

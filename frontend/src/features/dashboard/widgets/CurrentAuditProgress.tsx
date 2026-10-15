@@ -7,6 +7,13 @@ import { useActiveAudit } from "../../../hooks/useAudits";
 
 export function CurrentAuditProgress() {
   const { data, isPending, isError } = useActiveAudit();
+  /*
+    A session over a department with no in-scope rows reports `total: 0`, and
+    `0 / 0` is `NaN` — which Tailwind passes through as an invalid `width` and the
+    browser renders as a full-width bar. An empty scope is a real state (the
+    walkthrough starts before anything is scanned), so it gets an empty bar.
+  */
+  const percent = data && data.total > 0 ? (data.scanned / data.total) * 100 : 0;
 
   return (
     <Card className="flex flex-col gap-4">
@@ -61,7 +68,7 @@ export function CurrentAuditProgress() {
           <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
             <div
               className="h-full bg-brand-600 transition-all"
-              style={{ width: `${(data.scanned / data.total) * 100}%` }}
+              style={{ width: `${percent}%` }}
               role="progressbar"
               aria-valuenow={data.scanned}
               aria-valuemin={0}

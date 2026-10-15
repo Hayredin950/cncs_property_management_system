@@ -1,4 +1,5 @@
 import { apiClient, downloadBlob } from "../lib/apiClient";
+import { ApiError } from "../types/api";
 import {
   compactReportQuery,
   type DisposalsReportQuery,
@@ -71,4 +72,27 @@ export async function saveReport(fetchReport: () => Promise<ReportDownload>): Pr
   const { blob, filename } = await fetchReport();
   downloadBlob(blob, filename);
   return filename;
+}
+
+/**
+ * What to say when a download fails, said so it cannot be read as "this screen is
+ * broken".
+ *
+ * A download is a *copy* of what the page is already showing. When the request
+ * fails, `err.message` for a 5xx is the server's own generic text — "Internal
+ * server error" — which next to a rendered list of audit sessions reads as though
+ * the rows on screen were the problem. They were not: the report failed to build,
+ * and the user needs to know that retrying is the whole fix.
+ *
+ * A 4xx does carry a real answer ("Insufficient permissions", "Report not
+ * found"), so those keep the server's wording, prefixed with what failed.
+ */
+export function describeDownloadFailure(error: unknown, what = "the report"): string {
+  if (error instanceof ApiError && error.status >= 500) {
+    return `Couldn't build ${what} — nothing on this page has changed. Please try again.`;
+  }
+  if (error instanceof Error && error.message) {
+    return `Couldn't download ${what}: ${error.message}`;
+  }
+  return `Couldn't download ${what}`;
 }

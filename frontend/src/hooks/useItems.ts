@@ -1,5 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchItemById, fetchItemByTagId, fetchItems } from "../api/items";
+import {
+  fetchHeldItemsSummary,
+  fetchItemById,
+  fetchItemByTagId,
+  fetchItems,
+  fetchRecentItems,
+} from "../api/items";
 import type { ItemsListQuery } from "../types/item";
 
 export function useItems(query: ItemsListQuery) {
@@ -11,42 +17,24 @@ export function useItems(query: ItemsListQuery) {
 }
 
 /**
- * Fetch recently registered items for the dashboard widget.
- * Endpoint: GET /items/recent?limit=5
- * Falls back gracefully if endpoint doesn't exist yet.
+ * The Property Officer's "Recently registered items" tile (`GET /items/recent`).
+ *
+ * It used to be a bare, root-relative `fetch` with no `Authorization` header, whose
+ * failures were all funnelled into `return []`. Two of those failures were real and
+ * permanent, and both read as "no items registered yet": the request had no token,
+ * and the route it asked for was unreachable because `GET /items/:tagId` matched the
+ * literal name first. Even a 200 would have been displayed wrong — the endpoint
+ * sends `registeredAt` while the tile read `createdAt`.
+ *
+ * `apiClient` for the token and the base URL, `fetchRecentItems` for the field, and
+ * a thrown error now surfaces as the tile's error state rather than an empty
+ * register.
  */
 export function useRecentItems({ limit }: { limit: number }) {
   return useQuery({
     queryKey: ["items", "recent", limit],
-    queryFn: async ({ signal }) => {
-      try {
-        const response = await fetch(`/api/v1/items/recent?limit=${limit}`, {
-          signal,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        if (!response.ok) {
-          // Endpoint doesn't exist yet - return empty array gracefully
-          if (response.status === 404) {
-            return [];
-          }
-          throw new Error(`Failed to fetch recent items: ${response.statusText}`);
-        }
-        return response.json();
-      } catch (error) {
-        // If fetch fails, return empty array gracefully
-        console.error("Failed to fetch recent items:", error);
-        return [];
-      }
-    },
-    // Don't retry on 404 - endpoint might not exist yet
-    retry: (failureCount, error) => {
-      if (error instanceof Error && error.message.includes("404")) {
-        return false;
-      }
-      return failureCount < 3;
-    },
+    queryFn: ({ signal }) => fetchRecentItems(limit, signal),
+    retry: false,
   });
 }
 
@@ -65,42 +53,18 @@ export function useItemByTagId(tagId: string | undefined) {
 }
 
 /**
- * Fetch count of items held by the logged-in user for dashboard widget.
- * Endpoint: GET /items/held-by-me?summary=true
- * Falls back gracefully if endpoint doesn't exist yet.
+ * The Department Head's "Your held items" tile (`GET /items/held-by-me?summary=true`).
+ *
+ * Same three faults as `useRecentItems` above, including the route-ordering one
+ * (`GET /items/:tagId` swallowed the literal path, so the count was always zero), and
+ * the same fix. A `{ count: 0 }` the client invented is indistinguishable from a
+ * genuinely empty register, which is why the failure has to reach the tile now.
  */
 export function useHeldItems() {
   return useQuery({
     queryKey: ["items", "held-by-me"],
-    queryFn: async ({ signal }) => {
-      try {
-        const response = await fetch("/api/v1/items/held-by-me?summary=true", {
-          signal,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        if (!response.ok) {
-          // Endpoint doesn't exist yet - return zero count gracefully
-          if (response.status === 404) {
-            return { count: 0 };
-          }
-          throw new Error(`Failed to fetch held items: ${response.statusText}`);
-        }
-        return response.json();
-      } catch (error) {
-        // If fetch fails, return zero count gracefully
-        console.error("Failed to fetch held items:", error);
-        return { count: 0 };
-      }
-    },
-    // Don't retry on 404 - endpoint might not exist yet
-    retry: (failureCount, error) => {
-      if (error instanceof Error && error.message.includes("404")) {
-        return false;
-      }
-      return failureCount < 3;
-    },
+    queryFn: ({ signal }) => fetchHeldItemsSummary(signal),
+    retry: false,
   });
 }
 

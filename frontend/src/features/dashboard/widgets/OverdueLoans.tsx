@@ -4,30 +4,50 @@ import { Card } from "../../../components/Card";
 import { SkeletonText } from "../../../components/Skeleton";
 import { useOverdueLoans } from "../../../hooks/useLoans";
 
+/**
+ * The Property Officer's "Overdue loans" tile — approved loans past their due
+ * date and not returned.
+ *
+ * A count of **zero** is the good news and the tile hides: a permanent "0 overdue
+ * loans" card trains people to stop reading it. A **failed request** is not zero,
+ * and hiding it would say the same thing — which is exactly how a 401 from a
+ * token-less fetch read as a clean loan register (14 Oct). So a failure renders.
+ */
 export function OverdueLoans() {
-  const { data, isPending } = useOverdueLoans();
+  const { data, isPending, isError } = useOverdueLoans();
 
-  // Widget should only render if count > 0 (hide at zero)
-  if (!isPending && (!data || data.count === 0)) {
+  if (!isPending && !isError && (!data || data.count === 0)) {
     return null;
   }
 
   return (
-    <Card className="flex flex-col gap-4 border-warning-200 bg-warning-50">
+    <Card
+      className={
+        isError
+          ? "flex flex-col gap-4"
+          : "flex flex-col gap-4 border-warning-200 bg-warning-50"
+      }
+    >
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-slate-900">Overdue loans</h2>
-        <Link
-          to="/loans?status=OVERDUE"
-          className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
-        >
-          View all →
-        </Link>
+        {!isError && (
+          <Link
+            to="/loans?status=OVERDUE"
+            className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
+          >
+            View all →
+          </Link>
+        )}
       </div>
 
       {isPending ? (
         <div role="status" aria-label="Loading overdue loans">
           <SkeletonText lines={1} />
         </div>
+      ) : isError ? (
+        <p className="text-sm text-slate-500">
+          Couldn&apos;t load overdue loans — this is unknown, not zero.
+        </p>
       ) : (
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning-100">

@@ -12,12 +12,21 @@ import {
 } from "../middleware/auth.js";
 import { normalizeEmail } from "../utils/email.js";
 import {
-  assertCanReview,
   ERROR_APPROVE_NOT_FOUND,
   ERROR_REJECTION_REASON,
   type AccountStatusValue,
 } from "../services/accountApproval.js";
-import { canDecide, resolveApprover, getUnitScope } from "../services/approvers.js";
+import { canDecide, getUnitScope } from "../services/approvers.js";
+import { sendNotificationEmail } from "../services/email.js";
+import {
+  assertInvitable,
+  createPrivilegedInvite,
+  ERROR_INVITE_AUTHORIZATION_REF,
+  ERROR_INVITE_AUTHORIZED_BY,
+  INVITABLE_ROLES,
+  INVITE_TTL_HOURS,
+  type InvitableRole,
+} from "../services/invites.js";
 
 export const usersRouter: Router = Router();
 
@@ -417,6 +426,190 @@ usersRouter.post(
       });
 
       res.status(200).json(toAdminUser(escalated));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * The privileged-invite body (T6).
+ *
+ * `authorizedBy` and `authorizationRef` are required **here** as well as in the
+ * service: this is where a payload missing them becomes a 400 with the field
+ * named in `details`, and the service is where the same rule is enforced for any
+ * caller that did not come through the HTTP layer. Repeating a rule at two layers
+ * is deliberate for this pair — it is the requirement, and one enforcement point
+ * that someone later refactors away is a requirement quietly dropped.
+ */
+const inviteSchema = z.object({
+  email: z.string().trim().email("Enter a valid email"),
+  role: z.enum(INVITABLE_ROLES, {
+    message: "A privileged invite is for a department head, property officer, auditor or system admin",
+  }),
+  unitId: z.string().trim().min(1).nullish(),
+  authorizedBy: z.string().trim().min(1, ERROR_INVITE_AUTHORIZED_BY).max(200),
+  authorizationRef: z.string().trim().min(1, ERROR_INVITE_AUTHORIZATION_REF).max(200),
+  authorizationNote: z.string().trim().max(500).nullish(),
+});
+
+/**
+ * `POST /users/invite` — create a privileged account by invitation (T6).
+ *
+ * SYSTEM_ADMIN only (`ACCOUNT_INVITE`), and the account it creates **cannot be
+ * signed into by anyone until the invitee sets their own password** through
+ * `POST /auth/accept-invite`. That is the requirement, and it is why this route
+ * has no `password` field at all: there is no code path here that could accept
+ * one, so the legacy "administrator types a password and reads it out" flow is
+ * not a thing a future edit can reintroduce by accident.
+ *
+ * The four rejections the authority doc's §4 table checks live in
+ * `services/invites.ts` — missing authorization, a unit that already has an
+ * active head, one person holding Property Officer and Auditor, and an admin
+ * inviting themselves.
+ *
+ * The link is returned in the response as well as emailed. That is not a leak:
+ * the caller is the administrator who just created the appointment, the link is
+ * single-use and expires, and the transport below is a stub until `NOTIFY_EMAIL`
+ * is on — without the link in the response an invitation could be created and
+ * never delivered, which is a worse failure than the administrator seeing it.
+ * `email` says which of the two happened.
+ */
+usersRouter.post(
+  "/invite",
+  authenticate,
+  requireCapability("ACCOUNT_INVITE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = inviteSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({
+          error: parsed.error.issues[0]?.message ?? "Validation failed",
+          details: parsed.error.issues,
+        });
+        return;
+      }
+
+      const actor = req.user!;
+      const data = parsed.data;
+      const email = normalizeEmail(data.email);
+      const role = data.role as InvitableRole;
+      const unitId = role === "DEPARTMENT_HEAD" ? (data.unitId ?? null) : null;
+
+      /**
+       * The three facts the rules need, read together: the unit being appointed
+       * (only for a head), a live account on the address, and a still-usable
+       * invite on it. `liveInvite` and `lapsedAccount` are the two states that
+       * look identical in the `User` table and must be told apart — the first
+       * blocks the invite, the second is the renewal this route exists to serve.
+       */
+      const [actorRow, unit, account] = await Promise.all([
+        prisma.user.findUnique({ where: { id: actor.id }, select: { email: true } }),
+        unitId
+          ? prisma.orgUnit.findUnique({
+              where: { id: unitId },
+              select: {
+                id: true,
+                name: true,
+                isActive: true,
+                headId: true,
+                head: { select: { accountStatus: true } },
+              },
+            })
+          : Promise.resolve(null),
+        prisma.user.findFirst({
+          where: { email: { equals: email, mode: "insensitive" } },
+          select: {
+            id: true,
+            role: true,
+            accountStatus: true,
+            emailTokens: {
+              where: { type: "INVITE", usedAt: null, expiresAt: { gt: new Date() } },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        }),
+      ]);
+
+      const liveInvite = account?.emailTokens.length
+        ? { role: account.role }
+        : null;
+      const lapsedInviteUserId =
+        account && !liveInvite && account.accountStatus === "PENDING_EMAIL_VERIFICATION"
+          ? account.id
+          : null;
+      /** A live account that is not a lapsed invite: "already has an account". */
+      const existingAccount =
+        account && !liveInvite && !lapsedInviteUserId
+          ? { id: account.id, role: account.role }
+          : null;
+
+      assertInvitable(
+        {
+          role,
+          email,
+          unitId,
+          authorizedBy: data.authorizedBy,
+          authorizationRef: data.authorizationRef,
+          authorizationNote: data.authorizationNote ?? null,
+        },
+        {
+          actor: { id: actor.id, email: actorRow?.email ?? "" },
+          unit: unit
+            ? {
+                id: unit.id,
+                name: unit.name,
+                isActive: unit.isActive,
+                headId: unit.headId,
+                headIsActive: unit.head?.accountStatus === "ACTIVE",
+              }
+            : null,
+          existingAccount,
+          liveInviteRole: liveInvite?.role ?? null,
+        },
+      );
+
+      const invite = await createPrivilegedInvite(
+        {
+          role,
+          email,
+          unitId,
+          authorizedBy: data.authorizedBy,
+          authorizationRef: data.authorizationRef,
+          authorizationNote: data.authorizationNote ?? null,
+        },
+        { id: actor.id, email: actorRow?.email ?? "" },
+        lapsedInviteUserId,
+      );
+
+      // Best-effort and after the transaction commits: a mail server that is down
+      // must not undo an invitation that is already recorded. The response says
+      // which of the two happened, and the link is in it either way.
+      const delivery = await sendNotificationEmail({
+        to: invite.email,
+        subject: "Your CNCS PMS account invitation",
+        body:
+          `You have been invited to the CNCS Property Management System as ${role}.\n\n` +
+          `Set your own password here (the link works once, for ${INVITE_TTL_HOURS} hours):\n` +
+          `${invite.inviteUrl}\n\n` +
+          `This appointment was authorized by ${data.authorizedBy.trim()} ` +
+          `(ref: ${data.authorizationRef.trim()}).`,
+      });
+
+      res.status(201).json({
+        invite: {
+          userId: invite.userId,
+          email: invite.email,
+          role: invite.role,
+          unitId: invite.unitId,
+          status: invite.status,
+          expiresAt: invite.expiresAt,
+          renewed: lapsedInviteUserId !== null,
+        },
+        inviteUrl: invite.inviteUrl,
+        email: delivery,
+      });
     } catch (err) {
       next(err);
     }

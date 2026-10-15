@@ -33,6 +33,48 @@ class UsersApi {
     ];
   }
 
+  /// `GET /departments/invitable` — the units a head invite may name (T6).
+  ///
+  /// Needs `ACCOUNT_INVITE` (System Admin). `hasActiveHead` is what the server
+  /// refuses an invite on, sent up front so the picker can mark a unit the invite
+  /// would be rejected for.
+  Future<List<InvitableUnit>> invitableUnits() async {
+    final json = await _client.get<List<dynamic>>('/departments/invitable');
+    return [
+      for (final row in json)
+        if (row is Map) InvitableUnit.fromJson(Map<String, dynamic>.from(row)),
+    ];
+  }
+
+  /// `POST /users/invite` — create a privileged account by invitation (T6).
+  ///
+  /// **No password, and that is the requirement.** The account is created unable to
+  /// sign in, and the invitee chooses their own password through `/accept-invite`.
+  /// `authorizedBy`/`authorizationRef` record the decision made outside the system
+  /// (D3) and are required by the server for every privileged role.
+  Future<InviteResult> invite({
+    required String email,
+    required String role,
+    String? unitId,
+    required String authorizedBy,
+    required String authorizationRef,
+    String? authorizationNote,
+  }) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/users/invite',
+      body: {
+        'email': email,
+        'role': role,
+        if (unitId != null && unitId.isNotEmpty) 'unitId': unitId,
+        'authorizedBy': authorizedBy,
+        'authorizationRef': authorizationRef,
+        if (authorizationNote != null && authorizationNote.isNotEmpty)
+          'authorizationNote': authorizationNote,
+      },
+    );
+    return InviteResult.fromJson(json);
+  }
+
   /// `POST /users/:id/approve` — let the account sign in.
   ///
   /// [role] is the real role, assigned at approval time: the request itself always

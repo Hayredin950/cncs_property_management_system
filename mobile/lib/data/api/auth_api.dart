@@ -42,21 +42,6 @@ class AuthApi {
     return LoginResponse.fromJson(json);
   }
 
-  /// `POST /auth/register` — Admin-only account creation (F1.3).
-  /// A duplicate email answers 409.
-  Future<AuthUser> register({
-    required String fullName,
-    required String email,
-    required String password,
-    required String role,
-  }) async {
-    final json = await _client.post<Map<String, dynamic>>(
-      '/auth/register',
-      body: {'fullName': fullName, 'email': email, 'password': password, 'role': role},
-    );
-    return AuthUser.fromJson(asMap(json['user']));
-  }
-
   /// `POST /auth/account-requests` — public: anyone may ask, and nobody gets in by
   /// asking. The response carries no token, because the account is
   /// `PENDING_APPROVAL` and cannot sign in until a SYSTEM_ADMIN decides it.

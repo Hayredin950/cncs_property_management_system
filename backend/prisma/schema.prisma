@@ -132,6 +132,7 @@ enum AuditSessionType {
 enum CustodyEventType {
   CREATED
   CLAIMED
+  CLAIMED_WITH_CORRECTION
   CLAIM_REFUSED
   CLAIM_EXPIRED
   REVERTED

@@ -43,6 +43,7 @@ export type CustodyEventTypeValue =
   | "DISPOSED"
   | "LOCATION_CHANGED"
   | "CLAIMED"
+  | "CLAIMED_WITH_CORRECTION"
   | "CLAIM_REFUSED"
   | "CLAIM_EXPIRED"
   | "REVERTED";

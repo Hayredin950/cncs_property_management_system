@@ -501,8 +501,6 @@ usersRouter.post(
           data: {
             accountStatus: "PENDING_APPROVAL", // Keep as pending but mark for SYSTEM_ADMIN
             reviewNote: (existing.reviewNote ?? "") + "\n[ESCALATED] Not in my department",
-            escalatedAt: new Date(),
-            escalatedById: reviewer.id,
           },
           select: userListSelect,
         });
@@ -519,8 +517,6 @@ usersRouter.post(
             },
             after: {
               accountStatus: "PENDING_APPROVAL",
-              escalatedAt: new Date(),
-              escalatedById: reviewer.id,
             },
           },
         });

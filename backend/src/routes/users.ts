@@ -273,10 +273,32 @@ usersRouter.post(
         ...(hasExplicitRole ? { tokenVersion: { increment: 1 } } : {}),
       };
 
-      const approved = await prisma.user.update({
-        where: { id },
-        data: updateData,
-        select: userListSelect,
+      const approved = await prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id },
+          data: updateData,
+          select: userListSelect,
+        });
+
+        // Log approval to AdminActionLog
+        await tx.adminActionLog.create({
+          data: {
+            actorId: reviewer.id,
+            action: "ACCOUNT_APPROVED",
+            targetUserId: existing.id,
+            unitId: existing.orgUnitId ?? null,
+            before: {
+              accountStatus: existing.accountStatus,
+              role: existing.role,
+            },
+            after: {
+              accountStatus: "ACTIVE",
+              role: requestedRole,
+            },
+          },
+        });
+
+        return updated;
       });
 
       // §5: Trigger structured handover when a DEPARTMENT_HEAD is activated
@@ -365,15 +387,36 @@ usersRouter.post(
         return;
       }
 
-      const rejected = await prisma.user.update({
-        where: { id },
-        data: {
-          accountStatus: "REJECTED",
-          reviewedById: req.user!.id,
-          reviewedAt: new Date(),
-          reviewNote: parsed.data.reason,
-        },
-        select: userListSelect,
+      const rejected = await prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id },
+          data: {
+            accountStatus: "REJECTED",
+            reviewedById: req.user!.id,
+            reviewedAt: new Date(),
+            reviewNote: parsed.data.reason,
+          },
+          select: userListSelect,
+        });
+
+        // Log rejection to AdminActionLog
+        await tx.adminActionLog.create({
+          data: {
+            actorId: reviewer.id,
+            action: "ACCOUNT_REJECTED",
+            targetUserId: existing.id,
+            unitId: existing.orgUnitId ?? null,
+            before: {
+              accountStatus: existing.accountStatus,
+            },
+            after: {
+              accountStatus: "REJECTED",
+              rejectionReason: parsed.data.reason,
+            },
+          },
+        });
+
+        return updated;
       });
 
       res.status(200).json(toAdminUser(rejected));
@@ -438,13 +481,37 @@ usersRouter.post(
         return;
       }
 
-      const escalated = await prisma.user.update({
-        where: { id },
-        data: {
-          accountStatus: "PENDING_APPROVAL", // Keep as pending but mark for SYSTEM_ADMIN
-          reviewNote: (existing.reviewNote ?? "") + "\n[ESCALATED] Not in my department",
-        },
-        select: userListSelect,
+      const escalated = await prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id },
+          data: {
+            accountStatus: "PENDING_APPROVAL", // Keep as pending but mark for SYSTEM_ADMIN
+            reviewNote: (existing.reviewNote ?? "") + "\n[ESCALATED] Not in my department",
+            escalatedAt: new Date(),
+            escalatedById: reviewer.id,
+          },
+          select: userListSelect,
+        });
+
+        // Log escalation to AdminActionLog
+        await tx.adminActionLog.create({
+          data: {
+            actorId: reviewer.id,
+            action: "ACCOUNT_ESCALATED",
+            targetUserId: existing.id,
+            unitId: existing.orgUnitId ?? null,
+            before: {
+              accountStatus: existing.accountStatus,
+            },
+            after: {
+              accountStatus: "PENDING_APPROVAL",
+              escalatedAt: new Date(),
+              escalatedById: reviewer.id,
+            },
+          },
+        });
+
+        return updated;
       });
 
       res.status(200).json(toAdminUser(escalated));

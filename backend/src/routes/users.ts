@@ -800,6 +800,126 @@ usersRouter.post(
   }
 );
 
+/** `POST /users/:id/deactivate` — deactivate an account (not delete). */
+usersRouter.post(
+  "/:id/deactivate",
+  authenticate,
+  requireAnyCapability("ACCOUNT_DEACTIVATE_OWN_UNIT", "ACCOUNT_DEACTIVATE_PRIVILEGED"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Account ID is required" });
+        return;
+      }
+
+      if (req.user?.id === id) {
+        res.status(400).json({ error: "You cannot deactivate your own account" });
+        return;
+      }
+
+      const existing = await prisma.user.findUnique({
+        where: { id },
+        select: { id: true, role: true, accountStatus: true, orgUnitId: true, reviewNote: true },
+      });
+
+      if (!existing) {
+        res.status(404).json({ error: "Account not found" });
+        return;
+      }
+
+      if (existing.accountStatus === "DEACTIVATED") {
+        res.status(409).json({ error: "Account is already deactivated" });
+        return;
+      }
+
+      // DEPARTMENT_HEAD can only deactivate in their unit
+      if (req.user?.role === "DEPARTMENT_HEAD") {
+        if (!existing.orgUnitId || existing.orgUnitId !== req.user.orgUnitId) {
+          res.status(403).json({ error: "You can only deactivate accounts in your department" });
+          return;
+        }
+        if (existing.role === "PROPERTY_OFFICER" || existing.role === "SYSTEM_ADMIN") {
+          res.status(403).json({ error: "Cannot deactivate privileged roles. Use SYSTEM_ADMIN for this." });
+          return;
+        }
+      }
+
+      await prisma.$transaction(async (tx) => {
+        // §8.1: Reassign pending approvals to SYSTEM_ADMIN
+        if (existing.role === "DEPARTMENT_HEAD" && existing.orgUnitId) {
+          const unit = await tx.orgUnit.findUnique({
+            where: { id: existing.orgUnitId },
+            select: { headId: true },
+          });
+          if (unit && unit.headId === existing.id) {
+            await tx.orgUnit.update({
+              where: { id: existing.orgUnitId },
+              data: { headId: null },
+            });
+          }
+          const sysAdmin = await tx.user.findFirst({
+            where: { role: "SYSTEM_ADMIN", accountStatus: "ACTIVE" },
+            select: { id: true },
+          });
+          if (sysAdmin) {
+            await tx.request.updateMany({
+              where: {
+                reviewedById: existing.id,
+                status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"] },
+              },
+              data: {
+                reviewedById: sysAdmin.id,
+                reviewNote: (existing.reviewNote ?? "") + "\n[REASSIGNED] Original approver deactivated",
+              },
+            });
+          }
+        }
+
+        // Revert items held by this user
+        const heldItems = await tx.item.findMany({
+          where: { holderId: existing.id, holderType: "STAFF" },
+          select: { id: true },
+        });
+        for (const item of heldItems) {
+          await tx.item.update({
+            where: { id: item.id },
+            data: {
+              status: "REVERTED_UNVERIFIED",
+              holderType: "COLLEGE",
+              holderId: null,
+            },
+          });
+          await tx.custodyEvent.create({
+            data: {
+              itemId: item.id,
+              eventType: "HOLDER_DEACTIVATED",
+              fromHolderType: "STAFF",
+              fromHolderId: existing.id,
+              toHolderType: "COLLEGE",
+              toHolderId: null,
+              actingUserId: req.user!.id,
+              reason: "Holder deactivated",
+            },
+          });
+        }
+
+        await tx.user.update({
+          where: { id },
+          data: {
+            accountStatus: "DEACTIVATED",
+            tokenVersion: { increment: 1 },
+          },
+        });
+      });
+
+      res.status(200).json({ id, deactivated: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 /** `POST /users/:id/password` — set a new password for the account. */
 usersRouter.post(
   "/:id/password",

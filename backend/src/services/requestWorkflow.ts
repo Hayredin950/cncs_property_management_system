@@ -82,6 +82,60 @@ export async function invalidateStaleRequests(
   });
 }
 
+/**
+ * §8.2: Invalidate pending claim when item status changes under PENDING_CLAIM
+ */
+export async function invalidatePendingClaim(
+  prisma: DbClient,
+  itemId: string,
+  reason: string,
+): Promise<void> {
+  const item = await prisma.item.findUnique({
+    where: { id: itemId },
+    select: { holderId: true, holderType: true },
+  });
+
+  if (!item) return;
+
+  // Revert to COLLEGE pool
+  await prisma.item.update({
+    where: { id: itemId },
+    data: {
+      status: "ACTIVE",
+      holderType: "COLLEGE",
+      holderId: null,
+      claimDueAt: null,
+    },
+  });
+
+  // Record custody event
+  await prisma.custodyEvent.create({
+    data: {
+      itemId,
+      eventType: "CLAIM_REFUSED",
+      fromHolderType: item.holderType,
+      fromHolderId: item.holderId,
+      toHolderType: "COLLEGE",
+      toHolderId: null,
+      actingUserId: (await prisma.user.findFirst({
+        where: { role: "SYSTEM_ADMIN", accountStatus: "ACTIVE" },
+        select: { id: true },
+      }))?.id ?? "",
+      reason,
+    },
+  });
+
+  // Notify the claimant if they were a staff member
+  if (item.holderId) {
+    await prisma.notification.create({
+      data: {
+        userId: item.holderId,
+        message: `Your claim for item ${itemId} has been invalidated: ${reason}`,
+      },
+    });
+  }
+}
+
 export interface DecidabilityInput {
   requestStatus: RequestStatusValue;
   itemStatus: ItemStatusValue;

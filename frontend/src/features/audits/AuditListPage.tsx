@@ -13,10 +13,10 @@ import { SkeletonText } from "../../components/Skeleton";
 import { useAuditsList } from "../../hooks/useAudits";
 import { AUDITS_PAGE_SIZE } from "../../api/audits";
 import { formatDateTimeUTC, formatRelativeTime } from "../../lib/formatters";
+import type { AuditSessionSummary } from "../../types/audit";
 import { canRunAudits, canViewAudits } from "../../lib/permissions";
 import { toast } from "../../lib/toast";
 import { NetworkError } from "../../types/api";
-import type { AuditSessionSummary } from "../../types/audit";
 
 /**
  * `/audits` — the audit history (F9.3 read-back).
@@ -144,7 +144,7 @@ export function AuditListPage() {
         />
       ) : (
         <ul className="flex flex-col gap-3">
-          {auditsQuery.data.audits.map((audit) => (
+          {auditsQuery.data.audits.map((audit: AuditSessionSummary) => (
             <li key={audit.id}>
               <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">

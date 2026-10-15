@@ -2,90 +2,57 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   completeAuditSession,
   createAuditSession,
+  fetchActiveAudit,
   fetchAuditSession,
   fetchAudits,
+  fetchOpenFindings,
   scanAuditItem,
 } from "../api/audits";
 import { scanToastSlot, toast } from "../lib/toast";
 import type { AuditCompletionResponse, AuditScanRow, AuditSession, CreateAuditPayload } from "../types/audit";
 
 /**
- * Fetch active audit session for dashboard widget.
- * Endpoint: GET /audits/active
- * Falls back gracefully if endpoint doesn't exist yet.
+ * The dashboard's "Current audit" tile — this auditor's open session, or `null`
+ * when nothing is open.
+ *
+ * Both halves of the old version were wrong in the same silent way as
+ * `useAuditHistoryList` below. It called `/api/v1/audits/active` with a bare,
+ * root-relative `fetch` and no `Authorization` header (wrong origin on a same-origin
+ * deployment; 401 on the API host), then funnelled every failure — including the
+ * parse error a 200 HTML body produces — into `return null`, so "no active audit"
+ * and "the request failed" were the same answer. The shape was wrong on top of
+ * that: it read `data.id`/`data.scope`/`data.scanned`/`data.total` from an endpoint
+ * that answers `{ active, session, progress }`.
+ *
+ * It now goes through `apiClient` like every other read, maps once inside
+ * `fetchActiveAudit`, and lets failures be failures: the tile renders its error
+ * state instead of claiming the auditor has nothing in flight.
  */
 export function useActiveAudit() {
   return useQuery({
     queryKey: ["audits", "active"],
-    queryFn: async ({ signal }) => {
-      try {
-        const response = await fetch("/api/v1/audits/active", {
-          signal,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        if (!response.ok) {
-          // No active audit or endpoint doesn't exist yet - return null gracefully
-          if (response.status === 404) {
-            return null;
-          }
-          throw new Error(`Failed to fetch active audit: ${response.statusText}`);
-        }
-        return response.json();
-      } catch (error) {
-        // If fetch fails, return null gracefully
-        console.error("Failed to fetch active audit:", error);
-        return null;
-      }
-    },
-    // Don't retry on 404 - no active audit is a valid state
-    retry: (failureCount, error) => {
-      if (error instanceof Error && error.message.includes("404")) {
-        return false;
-      }
-      return failureCount < 3;
-    },
+    queryFn: ({ signal }) => fetchActiveAudit(signal),
+    // `null` is a designed answer; a denial or a dead network is not, and retrying
+    // is the right response to the second only. The API answers 401/403/500 — never
+    // a 404 — so there is no "not built yet" case left to tolerate.
+    retry: false,
   });
 }
 
 /**
- * Fetch open findings count for dashboard widget.
- * Endpoint: GET /audits/findings?status=OPEN
- * Falls back gracefully if endpoint doesn't exist yet.
+ * The dashboard's "Open findings" tile (`GET /audits/findings?status=OPEN`).
+ *
+ * Same rewrite as `useActiveAudit` above, and the same reason: a bare
+ * root-relative `fetch` with no token, whose every failure — including a 404 from a
+ * route that was unreachable through route ordering — became `{ count: 0 }`. A
+ * zero that means "we could not ask" is worse than no tile: it reads as a clean
+ * audit history.
  */
 export function useOpenFindings() {
   return useQuery({
     queryKey: ["audits", "findings", "OPEN"],
-    queryFn: async ({ signal }) => {
-      try {
-        const response = await fetch("/api/v1/audits/findings?status=OPEN", {
-          signal,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        if (!response.ok) {
-          // Endpoint doesn't exist yet - return zero count gracefully
-          if (response.status === 404) {
-            return { count: 0 };
-          }
-          throw new Error(`Failed to fetch open findings: ${response.statusText}`);
-        }
-        return response.json();
-      } catch (error) {
-        // If fetch fails, return zero count gracefully
-        console.error("Failed to fetch open findings:", error);
-        return { count: 0 };
-      }
-    },
-    // Don't retry on 404 - endpoint might not exist yet
-    retry: (failureCount, error) => {
-      if (error instanceof Error && error.message.includes("404")) {
-        return false;
-      }
-      return failureCount < 3;
-    },
+    queryFn: ({ signal }) => fetchOpenFindings(signal),
+    retry: false,
   });
 }
 

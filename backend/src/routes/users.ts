@@ -321,6 +321,13 @@ usersRouter.post(
         });
       }
 
+      // Send approval email (after transaction commits)
+      sendNotificationEmail({
+        to: approved.email,
+        subject: "Your CNCS Property Management Account has been Approved",
+        body: `Hello ${approved.fullName},\n\nYour account request has been approved. You can now sign in at ${process.env.SITE_ORIGIN || 'https://cncs-pms-web.vercel.app'}.\n\nYour role: ${requestedRole}\n\nIf you did not request this account, please contact the Property Office.`,
+      }).catch((err) => console.error("Failed to send approval email:", err));
+
       res.status(200).json(toAdminUser(approved));
     } catch (err) {
       next(err);
@@ -419,6 +426,13 @@ usersRouter.post(
         return updated;
       });
 
+      // Send rejection email (after transaction commits)
+      sendNotificationEmail({
+        to: rejected.email,
+        subject: "Your CNCS Property Management Account Request was Rejected",
+        body: `Hello ${rejected.fullName},\n\nYour account request has been rejected.\n\nReason: ${parsed.data.reason}\n\nIf you believe this is an error, please contact the Property Office.`,
+      }).catch((err) => console.error("Failed to send rejection email:", err));
+
       res.status(200).json(toAdminUser(rejected));
     } catch (err) {
       next(err);
@@ -513,6 +527,20 @@ usersRouter.post(
 
         return updated;
       });
+
+      // Send escalation notification to SYSTEM_ADMIN (after transaction commits)
+      // Find SYSTEM_ADMIN users to notify
+      const systemAdmins = await prisma.user.findMany({
+        where: { role: "SYSTEM_ADMIN", accountStatus: "ACTIVE" },
+        select: { email: true, fullName: true },
+      });
+      for (const admin of systemAdmins) {
+        sendNotificationEmail({
+          to: admin.email,
+          subject: "Account Request Escalated to SYSTEM_ADMIN",
+          body: `An account request for ${existing.fullName} (${existing.email}) has been escalated by Department Head.\n\nReason: Not in my department\n\nPlease review this request in the approval queue.`,
+        }).catch((err) => console.error("Failed to send escalation email:", err));
+      }
 
       res.status(200).json(toAdminUser(escalated));
     } catch (err) {

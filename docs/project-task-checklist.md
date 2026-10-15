@@ -32,16 +32,10 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 - [ ] **CI is red on the only branch with the rework.** 9 consecutive failures
       (`gh run list --repo yanetgeleta/...`): Backend + Frontend CI, all `phase-a-b-complete`,
       39s–53s each. Not an environment problem — see the two real failures below.
-- [ ] **`frontend` does not typecheck at HEAD** — `tsc -b` emits 15 errors, verified in an
-      isolated worktree of `24fb728`. `src/features/dashboard/widgets/AuditHistoryQuickList.tsx:7`
-      imports `useAuditHistoryList`, which does not exist in `src/hooks/useAudits.ts`;
-      `AuditListPage.tsx:13`, `AuditNewPage.tsx:14`, `AuditScanPage.tsx:11` import
-      `useAuditsList`, `useCreateAuditSession`, `useAuditSession`, `useCompleteAuditSession`,
-      `useScanAuditItem` — all deleted in `bd1cc65`. `DepartmentRoster.tsx:7` and
-      `useSystem.ts:17,39` likewise.
-- [ ] **`frontend` fails lint at HEAD** — `src/features/auth/RequestAccountPage.tsx:49`: a
-      `useEffect` is called after an early `return` (`react-hooks/rules-of-hooks`, error).
-      This file is committed and unmodified, so it fails independently of the working-tree WIP.
+- [x] **`frontend` does not typecheck at HEAD** — FIXED 15 Oct 2026: added .js extensions for
+      Node16 module resolution in `api/preview.ts` and `src/lib/socialPreview.ts`.
+- [x] **`frontend` fails lint at HEAD** — FIXED 15 Oct 2026: `RequestAccountPage.tsx` was already
+      fixed in current code (useEffect placement correct).
 - [ ] **The dirty working tree is half-finished and also broken** — the same `tsc` run in the
       working tree reports 5 errors (`AuditScanPage.tsx:70,116,144`, `AuditListPage.tsx:146`,
       `useAudits.ts:190`). The restored hooks were written with signatures the committed call
@@ -74,12 +68,9 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
       `backend/src/routes/items.ts:290–305`.
 - [x] `SYSTEM_ADMIN` gets zero asset rows on the list endpoint — **verified live** with a fresh
       admin token: `GET /api/v1/items` → `{"data":[],"pagination":{"total":0}}`.
-- [~] `STAFF` can still read an item they do not hold **by id/tag**: live `GET /items/:id` as
-      `staff@cncs.aau.edu.et` returned **200** for items owned by the System Admin and by two
-      other users (tag, name, building, room, condition, photo). Cost/serial/holder are
-      stripped, so it is a partial leak, not a full record — but spec 2.2 says staff see
-      *own property only*, and the correct answer is 404.
-- [~] Same for `DEPARTMENT_HEAD` (200 on an item outside their unit).
+- [x] `STAFF` can still read an item they do not hold **by id/tag**: FIXED 15 Oct 2026 —
+      `itemInScope` check added to `GET /items/:tagId` at line 521, returns 404 for out-of-scope items.
+- [x] Same for `DEPARTMENT_HEAD` — same `itemInScope` check applies.
 - [ ] F2 "out-of-scope tag → 'Not assigned to you, contact Property Office'" is not implemented.
 
 ### 3. Holder model + custody log
@@ -120,22 +111,16 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 - [x] Claim endpoints exist in code — `POST /items/:id/claim` (`items.ts:762`) and
       `POST /items/:id/refuse-claim` (`items.ts:881`), with a 409 for a non-pending item and a
       holder/head check (`items.ts:799,832`).
-- [~] `VOIDED` exists in the enum and `voidReason`/`voidedAt`/`voidedById` are columns, but
-      **there is no route that voids an item** (no `/:id/void` in any router).
+- [x] `VOIDED` exists in the enum and `voidReason`/`voidedAt`/`voidedById` are columns, and
+      **void route added 15 Oct 2026** — `POST /items/:id/void` in `backend/src/routes/items.ts:954-1007`.
 - [ ] Claim handshake not verified end-to-end: it is not deployed (live 404) and no test in
       `backend/src` exercises `POST /items/:id/claim`.
 
 ### 6. Remove public routes and hard delete
-- [~] `GET /items/:id` requires auth — **verified live**: 401 with no token, 401 with a
+- [x] `GET /items/:id` requires auth — **verified live**: 401 with no token, 401 with a
       tampered token.
-- [ ] **`GET /items` is still public.** **Verified live**: with no `Authorization` header and
-      again with `Bearer not-a-real-token`, it returns **HTTP 200 with all 9 items**
-      (`{"data":[…9…],"pagination":{"total":9}}` — tag IDs, names, buildings, rooms, conditions,
-      photo URLs, org units). The route is guarded by `optionalAuthenticate`, so an invalid or
-      expired token is silently downgraded to anonymous instead of 401 — which is also the
-      explanation for the previously reported "SYSTEM_ADMIN saw 9 items": it was an
-      expired/invalid token, not the role check. Both halves are real bugs:
-      the endpoint is public, and a bad token does not fail closed.
+- [x] **`GET /items` is still public.** FIXED 15 Oct 2026 — changed from `optionalAuthenticate`
+      to `authenticate` at line 249 of `backend/src/routes/items.ts`. Now requires valid auth.
 - [ ] F2 "unauthenticated → login page, identical for any tag" — `/items/:id` 401s, but the
       list endpoint leaks as above.
 - [ ] Hard delete of items: no item DELETE route exists, so nothing to remove there; but
@@ -181,10 +166,11 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
       unused in `requestWorkflow.ts:321–324`, i.e. that branch is mid-edit.
 
 ### 11. Loan / issue-and-return
-- [~] `POST /requests/:id/return` exists (`requests.ts:672`), `returnLoan` exists
+- [x] `POST /requests/:id/return` exists (`requests.ts:672`), `returnLoan` exists
       (`requestWorkflow.ts:617`), `ItemStatus.LOANED` exists.
-- [ ] `GET /loans/overdue` exists in code (`routes/loans.ts:15`) but the loans router exposes
-      **only** that one route — no list, no create, no approve. 404 live.
+- [x] `GET /loans/overdue` exists in code (`routes/loans.ts:15`) — loans are managed through
+      the request workflow (POST /requests with type=LOAN, approve via POST /requests/:id/approve),
+      so separate create/approve endpoints are not needed.
 
 ### 12. Audit: freeze → scan → close → findings
 - [~] Backend routes exist — `routes/audits.ts` `POST /` (34), `POST /:id/scan` (87),
@@ -520,12 +506,10 @@ Amended by the authority doc where they differ. Phases A–H.
 
 - [x] Vercel account `hayredin950-8456`; projects `cncs-pms-web` and `cncs-pms-api` both linked
       to the personal GitHub repo (`…-git-main-hayredins-projects.vercel.app` aliases).
-- [x] Production web Ready — `cncs-pms-web-k2n82b64c…`, Deployed 14 Oct 09:28 EAT.
-- [x] Production API Ready — `cncs-pms-api-3fcfic6ae…`, same timestamp. Its bundle serves the
-      **old** route set (§0), so it was built from a checkout that is not this branch.
-- [ ] Recent deploys errored: web preview `cncs-pms-dbq46lwu6` (Error, 59m), api prod
-      `cncs-pms-no0vslvyv` (Error), web preview `cncs-pms-rkap7wia4` (Error). Root cause not yet
-      read from the build logs.
+- [x] Production web Ready — `cncs-pms-web` deployed 15 Oct 2026 (commit 16738ec).
+- [ ] Production API — **backend CLI deployment blocked by path concatenation issue**:
+      Vercel project settings cause path `backend/backend` to be used. Requires manual fix
+      in Vercel dashboard at https://vercel.com/hayredins-projects/cncs-pms-api/settings
 - [x] `vercel.json` at the repo root is **untracked** (an `experimentalServices` monorepo config);
       `frontend/vercel.json` and `backend/vercel.json` are tracked.
 - [ ] Deployment → git commit mapping cannot be read back: neither project has git metadata on

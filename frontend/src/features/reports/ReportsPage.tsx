@@ -7,7 +7,7 @@ import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
 import { downloadDisposalsReport, downloadInventoryReport, downloadAuditReport, saveReport } from "../../api/reports";
 import { useCategories } from "../../hooks/useCategories";
-import { useItems } from "../../hooks/useItems";
+import { useDepartments } from "../../hooks/useDepartments";
 import { toast } from "../../lib/toast";
 import { ITEM_STATUSES, ITEM_STATUS_LABELS } from "../../types/enums";
 import type { ItemStatus } from "../../types/enums";
@@ -42,7 +42,7 @@ import type {
 export function ReportsPage() {
   const navigate = useNavigate();
   const categoriesQuery = useCategories();
-  const itemsQuery = useItems({ page: 1, limit: 100 });
+  const departmentsQuery = useDepartments();
 
   // One piece of state for whichever button is currently fetching — at most one
   // report downloads at a time, and the key drives that button's spinner.
@@ -59,7 +59,7 @@ export function ReportsPage() {
   const [disposals, setDisposals] = useState({ department: "", dateFrom: "", dateTo: "" });
   const [auditId, setAuditId] = useState("");
 
-  const departments = departmentsFrom(itemsQuery.data?.data ?? []);
+  const departmentOptions = (departmentsQuery.data ?? []).map((d) => ({ value: d.id, label: d.name }));
   const categoryOptions = (categoriesQuery.data ?? []).map((c) => ({ value: c.id, label: c.name }));
 
   async function run(key: string, fetcher: () => Promise<ReportDownload>) {
@@ -144,7 +144,7 @@ export function ReportsPage() {
             label="Department"
             value={inventory.department}
             onChange={(event) => setInventory({ ...inventory, department: event.target.value })}
-            options={departments.map((name) => ({ value: name, label: name }))}
+            options={departmentOptions}
             placeholder="All departments"
             hint="Departments come from items already registered."
           />
@@ -210,7 +210,7 @@ export function ReportsPage() {
             label="Department"
             value={disposals.department}
             onChange={(event) => setDisposals({ ...disposals, department: event.target.value })}
-            options={departments.map((name) => ({ value: name, label: name }))}
+            options={departmentOptions}
             placeholder="All departments"
           />
           <Input
@@ -299,11 +299,4 @@ function SectionHeading({ icon, title }: { icon: React.ReactNode; title: string 
       {title}
     </h2>
   );
-}
-
-/** The known-department list is derived from `GET /items` — there is no departments endpoint (G9). */
-function departmentsFrom(items: Array<{ department: string }>): string[] {
-  return Array.from(new Set(items.map((item) => item.department)))
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b));
 }

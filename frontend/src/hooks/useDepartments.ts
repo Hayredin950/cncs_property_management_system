@@ -1,5 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchDepartmentRoster } from "../api/departments";
+import { fetchDepartments, fetchDepartmentRoster } from "../api/departments";
+
+/**
+ * Public departments list for reports page dropdown.
+ */
+export function useDepartments() {
+  return useQuery({
+    queryKey: ["departments"],
+    queryFn: fetchDepartments,
+  });
+}
 
 /**
  * The Department Head's "Department roster" tile (`GET /departments/:id/roster`).

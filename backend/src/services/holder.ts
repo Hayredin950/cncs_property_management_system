@@ -46,7 +46,8 @@ export type CustodyEventTypeValue =
   | "CLAIMED_WITH_CORRECTION"
   | "CLAIM_REFUSED"
   | "CLAIM_EXPIRED"
-  | "REVERTED";
+  | "REVERTED"
+  | "VOIDED";
 
 /** A holder as a pair. `COLLEGE` is the one type that has no id. */
 export interface HolderRef {

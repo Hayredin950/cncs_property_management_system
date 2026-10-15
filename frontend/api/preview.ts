@@ -5,7 +5,7 @@ import {
   buildUnavailablePreview,
   normalizeTagId,
   type SocialPreview,
-} from "../src/lib/socialPreview";
+} from "../src/lib/socialPreview.js";
 
 /**
  * The social-preview endpoint.

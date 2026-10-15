@@ -1,4 +1,4 @@
-import { CONDITIONS, CONDITION_LABELS, type Condition } from "../types/enums";
+import { CONDITIONS, CONDITION_LABELS, type Condition } from "../types/enums.js";
 
 /**
  * Social preview metadata — the `og:` / `twitter:` document that link-preview

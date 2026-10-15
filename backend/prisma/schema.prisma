@@ -104,6 +104,8 @@ enum RequestStatus {
   WITHDRAWN
   /// Request invalidated because item status changed (voided, disposed, etc.).
   INVALIDATED
+  /// Borrower initiated return, waiting for lender/Property Officer confirmation.
+  RETURN_PENDING_CONFIRMATION
 }
 
 /// PENDING is the "in scope, not yet scanned" value written when a session opens,

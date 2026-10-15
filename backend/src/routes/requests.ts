@@ -680,7 +680,11 @@ requestsRouter.post(
   validateBody(withdrawSchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Request ID is required" });
+        return;
+      }
       const body = validatedBody<{ reason?: string }>(req);
       
       const request = await prisma.request.findUnique({
@@ -706,11 +710,91 @@ requestsRouter.post(
           status: "WITHDRAWN",
           withdrawnAt: new Date(),
           withdrawnById: req.user!.id,
-          reason: body.reason || null,
+          ...(body.reason ? { reason: body.reason } : {}),
         },
       });
 
       res.status(200).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * POST /api/v1/requests/:id/return-initiate
+ * Borrower only - initiates return handshake for a loan.
+ * Workflow-completeness-spec.md §3.6
+ */
+requestsRouter.post(
+  "/:id/return-initiate",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Request ID is required" });
+        return;
+      }
+
+      const request = await prisma.request.findUnique({
+        where: { id },
+        include: { item: true },
+      });
+
+      if (!request) {
+        throw httpError(404, ERROR_REQUEST_NOT_FOUND);
+      }
+
+      if (request.type !== "LOAN") {
+        throw httpError(400, "Only loan requests can be returned");
+      }
+
+      if (request.status !== "APPROVED") {
+        throw httpError(400, "Loan is not active");
+      }
+
+      if (request.requestedById !== req.user!.id) {
+        throw httpError(403, "Only the borrower can initiate return");
+      }
+
+      const updated = await prisma.request.update({
+        where: { id },
+        data: { status: "RETURN_PENDING_CONFIRMATION" },
+      });
+
+      res.status(200).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * POST /api/v1/requests/:id/return-confirm
+ * Lender/Property Officer - confirms borrower-initiated return with condition check.
+ * Workflow-completeness-spec.md §3.6
+ */
+requestsRouter.post(
+  "/:id/return-confirm",
+  authenticate,
+  validateBody(returnLoanSchema),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Request ID is required" });
+        return;
+      }
+      const body = validatedBody<{ condition: string; notes?: string | null }>(req);
+      const result = await returnLoan(prisma, {
+        requestId: id,
+        returnerId: req.user!.id,
+        condition: body.condition,
+        notes: body.notes ?? null,
+        decidedAt: new Date(),
+      });
+      res.status(200).json({ requestId: result.requestId, itemId: result.itemId });
     } catch (err) {
       next(err);
     }

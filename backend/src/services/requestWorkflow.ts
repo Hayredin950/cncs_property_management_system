@@ -29,7 +29,7 @@ import {
  * ordering is documented step by step where it is defined.
  */
 
-export type RequestStatusValue = "PENDING" | "PENDING_STAGE1" | "PENDING_STAGE2" | "APPROVED" | "REJECTED" | "WAITLISTED" | "WITHDRAWN" | "INVALIDATED";
+export type RequestStatusValue = "PENDING" | "PENDING_STAGE1" | "PENDING_STAGE2" | "APPROVED" | "REJECTED" | "WAITLISTED" | "WITHDRAWN" | "INVALIDATED" | "RETURN_PENDING_CONFIRMATION";
 
 /**
  * Mirrors the Prisma `ItemStatus` enum (spec 4.2, plus LOANED). The states added
@@ -457,11 +457,16 @@ export async function applyDecision(
         disposedAt: input.decidedAt,
       });
     } else if (request.type === "LOAN") {
-      // Loan approval: set item status to LOANED, record due date
+      // §3.3: Loan approval now goes to PENDING_CLAIM, not directly to LOANED
+      // Borrower must claim to start the loan, and loanDueDate is calculated from claim timestamp
+      const claimWindowDays = 7;
       itemChanges = {
-        status: "LOANED",
+        status: "PENDING_CLAIM",
         holderType: "STAFF",
         holderId: request.newOwnerId,
+        claimedAt: null,
+        // Default claim window: 7 days
+        claimDueAt: new Date(Date.now() + claimWindowDays * 24 * 60 * 60 * 1000),
       };
     }
   }

@@ -61,7 +61,7 @@ export type ItemStatus = (typeof ITEM_STATUSES)[number];
 export const REQUEST_TYPES = ["TRANSFER", "DISPOSAL"] as const;
 export type RequestType = (typeof REQUEST_TYPES)[number];
 
-export const REQUEST_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+export const REQUEST_STATUSES = ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2", "APPROVED", "REJECTED", "WAITLISTED", "WITHDRAWN", "INVALIDATED"] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
 export const AUDIT_ITEM_RESULTS = ["FOUND", "MISSING", "LOCATION_MISMATCH"] as const;
@@ -95,8 +95,13 @@ export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
 
 export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {
   PENDING: "Pending review",
+  PENDING_STAGE1: "Stage 1 approved",
+  PENDING_STAGE2: "Stage 2 approved",
   APPROVED: "Approved",
   REJECTED: "Rejected",
+  WAITLISTED: "Waitlisted",
+  WITHDRAWN: "Withdrawn",
+  INVALIDATED: "Invalidated",
 };
 
 export const REQUEST_TYPE_LABELS: Record<RequestType, string> = {

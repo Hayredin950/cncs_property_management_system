@@ -76,7 +76,7 @@ export function RequestDetailPage() {
   }
 
   const request = requestQuery.data.request;
-  const decided = request.status !== "PENDING" && request.status !== "PENDING_STAGE1" && request.status !== "PENDING_STAGE2";
+  const decided = ["APPROVED", "REJECTED", "WITHDRAWN", "INVALIDATED"].includes(request.status);
   const isOwnRequest = user?.id === request.requestedBy.id;
 
   return (
@@ -230,7 +230,8 @@ function WithdrawPanel({ requestId, itemLabel }: { requestId: string; itemLabel:
   const withdraw = useWithdrawRequest(requestId);
 
   const handleWithdraw = () => {
-    withdraw.mutate({ reason: reason.trim() || undefined }, {
+    const trimmedReason = reason.trim();
+    withdraw.mutate(trimmedReason ? { reason: trimmedReason } : {}, {
       onSuccess: () => {
         setWithdrawOpen(false);
         setReason("");

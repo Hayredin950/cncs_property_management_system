@@ -39,6 +39,36 @@ export const itemsRouter: Router = Router();
 const ConditionEnum = z.enum(["NEW", "GOOD", "FAIR", "DAMAGED", "BEYOND_REPAIR"]);
 
 /**
+ * §9.1: Staff catalog endpoint - restricted visibility tier
+ * Shows: item name, category, general location (building only), current status
+ * Hides: cost, custodian, exact room
+ */
+itemsRouter.get(
+  "/catalog",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const items = await prisma.item.findMany({
+        where: { status: { notIn: ["DISPOSED", "VOIDED"] } },
+        select: {
+          id: true,
+          name: true,
+          tagId: true,
+          category: { select: { id: true, name: true } },
+          locationBuilding: true,
+          status: true,
+        },
+        orderBy: { name: "asc" },
+      });
+
+      res.status(200).json(items);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
  * The multipart rules (`PHOTO_MAX_BYTES`, the MIME list, `acceptPhotoUpload`)
  * live in `middleware/photoUpload.ts` because `POST /uploads/photo` accepts the
  * same files from a different route — see the note there.

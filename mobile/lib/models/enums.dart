@@ -18,7 +18,6 @@ library;
 /// three different roles.
 enum Role {
   systemAdmin('SYSTEM_ADMIN', 'System Admin'),
-  accountAdmin('ACCOUNT_ADMIN', 'Account Admin'),
   propertyOfficer('PROPERTY_OFFICER', 'Property Officer'),
   departmentHead('DEPARTMENT_HEAD', 'Department Head'),
   staff('STAFF', 'Staff'),
@@ -32,7 +31,6 @@ enum Role {
 
   static Role fromJson(Object? value) => switch (value) {
         'SYSTEM_ADMIN' => Role.systemAdmin,
-        'ACCOUNT_ADMIN' => Role.accountAdmin,
         'PROPERTY_OFFICER' => Role.propertyOfficer,
         'DEPARTMENT_HEAD' => Role.departmentHead,
         'STAFF' => Role.staff,
@@ -45,7 +43,6 @@ enum Role {
   /// wire value degrades to, never a role anyone can choose.
   static const List<Role> selectable = [
     systemAdmin,
-    accountAdmin,
     propertyOfficer,
     departmentHead,
     staff,

@@ -28,12 +28,24 @@ enum Capability {
   requestReadAll,
   reportViewAll,
   accountManage,
+  accountApproveOwnUnit,
+  accountApproveAny,
+  accountInvite,
+  accountDeactivateOwnUnit,
+  accountDeactivatePrivileged,
+  systemConfig,
   userRead,
 }
 
 const Map<Role, Set<Capability>> _grants = {
-  Role.systemAdmin: {Capability.userRead},
-  Role.accountAdmin: {Capability.accountManage, Capability.userRead},
+  Role.systemAdmin: {
+    Capability.accountManage,
+    Capability.accountApproveAny,
+    Capability.accountInvite,
+    Capability.accountDeactivatePrivileged,
+    Capability.systemConfig,
+    Capability.userRead,
+  },
   Role.propertyOfficer: {
     Capability.itemCreate,
     Capability.itemEditIdentity,
@@ -54,7 +66,16 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.auditView,
     Capability.userRead,
   },
-  Role.departmentHead: {Capability.itemEditCustody, Capability.itemClaim, Capability.requestDecide, Capability.accountManage, Capability.transferApproveStage1, Capability.transferApproveStage2},
+  Role.departmentHead: {
+    Capability.itemEditCustody,
+    Capability.itemClaim,
+    Capability.requestDecide,
+    Capability.transferApproveStage1,
+    Capability.transferApproveStage2,
+    Capability.accountApproveOwnUnit,
+    Capability.accountDeactivateOwnUnit,
+    Capability.reportViewAll,
+  },
   Role.staff: {Capability.itemEditCustody, Capability.itemClaim},
   Role.auditor: {
     Capability.itemReadAll,

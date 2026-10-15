@@ -100,6 +100,10 @@ enum RequestStatus {
   REJECTED
   /// Competing request on an item already promised elsewhere (plan §3).
   WAITLISTED
+  /// Requester cancelled their own request before approval.
+  WITHDRAWN
+  /// Request invalidated because item status changed (voided, disposed, etc.).
+  INVALIDATED
 }
 
 /// PENDING is the "in scope, not yet scanned" value written when a session opens,
@@ -310,6 +314,7 @@ model User {
   ownedItems       Item[]         @relation("ItemOwner")
   requestsCreated  Request[]      @relation("RequestedBy")
   requestsReviewed Request[]      @relation("ReviewedBy")
+  requestsWithdrawn Request[]      @relation("WithdrawnBy")
   auditsRun        AuditSession[] @relation("RunBy")
   itemEdits        ItemEditLog[]
   notifications    Notification[]
@@ -479,6 +484,13 @@ model Request {
   loanReturnedAt    DateTime?
   loanReturnedById  String?
   loanReturnedBy    User?   @relation("LoanReturnedBy", fields: [loanReturnedById], references: [id])
+
+  /// Withdrawal/invalidation fields (workflow-completeness-spec.md §1).
+  withdrawnAt     DateTime?
+  withdrawnById   String?
+  withdrawnBy     User?     @relation("WithdrawnBy", fields: [withdrawnById], references: [id])
+  invalidatedAt   DateTime?
+  invalidatedReason String?
 
   createdAt DateTime  @default(now())
   decidedAt DateTime?

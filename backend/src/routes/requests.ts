@@ -666,6 +666,58 @@ const returnLoanSchema = z.object({
 });
 
 /**
+ * POST /api/v1/requests/:id/withdraw
+ * Requester only, while status is PENDING, PENDING_STAGE1, or PENDING_STAGE2.
+ * Workflow-completeness-spec.md §1.3
+ */
+requestsRouter.post(
+  "/:id/withdraw",
+  authenticate,
+  validateBody(withdrawSchema),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const body = validatedBody<{ reason?: string }>(req);
+      
+      const request = await prisma.request.findUnique({
+        where: { id },
+      });
+
+      if (!request) {
+        throw httpError(404, ERROR_REQUEST_NOT_FOUND);
+      }
+
+      if (request.requestedById !== req.user!.id) {
+        throw httpError(403, "Only the original requester can withdraw this request");
+      }
+
+      const allowedStatuses = ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"];
+      if (!allowedStatuses.includes(request.status)) {
+        throw httpError(400, "Can only withdraw requests that have not been approved");
+      }
+
+      const updated = await prisma.request.update({
+        where: { id },
+        data: {
+          status: "WITHDRAWN",
+          withdrawnAt: new Date(),
+          withdrawnById: req.user!.id,
+          reason: body.reason || null,
+        },
+      });
+
+      res.status(200).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+const withdrawSchema = z.object({
+  reason: z.string().optional(),
+});
+
+/**
  * POST /api/v1/requests/:id/return
  * Borrower / releasing head / property officer — mark a loan as returned.
  * Updates item status to ACTIVE, records return condition and notes.

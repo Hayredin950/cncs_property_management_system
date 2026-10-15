@@ -29,7 +29,7 @@ import {
  * ordering is documented step by step where it is defined.
  */
 
-export type RequestStatusValue = "PENDING" | "PENDING_STAGE1" | "PENDING_STAGE2" | "APPROVED" | "REJECTED" | "WAITLISTED";
+export type RequestStatusValue = "PENDING" | "PENDING_STAGE1" | "PENDING_STAGE2" | "APPROVED" | "REJECTED" | "WAITLISTED" | "WITHDRAWN" | "INVALIDATED";
 
 /**
  * Mirrors the Prisma `ItemStatus` enum (spec 4.2, plus LOANED). The states added

@@ -43,7 +43,7 @@ export function useApprovals(enabled = true) {
 export function useInvitableUnits(enabled = true) {
   return useQuery({
     queryKey: ["departments", "invitable"],
-    queryFn: ({ signal }) => fetchInvitableUnits(signal),
+    queryFn: fetchInvitableUnits,
     enabled,
     staleTime: 5 * 60_000,
   });

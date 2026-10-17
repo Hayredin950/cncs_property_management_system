@@ -6,7 +6,7 @@ import { Link, Navigate } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "../../app/AuthContext";
 import { requestAccount } from "../../api/auth";
-import { fetchDepartments } from "../../api/departments";
+import { getDepartments } from "../../api/departments";
 import { PortalPageHeader } from "../../components/aau/PortalPageHeader";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
@@ -61,7 +61,7 @@ export function RequestAccountPage() {
          * for `/api/v1/departments` and came back 404 — an empty department list and
          * a form nobody could submit. The client is what knows the API's base URL.
          */
-        const data = await fetchDepartments();
+        const data = await getDepartments();
         if (!cancelled) setDepartments(data);
       } catch {
         // The select stays empty and the required-field check blocks the submit; the

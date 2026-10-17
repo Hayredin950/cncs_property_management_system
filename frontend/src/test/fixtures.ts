@@ -370,6 +370,8 @@ export const OVERDUE_LOANS = { count: 2 };
  * head's own unit (`HEAD_USER.departmentId`).
  */
 export const DEPARTMENT_ROSTER: DepartmentRoster = {
+  id: "unit-cs",
+  name: "Computer Science",
   department: { id: "unit-cs", name: "Computer Science" },
   staffCount: 5,
 };

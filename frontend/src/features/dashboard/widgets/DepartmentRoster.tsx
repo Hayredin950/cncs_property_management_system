@@ -1,8 +1,9 @@
 import { Users } from "lucide-react";
 import { Card } from "../../../components/Card";
 import { SkeletonText } from "../../../components/Skeleton";
-import { useDepartmentRoster } from "../../../hooks/useDepartments";
 import { useAuth } from "../../../app/AuthContext";
+import { useQuery } from "@tanstack/react-query";
+import { fetchDepartmentRoster } from "../../../api/departments";
 
 /**
  * The Department Head's "Department roster" tile — the staff count for the head's
@@ -15,7 +16,11 @@ import { useAuth } from "../../../app/AuthContext";
  */
 export function DepartmentRoster() {
   const { user } = useAuth();
-  const { data, isPending, isError } = useDepartmentRoster(user?.departmentId);
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["department-roster", user?.departmentId],
+    queryFn: () => (user?.departmentId ? fetchDepartmentRoster(user.departmentId) : Promise.resolve(null)),
+    enabled: !!user?.departmentId,
+  });
 
   return (
     <Card className="flex flex-col gap-4">

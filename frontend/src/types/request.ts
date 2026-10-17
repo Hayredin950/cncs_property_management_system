@@ -121,6 +121,7 @@ type NotificationCodeOf = import("./enums").NotificationCode;
 export interface RequestListQuery {
   status?: RequestStatus;
   type?: RequestType;
+  departmentId?: string;
   mine?: boolean;
   limit?: number;
   offset?: number;

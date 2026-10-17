@@ -12,6 +12,8 @@ import { useRequests } from "../../hooks/useRequests";
 import { formatRelativeTime } from "../../lib/formatters";
 import { NetworkError } from "../../types/api";
 import { REQUEST_STATUSES, REQUEST_STATUS_LABELS, type RequestStatus } from "../../types/enums";
+import { useDepartments } from "../../hooks/useDepartments";
+import type { Department } from "../../api/departments";
 
 const STATUS_OPTIONS = [
   { value: "ALL", label: "All statuses" },
@@ -35,9 +37,6 @@ const STATUS_OPTIONS = [
  */
 export function RequestsListPage() {
   const { user } = useAuth();
-  // Decision rights, not a role name: the Property Officer and the Department
-  // Head both review requests (spec 2.2), while the System Admin — the role that
-  // used to be "ADMIN" — sees no asset data at all.
   const canDecide = canDecideRequests(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -49,13 +48,38 @@ export function RequestsListPage() {
         ? (rawStatus as RequestStatus)
         : undefined;
 
-  const requestsQuery = useRequests({ ...(status ? { status } : {}), limit: 20 });
+  const rawDepartmentId = searchParams.get("departmentId");
+  const departmentId = rawDepartmentId || undefined;
+
+  const { data: departments } = useDepartments();
+  const departmentOptions = [
+    { value: "", label: "All departments" },
+    ...(departments || []).map((d: Department) => ({
+      value: d.id,
+      label: d.name,
+    })),
+  ];
+
+  const requestsQuery = useRequests({
+    ...(status ? { status } : {}),
+    ...(departmentId ? { departmentId } : {}),
+    limit: 20,
+  });
 
   function updateStatus(value: string) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (value && value !== "ALL") next.set("status", value);
       else next.delete("status");
+      return next;
+    });
+  }
+
+  function updateDepartment(value: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set("departmentId", value);
+      else next.delete("departmentId");
       return next;
     });
   }
@@ -90,6 +114,14 @@ export function RequestsListPage() {
             placeholder="All statuses"
             value={rawStatus ?? "ALL"}
             onChange={(event) => updateStatus(event.target.value)}
+            className="sm:w-48"
+          />
+          <Select
+            label="Department"
+            options={departmentOptions}
+            placeholder="All departments"
+            value={rawDepartmentId ?? ""}
+            onChange={(event) => updateDepartment(event.target.value)}
             className="sm:w-48"
           />
         </div>

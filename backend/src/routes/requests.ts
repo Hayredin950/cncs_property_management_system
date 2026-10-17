@@ -122,6 +122,7 @@ type CreateRequestBody = z.infer<typeof createRequestSchema>;
 const listQuerySchema = z.object({
   status: z.enum(REQUEST_STATUSES).optional(),
   type: z.enum(REQUEST_TYPES).optional(),
+  departmentId: z.string().uuid().optional(),
   mine: z.enum(["true", "false"]).optional(),
   window: z.enum(["this-week", "this-month", "last-30-days", "custom"]).default("this-week"),
   fromDate: z.coerce.date().optional(),
@@ -501,6 +502,7 @@ requestsRouter.get(
         ...(query.mine === "true" ? { requestedById: user.id } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.type ? { type: query.type } : {}),
+        ...(query.departmentId ? { item: { orgUnitId: query.departmentId } } : {}),
       };
 
       // Time window filtering

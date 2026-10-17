@@ -25,11 +25,35 @@ systemConfigRouter.get(
   requireCapability("SYSTEM_CONFIG"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
+      // For serverless deployments, uptime is meaningless (resets per lambda instance)
+      // Use commit timestamp instead to show "deployed X ago"
+      const gitCommitSha = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT_SHA ?? "unknown";
+      const commitTimestamp = process.env.VERCEL_GIT_COMMIT_MESSAGE_TIMESTAMP ?? process.env.BUILD_TIME ?? null;
+
+      let lastDeploy = "unknown";
+      if (commitTimestamp) {
+        const deployTime = new Date(commitTimestamp);
+        const now = new Date();
+        const diffMs = now.getTime() - deployTime.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) {
+          lastDeploy = "just now";
+        } else if (diffMins < 60) {
+          lastDeploy = `${diffMins} minute${diffMins > 1 ? "s" : ""} ago`;
+        } else if (diffHours < 24) {
+          lastDeploy = `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+        } else {
+          lastDeploy = `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+        }
+      }
+
       const status = {
         environment: process.env.NODE_ENV ?? "development",
-        version: process.env.APP_VERSION ?? "unknown",
-        uptime: Math.floor(process.uptime()),
-        lastDeploy: process.env.DEPLOY_TIME ?? "unknown",
+        version: gitCommitSha.substring(0, 7), // Show short commit SHA
+        lastDeploy,
         database: "connected",
       };
 

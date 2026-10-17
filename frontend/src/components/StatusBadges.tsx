@@ -112,6 +112,7 @@ const REQUEST_STATUS_TONE: Record<RequestStatus, BadgeTone> = {
   WAITLISTED: "neutral",
   WITHDRAWN: "neutral",
   INVALIDATED: "neutral",
+  RETURN_PENDING_CONFIRMATION: "info",
 };
 
 const REQUEST_STATUS_ICON: Record<RequestStatus, ReactNode> = {
@@ -123,6 +124,7 @@ const REQUEST_STATUS_ICON: Record<RequestStatus, ReactNode> = {
   WAITLISTED: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,
   WITHDRAWN: <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />,
   INVALIDATED: <XCircle className="h-3.5 w-3.5" aria-hidden="true" />,
+  RETURN_PENDING_CONFIRMATION: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,
 };
 
 export function RequestStatusBadge({ status, className }: { status: RequestStatus; className?: string }) {

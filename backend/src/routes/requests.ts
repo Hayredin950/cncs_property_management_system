@@ -726,6 +726,7 @@ requestsRouter.post(
           status: "WITHDRAWN",
           withdrawnAt: new Date(),
           withdrawnById: req.user!.id,
+          ...(body.reason ? { reason: body.reason } : {}),
         },
       });
 

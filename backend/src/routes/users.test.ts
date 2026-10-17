@@ -18,6 +18,8 @@ vi.mock("../lib/prisma.js", () => {
     },
     notification: { deleteMany: vi.fn() },
     request: { count: vi.fn() },
+    adminActionLog: { create: vi.fn() },
+    orgUnit: { findUnique: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(async (arg: unknown) =>
       typeof arg === "function"
         ? await (arg as (tx: unknown) => Promise<unknown>)(client)
@@ -459,6 +461,8 @@ describe("POST /users/:id/approve", () => {
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
       pendingUserRow({ accountStatus: "ACTIVE" }) as never,
     );
+    vi.mocked(prisma.adminActionLog.create).mockResolvedValue({} as never);
+    vi.mocked(prisma.orgUnit.findUnique).mockResolvedValue(null as never);
 
     const res = await request(app)
       .post("/users/pending-1/approve")
@@ -474,7 +478,7 @@ describe("POST /users/:id/approve", () => {
     };
     expect(call.where).toEqual({ id: "pending-1" });
     expect(call.data.accountStatus).toBe("ACTIVE");
-    expect(call.data.reviewedBy).toEqual({ connect: { id: "admin-1" } });
+    expect(call.data.reviewedById).toBe("admin-1");
     expect(call.data.reviewedAt).toBeInstanceOf(Date);
     // The request carries no role, so approving without one must not invent a
     // change: the account keeps the STAFF role the request asked as.
@@ -489,6 +493,8 @@ describe("POST /users/:id/approve", () => {
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
       pendingUserRow({ accountStatus: "ACTIVE", role: "AUDITOR" }) as never,
     );
+    vi.mocked(prisma.adminActionLog.create).mockResolvedValue({} as never);
+    vi.mocked(prisma.orgUnit.findUnique).mockResolvedValue(null as never);
 
     const res = await request(app)
       .post("/users/pending-1/approve")
@@ -500,6 +506,7 @@ describe("POST /users/:id/approve", () => {
       data: Record<string, unknown>;
     };
     expect(call.data.role).toBe("AUDITOR");
+    expect(call.data.reviewedById).toBe("admin-1");
     expect(call.data.tokenVersion).toEqual({ increment: 1 });
   });
 
@@ -568,6 +575,7 @@ describe("POST /users/:id/reject", () => {
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
       pendingUserRow({ accountStatus: "REJECTED", reviewNote: "No matching staff record" }) as never,
     );
+    vi.mocked(prisma.adminActionLog.create).mockResolvedValue({} as never);
 
     const res = await request(app)
       .post("/users/pending-1/reject")

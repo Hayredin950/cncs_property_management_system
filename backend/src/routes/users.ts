@@ -266,7 +266,7 @@ usersRouter.post(
 
       const updateData: Prisma.UserUpdateInput = {
         accountStatus: "ACTIVE",
-        reviewedBy: { connect: { id: reviewer.id } },
+        reviewedById: reviewer.id,
         reviewedAt: new Date(),
         reviewNote: null,
         ...(hasExplicitRole ? { role: requestedRole } : {}),

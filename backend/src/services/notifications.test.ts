@@ -209,7 +209,7 @@ describe("notifyReviewersOfNewRequest", () => {
 
     expect(findMany).toHaveBeenCalledWith({
       where: { role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] }, id: { not: "staff-1" } },
-      select: { id: true, email: true, fullName: true },
+      select: { id: true, email: true, fullName: true, role: true },
     });
     expect(createMany).toHaveBeenCalledTimes(1);
     expect(createMany).toHaveBeenCalledWith({

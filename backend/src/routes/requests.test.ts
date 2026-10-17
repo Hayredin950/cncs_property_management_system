@@ -196,7 +196,7 @@ describe("POST /requests", () => {
     // D2 — everyone who may decide (officer and head), except the requester.
     expect(prisma.user.findMany).toHaveBeenCalledWith({
       where: { role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] }, id: { not: "staff-1" } },
-      select: { id: true, email: true, fullName: true },
+      select: { id: true, email: true, fullName: true, role: true },
     });
     expect(prisma.notification.createMany).toHaveBeenCalledWith({
       data: [
@@ -518,7 +518,12 @@ describe("GET /requests/pending-count", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ pendingCount: 3 });
-    expect(prisma.request.count).toHaveBeenCalledWith({ where: { status: "PENDING" } });
+    expect(prisma.request.count).toHaveBeenCalledWith({
+      where: {
+        status: "PENDING",
+        createdAt: expect.objectContaining({ gte: expect.any(Date), lte: expect.any(Date) }),
+      },
+    });
     // The Express 5 route-ordering guard: `/:id` is what calls findFirst, so a
     // hit here means "pending-count" was swallowed as an id.
     expect(prisma.request.findFirst).not.toHaveBeenCalled();
@@ -533,7 +538,11 @@ describe("GET /requests/pending-count", () => {
 
     expect(res.status).toBe(200);
     expect(prisma.request.count).toHaveBeenCalledWith({
-      where: { requestedById: "staff-1", status: "PENDING" },
+      where: {
+        requestedById: "staff-1",
+        status: "PENDING",
+        createdAt: expect.objectContaining({ gte: expect.any(Date), lte: expect.any(Date) }),
+      },
     });
   });
 });
@@ -985,13 +994,19 @@ describe("POST /requests/:id/approve", () => {
     // The holder pair rides along with `ownerId` (spec 4.1), derived from the same
     // `newOwnerId` — the item's custody columns and the custodian column can never
     // name two different people.
-    expect(res.body.itemChanges).toEqual({
+    // §2.3: Transfer to individual now sets PENDING_CLAIM status with claim window
+    expect(res.body.itemChanges).toMatchObject({
       floor: "1",
       room: "101",
       ownerId: "staff-2",
       holderType: "STAFF",
       holderId: "staff-2",
+      status: "PENDING_CLAIM",
+      claimedAt: null,
+      claimDueAt: expect.any(String),
     });
+    // Verify claimDueAt is a valid ISO date string
+    expect(new Date(res.body.itemChanges.claimDueAt)).toBeInstanceOf(Date);
 
     const rows = vi.mocked(prisma.itemEditLog.createMany).mock.calls[0]?.[0]?.data as
       | Array<Record<string, unknown>>

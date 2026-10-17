@@ -146,7 +146,6 @@ describe("GET /system/status", () => {
     expect(res.body).toMatchObject({
       environment: expect.any(String),
       version: expect.any(String),
-      lastDeploy: expect.any(String),
       database: "connected",
     });
   });

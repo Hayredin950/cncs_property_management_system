@@ -113,6 +113,7 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
   DEPARTMENT_HEAD: [
     "ITEM_EDIT_CUSTODY",
     "ITEM_CLAIM",
+    "ITEM_READ_ALL",
     "REQUEST_DECIDE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",

@@ -7,10 +7,11 @@ import {
 import { z } from "zod";
 import { httpError } from "../lib/httpError.js";
 import { prisma } from "../lib/prisma.js";
-import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
+import { authenticate, requireCapability, type AuthenticatedRequest, type UserRole } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
 import { allItemsWhere } from "../services/itemVisibility.js";
 import { ERROR_ITEM_NOT_FOUND } from "../services/requestWorkflow.js";
+import { itemInScope } from "../services/itemScope.js";
 
 /**
  * Item edit history (SRS F2.3, F6.3).
@@ -60,10 +61,20 @@ itemHistoryRouter.get(
 
       const item = await prisma.item.findFirst({
         where: allItemsWhere({ id: itemId }),
-        select: { id: true, tagId: true, name: true, status: true },
+        select: { id: true, tagId: true, name: true, status: true, orgUnitId: true, holderType: true, holderId: true },
       });
       if (!item) {
         return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
+      }
+
+      // Scope check: Department Heads only see history for items in their department
+      const user = req.user;
+      if (user?.role === "DEPARTMENT_HEAD") {
+        const isInDept = item.orgUnitId === user.orgUnitId ||
+          (item.holderType === "DEPARTMENT" && item.holderId === user.orgUnitId);
+        if (!isInDept) {
+          return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
+        }
       }
 
       const where = {

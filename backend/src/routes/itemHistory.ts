@@ -61,17 +61,19 @@ itemHistoryRouter.get(
 
       const item = await prisma.item.findFirst({
         where: allItemsWhere({ id: itemId }),
-        select: { id: true, tagId: true, name: true, status: true, orgUnitId: true, holderType: true, holderId: true },
+        select: { id: true, tagId: true, name: true, status: true, orgUnitId: true, holderType: true, holderId: true, ownerId: true },
       });
       if (!item) {
         return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
       }
 
-      // Scope check: Department Heads only see history for items in their department
+      // Scope check: Department Heads only see history for items in their department OR items they personally hold
       const user = req.user;
       if (user?.role === "DEPARTMENT_HEAD") {
         const isInDept = item.orgUnitId === user.orgUnitId ||
-          (item.holderType === "DEPARTMENT" && item.holderId === user.orgUnitId);
+          (item.holderType === "DEPARTMENT" && item.holderId === user.orgUnitId) ||
+          item.ownerId === user.id ||
+          (item.holderType === "STAFF" && item.holderId === user.id);
         if (!isInDept) {
           return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
         }

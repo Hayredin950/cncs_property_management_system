@@ -77,6 +77,7 @@ describe("GET /items/:id/history", () => {
       orgUnitId: true,
       holderType: true,
       holderId: true,
+      ownerId: true,
     });
     expect(res.body.item).toMatchObject({
       id: "item-1",

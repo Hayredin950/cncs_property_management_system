@@ -30,7 +30,17 @@ catalogRouter.get(
         orderBy: { name: "asc" },
       });
 
-      res.status(200).json(items);
+      // Map building name from relation, handle null buildings
+      const mappedItems = items.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        tagId: item.tagId,
+        category: item.category,
+        building: item.building?.name || null,
+        status: item.status,
+      }));
+
+      res.status(200).json(mappedItems);
     } catch (err) {
       next(err);
     }
@@ -83,7 +93,18 @@ catalogRouter.get(
         orderBy: { name: "asc" },
       });
 
-      res.status(200).json(items);
+      // Map building name from relation, handle null buildings
+      const mappedItems = items.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        tagId: item.tagId,
+        category: item.category,
+        building: item.building?.name || null,
+        status: item.status,
+        orgUnitId: item.orgUnitId,
+      }));
+
+      res.status(200).json(mappedItems);
     } catch (err) {
       next(err);
     }

@@ -57,6 +57,8 @@ notificationsRouter.get(
       const where = {
         ...(query.unread === "true" ? { isRead: false } : {}),
         userId: user.id,
+        // SYSTEM_ADMIN must not see item request notifications (security rule)
+        ...(isSystemAdmin ? { relatedRequestId: null } : {}),
       };
 
       const [rows, unreadCount] = await Promise.all([
@@ -73,20 +75,15 @@ notificationsRouter.get(
           take: query.limit,
           skip: query.offset,
         }),
-        prisma.notification.count({ where: { userId: user.id, isRead: false } }),
+        prisma.notification.count({ where: { userId: user.id, isRead: false, ...(isSystemAdmin ? { relatedRequestId: null } : {}) } }),
       ]);
 
       const notifications = rows.map((row) => {
         const { code, message } = parseNotificationMessage(row.message);
-        
-        // Strip sensitive data from SYSTEM_ADMIN's view at retrieval time
-        // This prevents data leak from old notifications created before fix
-        const filteredMessage = isSystemAdmin ? sanitizeForSystemAdmin(message) : message;
-        
         return {
           id: row.id,
           code,
-          message: filteredMessage,
+          message,
           relatedRequestId: row.relatedRequestId,
           isRead: row.isRead,
           createdAt: row.createdAt,
@@ -104,24 +101,6 @@ notificationsRouter.get(
     }
   },
 );
-
-/**
- * Removes sensitive asset data from notification messages for SYSTEM_ADMIN.
- * Pattern: removes item tag IDs (CNCS-XXXXX), item names, and requester names.
- */
-function sanitizeForSystemAdmin(message: string): string {
-  // Remove item tag IDs in various formats: CNCS-DEMO-0001, CNCS-C3CBF509, CNCS-C3CBF509-0001, etc.
-  let sanitized = message.replace(/CNCS-[A-Z0-9-]+/g, "[ITEM TAG ID]");
-  // Clean up any leftover numeric suffixes like -0001
-  sanitized = sanitized.replace(/\[ITEM TAG ID\]-\d+/g, "[ITEM TAG ID]");
-  // Remove item names in parentheses - everything between parentheses after item tag ID
-  sanitized = sanitized.replace(/\(.*?\)/g, "[ITEM NAME]");
-  // Remove reviewer names after "by" (single or multi-word names)
-  sanitized = sanitized.replace(/by\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\.?\s*/g, "by [REVIEWER] ");
-  // Remove requester names before "requested"
-  sanitized = sanitized.replace(/[A-Z][a-zA-Z]+\s+[A-Z][a-zA-Z]+\s+requested/g, "[REQUESTER] requested");
-  return sanitized;
-}
 
 /**
  * POST /api/v1/notifications/read-all

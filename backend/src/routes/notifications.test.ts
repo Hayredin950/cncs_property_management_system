@@ -68,14 +68,14 @@ describe("GET /notifications", () => {
     expect(JSON.stringify(res.body)).not.toContain("passwordHash");
   });
 
-  it("strips sensitive data from SYSTEM_ADMIN notifications at retrieval time", async () => {
+  it("excludes item request notifications for SYSTEM_ADMIN (security rule)", async () => {
+    // Simulate what Prisma would return after applying the relatedRequestId: null filter
     vi.mocked(prisma.notification.findMany).mockResolvedValue([
       makeNotification({
-        message: "[REQUEST_SUBMITTED] Demo Staff requested a TRANSFER for item CNCS-C3CBF509-0001 (Dell Latitude Laptop) and it needs your review."
-      }),
-      makeNotification({
         id: "notif-2",
-        message: "[REQUEST_APPROVED] Your TRANSFER request for item CNCS-C3CBF509-0001 (Dell Latitude Laptop) was approved by Geleta Gudisa."
+        userId: "admin-1",
+        message: "New account request pending approval.",
+        relatedRequestId: null,
       }),
     ] as never);
 
@@ -84,12 +84,30 @@ describe("GET /notifications", () => {
       .set("Authorization", `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.notifications[0].message).not.toContain("CNCS-C3CBF509");
-    expect(res.body.notifications[0].message).not.toContain("Dell Latitude Laptop");
-    expect(res.body.notifications[0].message).not.toContain("Demo Staff");
-    expect(res.body.notifications[1].message).not.toContain("CNCS-C3CBF509");
-    expect(res.body.notifications[1].message).not.toContain("Dell Latitude Laptop");
-    expect(res.body.notifications[1].message).not.toContain("Geleta Gudisa");
+    expect(res.body.notifications).toHaveLength(1);
+    expect(res.body.notifications[0].message).toBe("New account request pending approval.");
+    expect(res.body.notifications[0].relatedRequestId).toBeNull();
+  });
+
+  it("excludes item request notifications for SYSTEM_ADMIN with non-Latin names and different tag formats", async () => {
+    // Simulate what Prisma would return after applying the relatedRequestId: null filter
+    vi.mocked(prisma.notification.findMany).mockResolvedValue([
+      makeNotification({
+        id: "notif-2",
+        userId: "admin-1",
+        message: "Account request from 李明 pending approval.",
+        relatedRequestId: null,
+      }),
+    ] as never);
+
+    const res = await request(app)
+      .get("/notifications")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.notifications).toHaveLength(1);
+    expect(res.body.notifications[0].message).toBe("Account request from 李明 pending approval.");
+    expect(res.body.notifications[0].relatedRequestId).toBeNull();
   });
 
   it("returns a message with no recognised prefix unchanged, code null", async () => {

@@ -42,11 +42,7 @@ export interface RequestSubmittedInput {
 }
 
 /** "[REQUEST_SUBMITTED] Demo Staff requested a TRANSFER for item CNCS-DEMO-0001 (Dell Latitude Laptop) and it needs your review." */
-export function renderRequestSubmitted(input: RequestSubmittedInput, isSystemAdmin = false): string {
-  if (isSystemAdmin) {
-    // SYSTEM_ADMIN must not see asset data - strip item details
-    return `[${NOTIFICATION_CODES.REQUEST_SUBMITTED}] A ${input.requestType} request has been submitted and needs your review.`;
-  }
+export function renderRequestSubmitted(input: RequestSubmittedInput): string {
   return (
     `[${NOTIFICATION_CODES.REQUEST_SUBMITTED}] ${input.requesterName} requested a ` +
     `${input.requestType} for item ${input.itemTagId} (${input.itemName}) ` +
@@ -67,22 +63,16 @@ export interface RequestDecidedInput {
  * "[REQUEST_APPROVED] Your TRANSFER request for item CNCS-DEMO-0001 (Dell Latitude Laptop) was approved by System Admin."
  * "[REQUEST_REJECTED] Your DISPOSAL request for item CNCS-DEMO-0003 (Microscope) was rejected by System Admin. Reason: Item is still serviceable."
  */
-export function renderRequestDecided(input: RequestDecidedInput, isSystemAdmin = false): string {
+export function renderRequestDecided(input: RequestDecidedInput): string {
   const code =
     input.decision === "APPROVED"
       ? NOTIFICATION_CODES.REQUEST_APPROVED
       : NOTIFICATION_CODES.REQUEST_REJECTED;
   const verb = input.decision === "APPROVED" ? "approved" : "rejected";
 
-  let message: string;
-  if (isSystemAdmin) {
-    // SYSTEM_ADMIN must not see asset data - strip item details
-    message = `[${code}] Your ${input.requestType} request was ${verb} by ${input.reviewerName}.`;
-  } else {
-    message =
-      `[${code}] Your ${input.requestType} request for item ${input.itemTagId} ` +
-      `(${input.itemName}) was ${verb} by ${input.reviewerName}.`;
-  }
+  let message =
+    `[${code}] Your ${input.requestType} request for item ${input.itemTagId} ` +
+    `(${input.itemName}) was ${verb} by ${input.reviewerName}.`;
 
   const reason = input.rejectionReason?.trim();
   if (input.decision === "REJECTED" && reason) {
@@ -179,7 +169,7 @@ export interface NotifyReviewersInput extends RequestSubmittedInput {
  * Call this inside the same transaction that creates the Request so a request
  * can never exist unnotified.
  *
- * SYSTEM_ADMIN receives stripped notifications without asset data (security rule).
+ * SYSTEM_ADMIN is never a recipient of item request notifications (security rule).
  *
  * Returns the recipients so the caller can fire the email side-channel after
  * the transaction commits.
@@ -194,7 +184,7 @@ export async function notifyReviewersOfNewRequest(
     // A request nobody can see is an operational hazard, not a validation
     // error: the request is still created, but say so loudly in the logs.
     console.warn(
-      `No eligible reviewer for request ${input.requestId} — no ADMIN exists other than the requester.`,
+      `No eligible reviewer for request ${input.requestId} — no APPROVER exists other than the requester.`,
     );
     return recipients;
   }
@@ -202,7 +192,7 @@ export async function notifyReviewersOfNewRequest(
   await client.notification.createMany({
     data: recipients.map((recipient) => ({
       userId: recipient.id,
-      message: renderRequestSubmitted(input, recipient.role === "SYSTEM_ADMIN"),
+      message: renderRequestSubmitted(input),
       relatedRequestId: input.requestId,
       createdAt: input.createdAt,
     })),
@@ -218,12 +208,12 @@ export interface NotifyRequesterInput extends RequestDecidedInput {
   decidedAt: Date;
 }
 
-/** Single row back to whoever filed the request (F8.2). SYSTEM_ADMIN receives stripped notifications. */
+/** Single row back to whoever filed the request (F8.2). */
 export async function notifyRequesterOfDecision(
   client: DbClient,
   input: NotifyRequesterInput,
 ): Promise<string> {
-  const message = renderRequestDecided(input, input.requesterRole === "SYSTEM_ADMIN");
+  const message = renderRequestDecided(input);
   await client.notification.create({
     data: {
       userId: input.requesterId,

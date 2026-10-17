@@ -261,6 +261,8 @@ async function emailEveryone(
  * POST /api/v1/requests
  * Staff/Admin — file a transfer or disposal request (SRS F6.1, F7.1).
  *
+ * SYSTEM_ADMIN is not allowed to create item requests (security rule).
+ *
  * There is deliberately no "you must own this item" gate: SRS §9 leaves item
  * custody informal, the reviewer is the control, and a staff member who spots a
  * broken projector in someone else's room should be able to report it. The
@@ -274,6 +276,12 @@ requestsRouter.post(
     try {
       const user = requireUser(req);
       const body = validatedBody<CreateRequestBody>(req);
+
+      // SYSTEM_ADMIN cannot create item requests (security rule)
+      if (user.role === "SYSTEM_ADMIN") {
+        throw httpError(403, "SYSTEM_ADMIN cannot create item requests");
+      }
+
       // Shared by Request.createdAt and every Notification.createdAt it fans out.
       const createdAt = new Date();
 

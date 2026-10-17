@@ -125,7 +125,7 @@ export function ItemsBrowsePage() {
           <Select
             label="Scope"
             options={[
-              { value: "all", label: "All department items" },
+              { value: "all", label: "Department items" },
               { value: "mine", label: "My items" },
             ]}
             value={mine ? "mine" : "all"}

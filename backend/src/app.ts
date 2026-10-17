@@ -6,6 +6,7 @@ import { accessoriesRouter } from "./routes/accessories.js";
 import { auditsRouter } from "./routes/audits.js";
 import authRouter from "./routes/auth.js";
 import { buildingsRouter } from "./routes/buildings.js";
+import { catalogRouter } from "./routes/catalog.js";
 import { categoriesRouter } from "./routes/categories.js";
 import { departmentsRouter } from "./routes/departments.js";
 import { expiryRouter } from "./routes/expiry.js";
@@ -105,6 +106,7 @@ app.get(["/api/v1/health", "/health"], (req: Request, res: Response) => {
 app.use(["/api/v1/audits", "/audits"], auditsRouter);
 app.use(["/api/v1/auth", "/auth"], authRouter);
 app.use(["/api/v1/buildings", "/buildings"], buildingsRouter);
+app.use(["/api/v1/catalog", "/catalog"], catalogRouter);
 app.use(["/api/v1/categories", "/categories"], categoriesRouter);
 app.use(["/api/v1/departments", "/departments"], departmentsRouter);
 app.use(["/api/v1/expiry", "/expiry"], expiryRouter);

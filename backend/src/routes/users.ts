@@ -25,6 +25,8 @@ import {
   ERROR_INVITE_AUTHORIZED_BY,
   INVITABLE_ROLES,
   INVITE_TTL_HOURS,
+  inviteExpiresAt,
+  newInviteToken,
   type InvitableRole,
 } from "../services/invites.js";
 import { executeHandover } from "../services/handover.js";
@@ -1263,4 +1265,126 @@ usersRouter.post(
       next(err);
     }
   }
+);
+
+/**
+ * `GET /users/invites` — list outstanding invites with status (T8)
+ */
+usersRouter.get(
+  "/invites",
+  authenticate,
+  requireCapability("ACCOUNT_MANAGE"),
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const invites = await prisma.user.findMany({
+        where: { accountStatus: "PENDING_EMAIL_VERIFICATION" },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true,
+          orgUnitId: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+      });
+
+      const now = new Date();
+      const withStatus = invites.map((invite) => ({
+        id: invite.id,
+        fullName: invite.fullName,
+        email: invite.email,
+        role: invite.role,
+        orgUnitId: invite.orgUnitId,
+        createdAt: invite.createdAt,
+        expiresAt: invite.expiresAt,
+        status: invite.expiresAt && new Date(invite.expiresAt) < now ? "EXPIRED" : "SENT",
+      }));
+
+      res.status(200).json(withStatus);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * `POST /users/invites/:id/resend` — resend an invite email (T8)
+ */
+usersRouter.post(
+  "/invites/:id/resend",
+  authenticate,
+  requireCapability("ACCOUNT_MANAGE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Invite ID is required" });
+        return;
+      }
+
+      const invite = await prisma.user.findUnique({
+        where: { id },
+        select: { id: true, email: true, fullName: true, role: true, accountStatus: true },
+      });
+
+      if (!invite || invite.accountStatus !== "PENDING_EMAIL_VERIFICATION") {
+        res.status(404).json({ error: "Invite not found" });
+        return;
+      }
+
+      const { token, tokenHash } = newInviteToken();
+      const newExpiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000);
+
+      await prisma.user.update({
+        where: { id },
+        data: { passwordHash: tokenHash, expiresAt: newExpiresAt },
+      });
+
+      const inviteUrl = `${process.env.SITE_ORIGIN || "https://cncs-pms-web.vercel.app"}/accept-invite?token=${token}`;
+      await sendNotificationEmail({
+        to: invite.email,
+        subject: "Your CNCS Property Management Account Invite",
+        body: `Hello ${invite.fullName},\n\nYou have been invited to join the CNCS Property Management System as ${invite.role}.\n\nClick the link below to set your password and activate your account:\n\n${inviteUrl}\n\nThis link expires in 72 hours.`,
+      }).catch((err) => console.error("Failed to send invite email:", err));
+
+      res.status(200).json({ message: "Invite resent successfully", expiresAt: newExpiresAt });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * `DELETE /users/invites/:id` — revoke an invite (T8)
+ */
+usersRouter.delete(
+  "/invites/:id",
+  authenticate,
+  requireCapability("ACCOUNT_MANAGE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Invite ID is required" });
+        return;
+      }
+
+      const invite = await prisma.user.findUnique({
+        where: { id },
+        select: { accountStatus: true },
+      });
+
+      if (!invite || invite.accountStatus !== "PENDING_EMAIL_VERIFICATION") {
+        res.status(404).json({ error: "Invite not found" });
+        return;
+      }
+
+      await prisma.user.delete({ where: { id } });
+      res.status(200).json({ message: "Invite revoked successfully" });
+    } catch (err) {
+      next(err);
+    }
+  },
 );

@@ -553,7 +553,6 @@ describe("GET /requests/pending-count", () => {
     expect(prisma.request.count).toHaveBeenCalledWith({
       where: {
         status: "PENDING",
-        createdAt: expect.objectContaining({ gte: expect.any(Date), lte: expect.any(Date) }),
       },
     });
     // The Express 5 route-ordering guard: `/:id` is what calls findFirst, so a
@@ -571,9 +570,8 @@ describe("GET /requests/pending-count", () => {
     expect(res.status).toBe(200);
     expect(prisma.request.count).toHaveBeenCalledWith({
       where: {
-        requestedById: "staff-1",
         status: "PENDING",
-        createdAt: expect.objectContaining({ gte: expect.any(Date), lte: expect.any(Date) }),
+        requestedById: "staff-1",
       },
     });
   });

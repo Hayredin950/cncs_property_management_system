@@ -203,7 +203,7 @@ describe("GET /items", () => {
       { tagId: { contains: "laptop", mode: "insensitive" } },
     ]);
     expect(where.categoryId).toBe("cat-electronics");
-    expect(where.orgUnitId).toEqual({ contains: "org-unit-cs", mode: "insensitive" });
+    expect(where.orgUnitId).toBe("org-unit-cs");
     expect(where.status).toBe("ACTIVE");
   });
 

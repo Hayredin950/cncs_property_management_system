@@ -98,6 +98,14 @@ export function AdminUsersPage() {
   const unitsQuery = useInvitableUnits();
   const inviteMutation = useInviteUser();
   const updateMutation = useUpdateUser();
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"approvals" | "invite" | "accounts">("approvals");
+
+  // Search and filter state for Existing Accounts tab
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
+  const [dateSort, setDateSort] = useState<"newest" | "oldest">("newest");
   const promoteMutation = usePromoteUser();
   const passwordMutation = useResetUserPassword();
   const deleteMutation = useDeleteUser();
@@ -230,6 +238,22 @@ export function AdminUsersPage() {
 
   const accounts = usersQuery.data ?? [];
   const pending = approvalsQuery.data ?? [];
+
+  // Filter and sort accounts for Existing Accounts tab
+  const filteredAccounts = accounts
+    .filter((account) => {
+      const matchesSearch =
+        searchQuery === "" ||
+        account.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        account.email.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesRole = roleFilter === "all" || account.role === roleFilter;
+      return matchesSearch && matchesRole;
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+      return dateSort === "newest" ? dateB - dateA : dateA - dateB;
+    });
   const rejectTrimmed = rejectReason.trim();
   const rejectValid = rejectTrimmed.length >= 3 && rejectTrimmed.length <= 500;
 
@@ -273,30 +297,62 @@ export function AdminUsersPage() {
         </p>
       </div>
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Waiting for approval{pending.length > 0 ? ` (${pending.length})` : ""}
-        </h2>
+      {/* Tab Navigation */}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("approvals")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "approvals"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Waiting for Approval {pending.length > 0 && `(${pending.length})`}
+        </button>
+        <button
+          onClick={() => setActiveTab("invite")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "invite"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Invite an Account
+        </button>
+        <button
+          onClick={() => setActiveTab("accounts")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "accounts"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Existing Accounts {accounts.length > 0 && `(${accounts.length})`}
+        </button>
+      </div>
 
-        {approvalsQuery.isPending ? (
-          <div className="flex flex-col gap-2" role="status" aria-label="Loading approval queue">
-            {Array.from({ length: 2 }).map((_, index) => (
-              <Skeleton key={index} className="h-16 w-full" />
-            ))}
-          </div>
-        ) : approvalsQuery.isError ? (
-          <ErrorState
-            heading="Couldn't load the approval queue"
-            body={approvalsQuery.error instanceof Error ? approvalsQuery.error.message : undefined}
-            action={
-              <Button size="sm" onClick={() => approvalsQuery.refetch()}>
-                Try again
-              </Button>
-            }
-          />
-        ) : pending.length === 0 ? (
-          <Card className="text-sm text-slate-500">No account requests waiting.</Card>
-        ) : (
+      {/* Tab 1: Waiting for Approval */}
+      {activeTab === "approvals" && (
+        <section>
+          {approvalsQuery.isPending ? (
+            <div className="flex flex-col gap-2" role="status" aria-label="Loading approval queue">
+              {Array.from({ length: 2 }).map((_, index) => (
+                <Skeleton key={index} className="h-16 w-full" />
+              ))}
+            </div>
+          ) : approvalsQuery.isError ? (
+            <ErrorState
+              heading="Couldn't load the approval queue"
+              body={approvalsQuery.error instanceof Error ? approvalsQuery.error.message : undefined}
+              action={
+                <Button size="sm" onClick={() => approvalsQuery.refetch()}>
+                  Try again
+                </Button>
+              }
+            />
+          ) : pending.length === 0 ? (
+            <Card className="text-sm text-slate-500">No account requests waiting.</Card>
+          ) : (
           <ul className="flex flex-col gap-2">
             {pending.map((account) => {
               const isSelf = account.id === currentUser?.id;
@@ -348,21 +404,25 @@ export function AdminUsersPage() {
             })}
           </ul>
         )}
-      </section>
+        </section>
+      )}
 
-      <Card>
-        <form onSubmit={handleSubmit(onInvite)} noValidate className="flex flex-col gap-4">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Invite an account
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              For heads, property officers, auditors and system admins — the accounts nobody can
-              register for themselves. They choose their own password from the link, so no
-              administrator ever sets or knows it. Staff ask for an account on the public request
-              page and a head approves them.
-            </p>
-          </div>
+      {/* Tab 2: Invite an Account */}
+      {activeTab === "invite" && (
+        <section>
+          <Card>
+            <form onSubmit={handleSubmit(onInvite)} noValidate className="flex flex-col gap-4">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Invite an account
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  For heads, property officers, auditors and system admins — the accounts nobody can
+                  register for themselves. They choose their own password from the link, so no
+                  administrator ever sets or knows it. Staff ask for an account on the public request
+                  page and a head approves them.
+                </p>
+              </div>
 
           <Input
             label="Email"
@@ -473,34 +533,66 @@ export function AdminUsersPage() {
             </Button>
           </div>
         </Card>
+        )}
+      </section>
       )}
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Existing accounts{accounts.length > 0 ? ` (${accounts.length})` : ""}
-        </h2>
-
-        {usersQuery.isPending ? (
-          <div className="flex flex-col gap-2" role="status" aria-label="Loading accounts">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <Skeleton key={index} className="h-20 w-full" />
-            ))}
+      {/* Tab 3: Existing Accounts */}
+      {activeTab === "accounts" && (
+        <section>
+          {/* Search and Filter Controls */}
+          <div className="mb-4 flex flex-wrap gap-3">
+            <div className="flex-1 min-w-[200px]">
+              <Input
+                label="Search"
+                placeholder="Search by name or email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <Select
+              label="Role"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as Role | "all")}
+              options={[
+                { value: "all", label: "All Roles" },
+                ...ROLE_OPTIONS,
+              ]}
+            />
+            <Select
+              label="Sort by"
+              value={dateSort}
+              onChange={(e) => setDateSort(e.target.value as "newest" | "oldest")}
+              options={[
+                { value: "newest", label: "Newest First" },
+                { value: "oldest", label: "Oldest First" },
+              ]}
+            />
           </div>
-        ) : usersQuery.isError ? (
-          <ErrorState
-            heading="Couldn't load accounts"
-            body={usersQuery.error instanceof Error ? usersQuery.error.message : undefined}
-            action={
-              <Button size="sm" onClick={() => usersQuery.refetch()}>
-                Try again
-              </Button>
-            }
-          />
-        ) : accounts.length === 0 ? (
-          <Card className="text-sm text-slate-500">No accounts yet.</Card>
-        ) : (
+
+          {usersQuery.isPending ? (
+            <div className="flex flex-col gap-2" role="status" aria-label="Loading accounts">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <Skeleton key={index} className="h-20 w-full" />
+              ))}
+            </div>
+          ) : usersQuery.isError ? (
+            <ErrorState
+              heading="Couldn't load accounts"
+              body={usersQuery.error instanceof Error ? usersQuery.error.message : undefined}
+              action={
+                <Button size="sm" onClick={() => usersQuery.refetch()}>
+                  Try again
+                </Button>
+              }
+            />
+          ) : filteredAccounts.length === 0 ? (
+            <Card className="text-sm text-slate-500">
+              {searchQuery || roleFilter !== "all" ? "No accounts match your filters." : "No accounts yet."}
+            </Card>
+          ) : (
           <ul className="flex flex-col gap-2">
-            {accounts.map((account) => {
+            {filteredAccounts.map((account) => {
               const isSelf = account.id === currentUser?.id;
               const ownsItems = account.itemCount > 0;
               return (
@@ -556,7 +648,8 @@ export function AdminUsersPage() {
             })}
           </ul>
         )}
-      </section>
+        </section>
+      )}
 
       <Modal
         open={editing !== null}

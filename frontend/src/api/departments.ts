@@ -30,8 +30,7 @@ export interface InvitableUnit {
 }
 
 export async function getDepartments(): Promise<Department[]> {
-  const response = await apiClient.get<{ departments: Department[] }>("/departments");
-  return response.departments;
+  return apiClient.get<Department[]>("/departments");
 }
 
 export async function fetchInvitableUnits(): Promise<InvitableUnit[]> {

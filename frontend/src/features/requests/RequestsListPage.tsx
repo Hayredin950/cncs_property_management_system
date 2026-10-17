@@ -38,10 +38,10 @@ export function RequestsListPage() {
   const canDecide = canDecideRequests(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const rawStatus = searchParams.get("status") ?? "";
+  const rawStatus = searchParams.get("status") ?? "PENDING";
   const status = REQUEST_STATUSES.includes(rawStatus as RequestStatus)
     ? (rawStatus as RequestStatus)
-    : undefined;
+    : "PENDING";
 
   const requestsQuery = useRequests({ ...(status ? { status } : {}), limit: 20 });
 

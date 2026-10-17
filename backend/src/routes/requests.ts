@@ -35,6 +35,7 @@ import {
   ERROR_ITEM_NOT_FOUND,
   ERROR_REQUEST_NOT_FOUND,
 } from "../services/requestWorkflow.js";
+import { REQUEST_STATUSES } from "../constants/requestStatus.js";
 
 /**
  * Transfer and disposal requests (SRS F6, F7).
@@ -61,7 +62,6 @@ export const requestsRouter: ExpressRouter = Router();
 const TRANSACTION_OPTIONS = { maxWait: 5000, timeout: 15000 } as const;
 
 const REQUEST_TYPES = ["TRANSFER", "DISPOSAL"] as const;
-const REQUEST_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
 
 /**
  * A transfer names at least one thing to change; a disposal names none. The

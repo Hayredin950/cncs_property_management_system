@@ -454,6 +454,38 @@ describe("GET /requests", () => {
     expect(where.requestedById).toBe("officer-1");
   });
 
+  it("accepts all valid status values from the shared enum", async () => {
+    const statuses = [
+      "PENDING",
+      "PENDING_STAGE1",
+      "PENDING_STAGE2",
+      "APPROVED",
+      "REJECTED",
+      "WAITLISTED",
+      "WITHDRAWN",
+      "INVALIDATED",
+      "RETURN_PENDING_CONFIRMATION",
+    ];
+
+    for (const status of statuses) {
+      vi.mocked(prisma.request.findMany).mockClear();
+      vi.mocked(prisma.request.count).mockClear();
+      vi.mocked(prisma.request.findMany).mockResolvedValue([makeRequest()] as never);
+      vi.mocked(prisma.request.count).mockResolvedValue(1 as never);
+
+      const res = await request(app)
+        .get(`/requests?status=${status}`)
+        .set("Authorization", `Bearer ${officerToken}`);
+
+      expect(res.status).toBe(200);
+      const where = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where as Record<
+        string,
+        unknown
+      >;
+      expect(where.status).toBe(status);
+    }
+  });
+
   /**
    * §10.3 — account administration is not asset business. This endpoint served a
    * SYSTEM_ADMIN "their own" requests, and every row of `REQUEST_LIST_SELECT`

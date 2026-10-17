@@ -478,7 +478,7 @@ describe("POST /users/:id/approve", () => {
     };
     expect(call.where).toEqual({ id: "pending-1" });
     expect(call.data.accountStatus).toBe("ACTIVE");
-    expect(call.data.reviewedById).toBe("admin-1");
+    expect(call.data.reviewedBy).toEqual({ connect: { id: "admin-1" } });
     expect(call.data.reviewedAt).toBeInstanceOf(Date);
     // The request carries no role, so approving without one must not invent a
     // change: the account keeps the STAFF role the request asked as.
@@ -506,7 +506,7 @@ describe("POST /users/:id/approve", () => {
       data: Record<string, unknown>;
     };
     expect(call.data.role).toBe("AUDITOR");
-    expect(call.data.reviewedById).toBe("admin-1");
+    expect(call.data.reviewedBy).toEqual({ connect: { id: "admin-1" } });
     expect(call.data.tokenVersion).toEqual({ increment: 1 });
   });
 
@@ -588,7 +588,7 @@ describe("POST /users/:id/reject", () => {
     };
     expect(call.data.accountStatus).toBe("REJECTED");
     expect(call.data.reviewNote).toBe("No matching staff record");
-    expect(call.data.reviewedById).toBe("admin-1");
+    expect(call.data.reviewedBy).toEqual({ connect: { id: "admin-1" } });
   });
 
   it("requires a reason long enough to be one (F6.2's rule, applied here)", async () => {

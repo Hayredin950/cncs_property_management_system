@@ -51,6 +51,7 @@ notificationsRouter.get(
     try {
       const user = requireUser(req);
       const query = validatedQuery<ListQuery>(req);
+      const isSystemAdmin = user.role === "SYSTEM_ADMIN";
 
       // `userId` is pinned last so no query parameter can ever widen the scope.
       const where = {
@@ -77,10 +78,15 @@ notificationsRouter.get(
 
       const notifications = rows.map((row) => {
         const { code, message } = parseNotificationMessage(row.message);
+        
+        // Strip sensitive data from SYSTEM_ADMIN's view at retrieval time
+        // This prevents data leak from old notifications created before fix
+        const filteredMessage = isSystemAdmin ? sanitizeForSystemAdmin(message) : message;
+        
         return {
           id: row.id,
           code,
-          message,
+          message: filteredMessage,
           relatedRequestId: row.relatedRequestId,
           isRead: row.isRead,
           createdAt: row.createdAt,
@@ -98,6 +104,22 @@ notificationsRouter.get(
     }
   },
 );
+
+/**
+ * Removes sensitive asset data from notification messages for SYSTEM_ADMIN.
+ * Pattern: removes item tag IDs (CNCS-DEMO-XXXX), item names, and requester names.
+ */
+function sanitizeForSystemAdmin(message: string): string {
+  // Remove item tag IDs like CNCS-DEMO-0001
+  let sanitized = message.replace(/CNCS-DEMO-\d+/g, "[ITEM TAG ID]");
+  // Remove item names in parentheses - everything between parentheses after item tag ID
+  sanitized = sanitized.replace(/\(.*?\)/g, "[ITEM NAME]");
+  // Remove requester names (before "requested")
+  sanitized = sanitized.replace(/(\w+\s+\w+)\s+requested/g, "[REQUESTER] requested");
+  // Remove reviewer names (after "by")
+  sanitized = sanitized.replace(/by\s+(\w+\s+\w+)/g, "by [REVIEWER]");
+  return sanitized;
+}
 
 /**
  * POST /api/v1/notifications/read-all

@@ -36,6 +36,8 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
+
 describe("GET /notifications", () => {
   beforeEach(() => {
     vi.mocked(prisma.notification.findMany).mockResolvedValue([
@@ -64,6 +66,23 @@ describe("GET /notifications", () => {
     ]);
     expect(res.body.unreadCount).toBe(1);
     expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+  });
+
+  it("strips sensitive data from SYSTEM_ADMIN notifications at retrieval time", async () => {
+    vi.mocked(prisma.notification.findMany).mockResolvedValue([
+      makeNotification({ 
+        message: "[REQUEST_SUBMITTED] Demo Staff requested a TRANSFER for item CNCS-DEMO-0001 (Dell Latitude Laptop) and it needs your review." 
+      }),
+    ] as never);
+
+    const res = await request(app)
+      .get("/notifications")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.notifications[0].message).not.toContain("CNCS-DEMO-0001");
+    expect(res.body.notifications[0].message).not.toContain("Dell Latitude Laptop");
+    expect(res.body.notifications[0].message).not.toContain("Demo Staff");
   });
 
   it("returns a message with no recognised prefix unchanged, code null", async () => {

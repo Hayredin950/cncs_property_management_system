@@ -100,8 +100,10 @@ describe("GET /users", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(2);
-    expect(res.body[0]).toMatchObject({ id: "user-1", role: "STAFF", itemCount: 2 });
-    expect(res.body[1]).toMatchObject({ id: "user-2", role: "SYSTEM_ADMIN", itemCount: 0 });
+    expect(res.body[0]).toMatchObject({ id: "user-1", role: "STAFF" });
+    expect(res.body[0].itemCount).toBeUndefined(); // SYSTEM_ADMIN should not see any item counts
+    expect(res.body[1]).toMatchObject({ id: "user-2", role: "SYSTEM_ADMIN" });
+    expect(res.body[1].itemCount).toBeUndefined();
     expect(res.body[0].passwordHash).toBeUndefined();
     expect(res.body[0]._count).toBeUndefined();
   });

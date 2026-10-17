@@ -143,6 +143,9 @@ export interface RequestListQuery {
   type?: RequestType;
   departmentId?: string;
   mine?: boolean;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
   limit?: number;
   offset?: number;
 }

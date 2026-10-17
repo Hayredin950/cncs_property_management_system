@@ -1,17 +1,18 @@
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Search } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { canDecideRequests } from "../../lib/permissions";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
+import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
 import { SkeletonText } from "../../components/Skeleton";
 import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBadges";
 import { useRequests } from "../../hooks/useRequests";
 import { formatRelativeTime } from "../../lib/formatters";
 import { NetworkError } from "../../types/api";
-import { REQUEST_STATUSES, REQUEST_STATUS_LABELS, type RequestStatus } from "../../types/enums";
+import { REQUEST_STATUSES, REQUEST_STATUS_LABELS, REQUEST_TYPES, REQUEST_TYPE_LABELS, type RequestStatus, type RequestType } from "../../types/enums";
 import { useDepartments } from "../../hooks/useDepartments";
 import type { Department } from "../../api/departments";
 
@@ -20,6 +21,14 @@ const STATUS_OPTIONS = [
   ...REQUEST_STATUSES.map((status) => ({
     value: status,
     label: REQUEST_STATUS_LABELS[status],
+  })),
+];
+
+const TYPE_OPTIONS = [
+  { value: "ALL", label: "All types" },
+  ...REQUEST_TYPES.map((type) => ({
+    value: type,
+    label: REQUEST_TYPE_LABELS[type],
   })),
 ];
 
@@ -48,8 +57,20 @@ export function RequestsListPage() {
         ? (rawStatus as RequestStatus)
         : undefined;
 
+  const rawType = searchParams.get("type") ?? "ALL";
+  const type =
+    rawType === "ALL"
+      ? undefined
+      : REQUEST_TYPES.includes(rawType as RequestType)
+        ? (rawType as RequestType)
+        : undefined;
+
   const rawDepartmentId = searchParams.get("departmentId");
   const departmentId = rawDepartmentId || undefined;
+
+  const searchQuery = searchParams.get("search") || "";
+  const dateFrom = searchParams.get("dateFrom") || "";
+  const dateTo = searchParams.get("dateTo") || "";
 
   const { data: departments } = useDepartments();
   const departmentOptions = [
@@ -62,7 +83,11 @@ export function RequestsListPage() {
 
   const requestsQuery = useRequests({
     ...(status ? { status } : {}),
+    ...(type ? { type } : {}),
     ...(departmentId ? { departmentId } : {}),
+    ...(searchQuery ? { search: searchQuery } : {}),
+    ...(dateFrom ? { dateFrom } : {}),
+    ...(dateTo ? { dateTo } : {}),
     limit: 20,
   });
 
@@ -75,11 +100,47 @@ export function RequestsListPage() {
     });
   }
 
+  function updateType(value: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value && value !== "ALL") next.set("type", value);
+      else next.delete("type");
+      return next;
+    });
+  }
+
   function updateDepartment(value: string) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (value) next.set("departmentId", value);
       else next.delete("departmentId");
+      return next;
+    });
+  }
+
+  function updateSearch(value: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set("search", value);
+      else next.delete("search");
+      return next;
+    });
+  }
+
+  function updateDateFrom(value: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set("dateFrom", value);
+      else next.delete("dateFrom");
+      return next;
+    });
+  }
+
+  function updateDateTo(value: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set("dateTo", value);
+      else next.delete("dateTo");
       return next;
     });
   }
@@ -113,17 +174,48 @@ export function RequestsListPage() {
             options={STATUS_OPTIONS}
             value={rawStatus ?? "ALL"}
             onChange={(event) => updateStatus(event.target.value)}
-            className="sm:w-48"
+            className="sm:w-40"
+          />
+          <Select
+            label="Type"
+            options={TYPE_OPTIONS}
+            value={rawType ?? "ALL"}
+            onChange={(event) => updateType(event.target.value)}
+            className="sm:w-40"
           />
           <Select
             label="Department"
             options={departmentOptions}
-            placeholder="All departments"
             value={rawDepartmentId ?? ""}
             onChange={(event) => updateDepartment(event.target.value)}
-            className="sm:w-48"
+            className="sm:w-40"
           />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="flex-1">
+          <Input
+            label="Search"
+            value={searchQuery}
+            onChange={(event) => updateSearch(event.target.value)}
+            leadingIcon={<Search className="h-4 w-4" />}
+          />
+        </div>
+        <Input
+          label="From date"
+          type="date"
+          value={dateFrom}
+          onChange={(event) => updateDateFrom(event.target.value)}
+          className="sm:w-40"
+        />
+        <Input
+          label="To date"
+          type="date"
+          value={dateTo}
+          onChange={(event) => updateDateTo(event.target.value)}
+          className="sm:w-40"
+        />
       </div>
 
       {requestsQuery.isPending ? (

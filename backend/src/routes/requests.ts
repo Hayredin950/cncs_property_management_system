@@ -124,6 +124,9 @@ const listQuerySchema = z.object({
   type: z.enum(REQUEST_TYPES).optional(),
   departmentId: z.string().uuid().optional(),
   mine: z.enum(["true", "false"]).optional(),
+  search: z.string().trim().optional(),
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
   window: z.enum(["this-week", "this-month", "last-30-days", "custom"]).default("this-week"),
   fromDate: z.coerce.date().optional(),
   toDate: z.coerce.date().optional(),
@@ -519,12 +522,25 @@ requestsRouter.get(
         ...(query.departmentId ? { item: { orgUnitId: query.departmentId } } : {}),
       };
 
+      // Search filtering (item name, tag ID, or requester name)
+      if (query.search) {
+        where.OR = [
+          { item: { name: { contains: query.search, mode: "insensitive" } } },
+          { item: { tagId: { contains: query.search, mode: "insensitive" } } },
+          { requestedBy: { fullName: { contains: query.search, mode: "insensitive" } } },
+        ];
+      }
+
       // Time window filtering
       const now = new Date();
       let fromDate: Date | undefined;
       let toDate: Date | undefined;
 
-      if (query.window === "custom") {
+      // Use dateFrom/dateTo if provided, otherwise use window
+      if (query.dateFrom || query.dateTo) {
+        fromDate = query.dateFrom;
+        toDate = query.dateTo;
+      } else if (query.window === "custom") {
         fromDate = query.fromDate;
         toDate = query.toDate;
       } else if (query.window === "this-week") {

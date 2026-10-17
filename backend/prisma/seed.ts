@@ -496,6 +496,18 @@ async function main() {
     },
   });
 
+  // Also notify CS Department Head so they see "needs your review"
+  await prisma.notification.upsert({
+    where: { id: "seed-notif-dept-head" },
+    update: { message: submittedMessage, isRead: false },
+    create: {
+      id: "seed-notif-dept-head",
+      userId: csHead.id,
+      message: submittedMessage,
+      relatedRequestId: transferRequest.id,
+    },
+  });
+
   // Add a few pending account requests per department
   const pendingCS = await prisma.user.upsert({
     where: { email: "pending.cs@cncs.aau.edu.et" },
@@ -547,7 +559,7 @@ async function main() {
   console.log(`  5 Items across departments`);
   console.log(`  3 Pending account requests (CS, Biology, Physics)`);
   console.log(`  1 PENDING TRANSFER request (${SEED_REQUEST_ID}) on ${LAPTOP_TAG_ID}, filed by CS Staff 1`);
-  console.log(`  1 unread notification (${SEED_NOTIFICATION_ID}) in the officer's inbox`);
+  console.log(`  2 unread notifications (officer + CS Department Head)`);
 }
 
 main()

@@ -220,6 +220,54 @@ const REQUEST_DETAIL_SELECT = {
  */
 
 /**
+ * Unified logic: returns the where clause for requests this user can decide on.
+ * This is used by:
+ * - GET /requests/pending-count (badge count)
+ * - GET /requests list endpoint (dashboard "Needs your review")
+ * - Should be used consistently everywhere that displays "pending for this user"
+ *
+ * Rules:
+ * - STAFF: sees only their own pending requests
+ * - DEPARTMENT_HEAD: sees pending requests for their department (not just their own)
+ * - PROPERTY_OFFICER: sees all pending requests (REQUEST_READ_ALL)
+ * - SYSTEM_ADMIN: sees nothing (no REQUEST_READ_ALL)
+ * - Also includes staged approvals (PENDING_STAGE1, PENDING_STAGE2) where user is the approver
+ */
+function pendingForUser(user: { id: string; role: UserRole; departmentId?: string }): Prisma.RequestWhereInput {
+  // Base scope: who can see requests at all
+  if (user.role === "SYSTEM_ADMIN") return { id: { in: [] } };
+  
+  // STAFF only sees their own requests
+  if (user.role === "STAFF") {
+    return { requestedById: user.id };
+  }
+  
+  // DEPARTMENT_HEAD sees requests for their department
+  if (user.role === "DEPARTMENT_HEAD") {
+    if (!user.departmentId) {
+      // If no department is set, they see only their own requests
+      return { requestedById: user.id };
+    }
+    return {
+      OR: [
+        // Own requests
+        { requestedById: user.id },
+        // Department requests (item's orgUnitId matches user's departmentId)
+        { item: { orgUnitId: user.departmentId } },
+      ],
+    };
+  }
+  
+  // PROPERTY_OFFICER with REQUEST_READ_ALL sees all
+  if (hasCapability(user.role, "REQUEST_READ_ALL")) {
+    return {};
+  }
+  
+  // Fallback: own requests only
+  return { requestedById: user.id };
+}
+
+/**
  * SRS 3.4 — staff see their own requests only; a reviewer sees the ones they may
  * decide. Applied as part of the `where` (not as a post-fetch check) so a staff
  * lookup of someone else's request is a 404, never a 403 that confirms it exists.
@@ -421,7 +469,7 @@ requestsRouter.post(
 /**
  * GET /api/v1/requests/pending-count
  * Staff/Admin — the badge count. Declared BEFORE `/:id` (see the header note).
- * Matches the list endpoint's default "this-week" window for consistency.
+ * Uses unified pendingForUser logic for consistency across all surfaces.
  */
 requestsRouter.get(
   "/pending-count",
@@ -429,22 +477,11 @@ requestsRouter.get(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const user = requireUser(req);
-      
-      // Apply same "this-week" window as the list endpoint default
-      const now = new Date();
-      const day = now.getDay();
-      const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
-      const fromDate = new Date(now.setDate(diff));
-      fromDate.setHours(0, 0, 0, 0);
-      const toDate = new Date(fromDate);
-      toDate.setDate(toDate.getDate() + 6);
-      toDate.setHours(23, 59, 59, 999);
 
       const pendingCount = await prisma.request.count({
         where: {
-          ...scopeToViewer(user),
+          ...pendingForUser(user),
           status: "PENDING",
-          createdAt: { gte: fromDate, lte: toDate },
         },
       });
       res.status(200).json({ pendingCount });

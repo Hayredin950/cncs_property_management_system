@@ -201,6 +201,19 @@ router.post(
             { id: effectiveIdentifier },
           ],
         },
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          role: true,
+          passwordHash: true,
+          accountStatus: true,
+          orgUnitId: true,
+          departmentId: true,
+          tokenVersion: true,
+          mustChangePassword: true,
+          createdAt: true,
+        },
       });
 
       if (!user) {
@@ -248,6 +261,7 @@ router.post(
         fullName: user.fullName,
         email: user.email,
         role: user.role,
+        departmentId: user.orgUnitId || user.departmentId,
         createdAt: user.createdAt,
         mustChangePassword: user.mustChangePassword,
       };
@@ -291,6 +305,7 @@ router.get(
           fullName: true,
           email: true,
           role: true,
+          orgUnitId: true,
           departmentId: true,
           createdAt: true,
           mustChangePassword: true,
@@ -307,6 +322,7 @@ router.get(
         fullName: user.fullName,
         email: user.email,
         role: user.role,
+        departmentId: user.departmentId || user.orgUnitId,
         createdAt: user.createdAt,
         mustChangePassword: user.mustChangePassword,
       };
@@ -400,6 +416,7 @@ router.post(
           fullName: true,
           email: true,
           role: true,
+          orgUnitId: true,
           departmentId: true,
           createdAt: true,
           mustChangePassword: true,
@@ -415,7 +432,7 @@ router.post(
         {
           id: updated.id,
           role: updated.role,
-          departmentId: updated.departmentId,
+          departmentId: updated.departmentId || updated.orgUnitId,
           ver: updated.tokenVersion,
         },
         secret,
@@ -428,6 +445,7 @@ router.post(
         fullName: updated.fullName,
         email: updated.email,
         role: updated.role,
+        departmentId: updated.departmentId || updated.orgUnitId,
         createdAt: updated.createdAt,
         mustChangePassword: updated.mustChangePassword,
       };

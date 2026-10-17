@@ -89,19 +89,34 @@ function toAdminUser(user: {
   reviewedAt: Date | null;
   reviewNote: string | null;
   _count: { ownedItems: number };
-}) {
-  return {
+}, viewerRole: UserRole) {
+  const response: {
+    id: string;
+    fullName: string;
+    email: string;
+    role: UserRole;
+    createdAt: Date;
+    itemCount?: number;
+    accountStatus: AccountStatusValue;
+    reviewedAt: Date | null;
+    reviewNote: string | null;
+  } = {
     id: user.id,
     fullName: user.fullName,
     email: user.email,
     role: user.role,
     createdAt: user.createdAt,
-    itemCount: user._count.ownedItems,
-    /** The queue reads these; so does the accounts list, to show who is not yet active. */
     accountStatus: user.accountStatus,
     reviewedAt: user.reviewedAt,
     reviewNote: user.reviewNote,
   };
+
+  // SYSTEM_ADMIN should not see asset data per security rule
+  if (viewerRole !== "SYSTEM_ADMIN") {
+    response.itemCount = user._count.ownedItems;
+  }
+
+  return response;
 }
 
 /**
@@ -173,7 +188,7 @@ usersRouter.get(
         select: userListSelect,
       });
 
-      res.status(200).json(pending.map(toAdminUser));
+      res.status(200).json(pending.map((u) => toAdminUser(u, user.role)));
     } catch (err) {
       next(err);
     }
@@ -328,7 +343,7 @@ usersRouter.post(
         body: `Hello ${approved.fullName},\n\nYour account request has been approved. You can now sign in at ${process.env.SITE_ORIGIN || 'https://cncs-pms-web.vercel.app'}.\n\nYour role: ${requestedRole}\n\nIf you did not request this account, please contact the Property Office.`,
       }).catch((err) => console.error("Failed to send approval email:", err));
 
-      res.status(200).json(toAdminUser(approved));
+      res.status(200).json(toAdminUser(approved, reviewer.role));
     } catch (err) {
       next(err);
     }
@@ -433,7 +448,7 @@ usersRouter.post(
         body: `Hello ${rejected.fullName},\n\nYour account request has been rejected.\n\nReason: ${parsed.data.reason}\n\nIf you believe this is an error, please contact the Property Office.`,
       }).catch((err) => console.error("Failed to send rejection email:", err));
 
-      res.status(200).json(toAdminUser(rejected));
+      res.status(200).json(toAdminUser(rejected, reviewer.role));
     } catch (err) {
       next(err);
     }
@@ -542,7 +557,7 @@ usersRouter.post(
         }).catch((err) => console.error("Failed to send escalation email:", err));
       }
 
-      res.status(200).json(toAdminUser(escalated));
+      res.status(200).json(toAdminUser(escalated, reviewer.role));
     } catch (err) {
       next(err);
     }
@@ -737,14 +752,15 @@ usersRouter.get(
   "/",
   authenticate,
   requireCapability("USER_READ"),
-  async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const users = await prisma.user.findMany({
         orderBy: { createdAt: "asc" },
         select: userListSelect,
       });
 
-      res.status(200).json(users.map(toAdminUser));
+      const user = req.user!;
+      res.status(200).json(users.map((u) => toAdminUser(u, user.role)));
     } catch (err) {
       next(err);
     }
@@ -779,6 +795,7 @@ usersRouter.patch(
         return;
       }
 
+      const user = req.user!;
       const { fullName } = parsed.data;
       const email =
         parsed.data.email === undefined ? undefined : normalizeEmail(parsed.data.email);
@@ -812,7 +829,7 @@ usersRouter.patch(
         select: userListSelect,
       });
 
-      res.status(200).json(toAdminUser(updated));
+      res.status(200).json(toAdminUser(updated, user.role));
     } catch (err) {
       next(err);
     }
@@ -857,6 +874,8 @@ usersRouter.post(
         return;
       }
 
+      const user = req.user!;
+
       if (existing.role === parsed.data.role) {
         res.status(409).json({ error: `This account is already ${parsed.data.role}` });
         return;
@@ -888,7 +907,7 @@ usersRouter.post(
         });
       }
 
-      res.status(200).json(toAdminUser(updated));
+      res.status(200).json(toAdminUser(updated, user.role));
     } catch (err) {
       next(err);
     }

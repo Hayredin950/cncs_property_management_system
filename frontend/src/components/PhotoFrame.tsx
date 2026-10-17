@@ -1,6 +1,7 @@
 import { ImageOff, Package } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/cn";
+import { API_BASE_URL } from "../lib/env";
 
 export interface PhotoFrameProps {
   // `| undefined` (not just `?`) because callers forward `item.photoUrl`, which
@@ -24,7 +25,13 @@ export interface PhotoFrameProps {
  */
 export function PhotoFrame({ src, alt, className }: PhotoFrameProps) {
   const [failed, setFailed] = useState(false);
-  const showPlaceholder = !src || failed;
+  
+  // Resolve relative URLs to the API base URL
+  const resolvedSrc = src && !src.startsWith("http") 
+    ? `${API_BASE_URL}${src.startsWith("/") ? "" : "/"}${src}`
+    : src;
+  
+  const showPlaceholder = !resolvedSrc || failed;
 
   return (
     <div
@@ -35,12 +42,12 @@ export function PhotoFrame({ src, alt, className }: PhotoFrameProps) {
     >
       {showPlaceholder ? (
         <div className="flex flex-col items-center gap-1.5 text-slate-400" aria-hidden="true">
-          {src ? <ImageOff className="h-8 w-8" /> : <Package className="h-8 w-8" />}
-          <span className="text-xs">{src ? "Image unavailable" : "No photo"}</span>
+          {resolvedSrc ? <ImageOff className="h-8 w-8" /> : <Package className="h-8 w-8" />}
+          <span className="text-xs">{resolvedSrc ? "Image unavailable" : "No photo"}</span>
         </div>
       ) : (
         <img
-          src={src}
+          src={resolvedSrc}
           alt={alt}
           loading="lazy"
           className="h-full w-full object-cover"

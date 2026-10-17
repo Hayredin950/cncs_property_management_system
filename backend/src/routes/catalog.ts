@@ -24,23 +24,13 @@ catalogRouter.get(
           name: true,
           tagId: true,
           category: { select: { id: true, name: true } },
-          building: { select: { name: true } },
+          building: { select: { id: true, name: true } },
           status: true,
         },
         orderBy: { name: "asc" },
       });
 
-      // Map building name from relation, handle null buildings
-      const mappedItems = items.map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        tagId: item.tagId,
-        category: item.category,
-        building: item.building?.name || null,
-        status: item.status,
-      }));
-
-      res.status(200).json(mappedItems);
+      res.status(200).json(items);
     } catch (err) {
       next(err);
     }
@@ -86,25 +76,14 @@ catalogRouter.get(
           name: true,
           tagId: true,
           category: { select: { id: true, name: true } },
-          building: { select: { name: true } },
+          building: { select: { id: true, name: true } },
           status: true,
           orgUnitId: true,
         },
         orderBy: { name: "asc" },
       });
 
-      // Map building name from relation, handle null buildings
-      const mappedItems = items.map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        tagId: item.tagId,
-        category: item.category,
-        building: item.building?.name || null,
-        status: item.status,
-        orgUnitId: item.orgUnitId,
-      }));
-
-      res.status(200).json(mappedItems);
+      res.status(200).json(items);
     } catch (err) {
       next(err);
     }

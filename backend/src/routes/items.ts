@@ -256,11 +256,6 @@ itemsRouter.get(
       const { search, categoryId, orgUnitId, mine } = req.query;
 
       const filters: Prisma.ItemWhereInput = {};
-      /**
-       * Every term that must hold. Collected as a list rather than assigned
-       * straight to `filters.AND` so the role scope and the `mine` narrowing
-       * compose instead of one overwriting the other.
-       */
       const conditions: Prisma.ItemWhereInput[] = [];
 
       if (typeof search === "string" && search.trim().length > 0) {
@@ -275,7 +270,7 @@ itemsRouter.get(
       }
 
       if (typeof orgUnitId === "string") {
-        filters.orgUnitId = { contains: orgUnitId, mode: "insensitive" };
+        filters.orgUnitId = orgUnitId;
       }
 
       /**

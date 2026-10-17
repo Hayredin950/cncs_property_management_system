@@ -12,8 +12,8 @@ import { Select } from "../../components/Select";
 import { SkeletonCard } from "../../components/Skeleton";
 import { useAuth } from "../../app/AuthContext";
 import { useCategories } from "../../hooks/useCategories";
+import { useDepartments } from "../../hooks/useDepartments";
 import { useItems } from "../../hooks/useItems";
-import { DEPARTMENT_OPTIONS } from "../../lib/departments";
 import { seesAllItems } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
 
@@ -28,31 +28,23 @@ export function ItemsBrowsePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
 
-  /**
-   * Whether this viewer's `/items` is the whole register or a scoped list.
-   *
-   * The server decides that, not this flag (`services/itemScope.ts`): a Property
-   * Officer and an Auditor get the college, a Department Head gets their unit plus
-   * their own holdings, and a Staff member gets only what they hold. This reads the
-   * same capability the sidebar does, so the two screens cannot disagree, and it
-   * exists because they did — see `isScoped` below.
-   */
   const isScoped = !seesAllItems(user?.role);
 
   const page = Number(searchParams.get("page") ?? "1") || 1;
   const search = searchParams.get("search") ?? "";
   const categoryId = searchParams.get("categoryId") ?? "";
-  const department = searchParams.get("department") ?? "";
+  const orgUnitId = searchParams.get("orgUnitId") ?? "";
   const mine = searchParams.get("mine") === "true";
-  const hasFilters = Boolean(search || categoryId || department);
+  const hasFilters = Boolean(search || categoryId || orgUnitId);
 
   const categoriesQuery = useCategories();
+  const departmentsQuery = useDepartments();
   const itemsQuery = useItems({
     page,
     limit: 20,
     ...(search ? { search } : {}),
     ...(categoryId ? { categoryId } : {}),
-    ...(department ? { department } : {}),
+    ...(orgUnitId ? { orgUnitId } : {}),
     ...(mine ? { mine: true } : {}),
   });
 
@@ -81,6 +73,11 @@ export function ItemsBrowsePage() {
   const categoryOptions = useMemo(
     () => (categoriesQuery.data ?? []).map((category) => ({ value: category.id, label: category.name })),
     [categoriesQuery.data],
+  );
+
+  const departmentOptions = useMemo(
+    () => (departmentsQuery.data ?? []).map((dept) => ({ value: dept.id, label: dept.name })),
+    [departmentsQuery.data],
   );
 
   return (
@@ -132,16 +129,15 @@ export function ItemsBrowsePage() {
           className="sm:w-48"
         />
         {/*
-          A `Select`, not the free-text input this used to be: the department
-          vocabulary is fixed (lib/departments.ts), so filtering by a name that
-          matches nothing is not possible by accident.
+          Department filter from GET /departments (OrgUnits)
+          Uses orgUnitId for backend filtering
         */}
         <Select
           label="Department"
-          options={DEPARTMENT_OPTIONS}
+          options={departmentOptions}
           placeholder="All departments"
-          value={department}
-          onChange={(event) => updateParam("department", event.target.value)}
+          value={orgUnitId}
+          onChange={(event) => updateParam("orgUnitId", event.target.value)}
           className="sm:w-56"
         />
         {hasFilters && (

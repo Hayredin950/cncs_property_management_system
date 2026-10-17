@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, ChevronDown, Loader2, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
@@ -19,7 +19,6 @@ import { useItemById } from "../../hooks/useItems";
 import { useUsers } from "../../hooks/useUsers";
 import { canReadUsers } from "../../lib/permissions";
 import { ApiError, NetworkError } from "../../types/api";
-import type { UserSummary } from "../../types/user";
 import { CONDITIONS, CONDITION_LABELS } from "../../types/enums";
 
 /**
@@ -129,20 +128,8 @@ function toPayload(values: ItemFormValues, ownerId: string) {
 }
 
 /**
- * The custodian control (F2.1) — the one place an item's owner is decided.
- *
- * It used to offer exactly one option, the signed-in account, because a Staff
- * member has no way to enumerate accounts (G2). The roles with `USER_READ` can —
- * the System Admin and the Property Officer (spec 2.1.1) — and the Property
- * Officer is the person who actually registers an asset on behalf of whoever
- * holds it, so the list is every account for them, and just themselves for
- * everyone else, with the hint saying which of the two it is instead of leaving a
- * one-option dropdown looking broken.
- *
- * This matters more than it looks: `PUT /items/:id` refuses `ownerId` (an owner
- * change is an approved TRANSFER), so registration is the *only* moment the
- * custodian can be set correctly without paperwork. Getting it wrong at the start
- * means a transfer request to fix a typo.
+ * Searchable custodian control - allows typing to filter accounts
+ * Shows only ACTIVE accounts, excludes SYSTEM_ADMIN and pending accounts
  */
 function OwnerSelect({
   value,
@@ -154,50 +141,120 @@ function OwnerSelect({
   error?: string | undefined;
 }) {
   const { user } = useAuth();
-  // `GET /users` needs `USER_READ` (gap G2), so a registrar without it cannot
-  // enumerate accounts — the request would only come back 403, which is why it is
-  // not sent at all. Today only the Property Officer reaches create mode and it
-  // holds `USER_READ`, so this is a guard against the matrix widening rather than
-  // a branch any role currently takes on this screen.
   const canListAccounts = canReadUsers(user?.role);
   const usersQuery = useUsers(canListAccounts);
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  /**
-   * Who can hold the item, as far as this viewer can see.
-   *
-   * The signed-in account is always in the list even before `GET /users` answers:
-   * a `<select>` whose `value` is not among its options renders blank, so a
-   * custodian field that was seeded with "you" and had no matching option would
-   * look empty on the one form that cannot be submitted without it.
-   */
+  // Filter accounts: ACTIVE only, exclude SYSTEM_ADMIN, exclude pending
+  const filteredAccounts = useMemo(() => {
+    if (!usersQuery.data) return [];
+    return usersQuery.data.filter(
+      (account) =>
+        account.accountStatus === "ACTIVE" &&
+        account.role !== "SYSTEM_ADMIN" &&
+        (account.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         account.email.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  }, [usersQuery.data, searchTerm]);
+
+  // Always include the current user in the list
   const options = useMemo(() => {
     if (!user) return [];
-    const accounts: UserSummary[] =
-      canListAccounts && usersQuery.data ? usersQuery.data : [];
-    const all = accounts.some((account) => account.id === user.id)
-      ? accounts
-      : [{ ...user, itemCount: 0 }, ...accounts];
+    const withCurrentUser = filteredAccounts.some((account) => account.id === user.id)
+      ? filteredAccounts
+      : [...filteredAccounts, { ...user, itemCount: 0 }];
 
-    return all.map((account) => ({
+    return withCurrentUser.map((account) => ({
       value: account.id,
       label: account.id === user.id ? `${account.fullName} (you)` : account.fullName,
+      account,
     }));
-  }, [canListAccounts, user, usersQuery.data]);
+  }, [filteredAccounts, user]);
+
+  const selectedOption = options.find((opt) => opt.value === value);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   return (
-    <Select
-      label="Owner (custodian)"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      error={error}
-      options={options}
-      hint={
-        canListAccounts
+    <div className="relative" ref={dropdownRef}>
+      <label className="block text-sm font-medium text-slate-700 mb-1">
+        Owner (custodian) <span className="text-danger-600">*</span>
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full flex items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span className={selectedOption ? "text-slate-900" : "text-slate-400"}>
+            {selectedOption?.label || "Select owner"}
+          </span>
+          <ChevronDown className="h-4 w-4 text-slate-400" />
+        </button>
+        {error && (
+          <p className="mt-1 text-xs text-danger-600">{error}</p>
+        )}
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg">
+          <div className="p-2 border-b border-slate-100">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by name or email..."
+                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            {options.length === 0 ? (
+              <div className="p-3 text-sm text-slate-500 text-center">
+                No accounts found
+              </div>
+            ) : (
+              options.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(option.value);
+                    setIsOpen(false);
+                    setSearchTerm("");
+                  }}
+                  className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-50 transition-colors ${
+                    option.value === value ? "bg-brand-50 text-brand-700" : "text-slate-700"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      <p className="mt-1 text-xs text-slate-500">
+        {canListAccounts
           ? "Who will hold this item. Changing it after registration goes through an approved transfer request."
-          : "Ownership is limited to your own account here — reassignment to someone else goes through an approved transfer request."
-      }
-      required
-    />
+          : "Ownership is limited to your own account here — reassignment to someone else goes through an approved transfer request."}
+      </p>
+    </div>
   );
 }
 

@@ -70,8 +70,12 @@ describe("GET /notifications", () => {
 
   it("strips sensitive data from SYSTEM_ADMIN notifications at retrieval time", async () => {
     vi.mocked(prisma.notification.findMany).mockResolvedValue([
-      makeNotification({ 
-        message: "[REQUEST_SUBMITTED] Demo Staff requested a TRANSFER for item CNCS-DEMO-0001 (Dell Latitude Laptop) and it needs your review." 
+      makeNotification({
+        message: "[REQUEST_SUBMITTED] Demo Staff requested a TRANSFER for item CNCS-C3CBF509 (Dell Latitude Laptop) and it needs your review."
+      }),
+      makeNotification({
+        id: "notif-2",
+        message: "[REQUEST_APPROVED] Your TRANSFER request for item CNCS-C3CBF509 (Dell Latitude Laptop) was approved by Gudisa."
       }),
     ] as never);
 
@@ -80,9 +84,12 @@ describe("GET /notifications", () => {
       .set("Authorization", `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.notifications[0].message).not.toContain("CNCS-DEMO-0001");
+    expect(res.body.notifications[0].message).not.toContain("CNCS-C3CBF509");
     expect(res.body.notifications[0].message).not.toContain("Dell Latitude Laptop");
     expect(res.body.notifications[0].message).not.toContain("Demo Staff");
+    expect(res.body.notifications[1].message).not.toContain("CNCS-C3CBF509");
+    expect(res.body.notifications[1].message).not.toContain("Dell Latitude Laptop");
+    expect(res.body.notifications[1].message).not.toContain("Gudisa");
   });
 
   it("returns a message with no recognised prefix unchanged, code null", async () => {

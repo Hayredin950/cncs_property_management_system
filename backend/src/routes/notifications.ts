@@ -107,17 +107,17 @@ notificationsRouter.get(
 
 /**
  * Removes sensitive asset data from notification messages for SYSTEM_ADMIN.
- * Pattern: removes item tag IDs (CNCS-DEMO-XXXX), item names, and requester names.
+ * Pattern: removes item tag IDs (CNCS-XXXXX), item names, and requester names.
  */
 function sanitizeForSystemAdmin(message: string): string {
-  // Remove item tag IDs like CNCS-DEMO-0001
-  let sanitized = message.replace(/CNCS-DEMO-\d+/g, "[ITEM TAG ID]");
+  // Remove item tag IDs in various formats: CNCS-DEMO-0001, CNCS-C3CBF509, etc.
+  let sanitized = message.replace(/CNCS-[A-Z0-9]+/g, "[ITEM TAG ID]");
   // Remove item names in parentheses - everything between parentheses after item tag ID
   sanitized = sanitized.replace(/\(.*?\)/g, "[ITEM NAME]");
-  // Remove requester names (before "requested")
-  sanitized = sanitized.replace(/(\w+\s+\w+)\s+requested/g, "[REQUESTER] requested");
-  // Remove reviewer names (after "by")
-  sanitized = sanitized.replace(/by\s+(\w+\s+\w+)/g, "by [REVIEWER]");
+  // Remove reviewer names after "by" (with or without period)
+  sanitized = sanitized.replace(/by\s+[A-Z][a-zA-Z]+\.?\s*/g, "by [REVIEWER] ");
+  // Remove requester names before "requested"
+  sanitized = sanitized.replace(/[A-Z][a-zA-Z]+\s+[A-Z][a-zA-Z]+\s+requested/g, "[REQUESTER] requested");
   return sanitized;
 }
 

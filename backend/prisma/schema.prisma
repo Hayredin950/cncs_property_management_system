@@ -113,9 +113,19 @@ enum RequestStatus {
 enum AuditItemResult {
   PENDING
   FOUND
-  MISSING
   LOCATION_MISMATCH
   DAMAGED
+  NOT_LOCATED
+  NOT_ACCESSIBLE
+  CHECK_AGAIN
+  MISSING
+}
+
+enum AuditSessionStatus {
+  IN_PROGRESS
+  SORTING
+  COMPLETED
+  ACKNOWLEDGED
 }
 
 enum AuditSessionType {
@@ -324,6 +334,7 @@ model User {
   requestsReviewed Request[]      @relation("ReviewedBy")
   requestsWithdrawn Request[]      @relation("WithdrawnBy")
   auditsRun        AuditSession[] @relation("RunBy")
+  auditsAcknowledged AuditSession[] @relation("AuditAcknowledgedBy")
   itemEdits        ItemEditLog[]
   notifications    Notification[]
   custodyEvents    CustodyEvent[] @relation("CustodyEvents")
@@ -468,9 +479,10 @@ model Request {
   reason          String
   rejectionReason String?
 
-  newLocationBuilding String?
-  newLocationFloor    String?
-  newLocationRoom     String?
+  newLocationDepartment String?
+  newLocationBuilding   String?
+  newLocationFloor      String?
+  newLocationRoom       String?
 
   /// Kept until the holder model lands in the transfer slice; new transfers record the
   /// from/to holder pair instead (plan §3).
@@ -518,20 +530,31 @@ model ItemEditLog {
 }
 
 model AuditSession {
-  id          String    @id @default(uuid())
-  sessionType AuditSessionType @default(ANNUAL_FULL_COUNT)
+  id                  String              @id @default(uuid())
+  sessionType         AuditSessionType    @default(ANNUAL_FULL_COUNT)
+  status              AuditSessionStatus  @default(IN_PROGRESS)
   /// Serial number of the frozen report this session produces (plan §6 step 5).
   /// Official reports are reproducible artifacts, not live lists.
-  reportNumber String?  @unique
-  scopeType   String
-  scopeValue  String?
-  runById     String
-  runBy       User      @relation("RunBy", fields: [runById], references: [id])
-  startedAt   DateTime  @default(now())
-  completedAt DateTime?
+  reportNumber        String?             @unique
+  scopeType           String
+  scopeValue          String?
+  snapshotTotalCount  Int                 @default(0)
+  excludedAuditorCount Int                @default(0)
+  runById             String
+  runBy               User                @relation("RunBy", fields: [runById], references: [id])
+  startedAt           DateTime            @default(now())
+  completedAt         DateTime?
 
   /// Grace window after close before an unanswered MISSING becomes LOST (plan §6 step 4).
-  graceEndsAt DateTime?
+  graceEndsAt         DateTime?
+
+  /// Property Officer formal acknowledgement (Audit Workflow Memo §8).
+  acknowledgedAt      DateTime?
+  acknowledgedById    String?
+  acknowledgedBy      User?               @relation("AuditAcknowledgedBy", fields: [acknowledgedById], references: [id])
+
+  /// Immutable frozen report snapshot (Audit Workflow Memo §6).
+  frozenReport        Json?
 
   results AuditItemResultRow[]
 }
@@ -544,6 +567,11 @@ model AuditItemResultRow {
   item           Item            @relation(fields: [itemId], references: [id])
   result         AuditItemResult @default(PENDING)
   scannedAt      DateTime?
+
+  /// Sorting step details (Audit Workflow Memo §5).
+  sortReason     String?
+  sortNote       String?
+  checkAgainDays Int?
 
   /// One row per item per session: a duplicate row would silently double-count a
   /// department's audit (gap-analysis A5).

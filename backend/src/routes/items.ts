@@ -1128,7 +1128,10 @@ const item = await prisma.item.findUnique({
 );
 
 const refuseClaimSchema = z.object({
-  reason: z.enum(["NEVER_RECEIVED", "WRONG_ITEM", "CONDITION_MISMATCH", "OTHER"]),
+  reason: z.union([
+    z.enum(["NEVER_RECEIVED", "WRONG_ITEM", "CONDITION_MISMATCH", "OTHER"]),
+    z.string().trim().min(3).max(500),
+  ]),
   otherReason: z.string().trim().min(3).max(500).optional(),
 });
 

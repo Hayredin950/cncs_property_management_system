@@ -8,6 +8,8 @@ export interface AuthUser {
   createdAt: string;
   /** The user's department ID — present for DEPARTMENT_HEAD and STAFF roles. */
   departmentId?: string;
+  /** The user's department name — present for DEPARTMENT_HEAD and STAFF roles. */
+  department?: string;
   /**
    * Set when an administrator reset this account's password. The app forces a
    * change on the next sign-in (`RequireAuth` redirects to `/change-password`).

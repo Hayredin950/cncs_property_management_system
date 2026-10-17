@@ -182,6 +182,7 @@ export function useClaimItem() {
       toast.success(`${item.name} claimed and now active.`);
       void queryClient.invalidateQueries({ queryKey: ["item"] });
       void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void queryClient.invalidateQueries({ queryKey: ["requests"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't claim the item"),
   });
@@ -196,6 +197,7 @@ export function useRefuseClaim() {
       toast.success(`${item.name} refused and returned to the college pool.`);
       void queryClient.invalidateQueries({ queryKey: ["item"] });
       void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void queryClient.invalidateQueries({ queryKey: ["requests"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't refuse the claim"),
   });

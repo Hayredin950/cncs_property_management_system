@@ -6,6 +6,7 @@ import { AuditListPage } from "../features/audits/AuditListPage";
 import { AuditNewPage } from "../features/audits/AuditNewPage";
 import { AuditReportPage } from "../features/audits/AuditReportPage";
 import { AuditScanPage } from "../features/audits/AuditScanPage";
+import { AuditSortPage } from "../features/audits/AuditSortPage";
 import { AcceptInvitePage } from "../features/auth/AcceptInvitePage";
 import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
 import { LoginPage } from "../features/auth/LoginPage";
@@ -190,6 +191,7 @@ export const appRoutes: RouteObject[] = [
             children: [
               { path: "/audit/new", element: <AuditNewPage /> },
               { path: "/audit/:id/scan", element: <AuditScanPage /> },
+              { path: "/audit/:id/sort", element: <AuditSortPage /> },
             ],
           },
 

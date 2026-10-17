@@ -28,6 +28,7 @@ import {
 } from "../services/notifications.js";
 import {
   applyDecision,
+  invalidatePendingClaim,
   returnLoan,
   ERROR_DANGLING_OWNER,
   ERROR_ITEM_DISPOSED,
@@ -77,6 +78,7 @@ const createRequestSchema = z
       .trim()
       .min(10, "reason must be at least 10 characters")
       .max(1000, "reason must be at most 1000 characters"),
+    newLocationDepartment: z.string().trim().min(1).optional(),
     newLocationBuilding: z.string().trim().min(1).optional(),
     newLocationFloor: z.string().trim().min(1).optional(),
     newLocationRoom: z.string().trim().min(1).optional(),
@@ -84,7 +86,7 @@ const createRequestSchema = z
   })
   .superRefine((value, ctx) => {
     const namesLocation = Boolean(
-      value.newLocationBuilding ?? value.newLocationFloor ?? value.newLocationRoom,
+      value.newLocationDepartment ?? value.newLocationBuilding ?? value.newLocationFloor ?? value.newLocationRoom,
     );
     const namesOwner = Boolean(value.newOwnerId);
 
@@ -158,12 +160,19 @@ const REQUEST_LIST_SELECT = {
   rejectionReason: true,
   createdAt: true,
   decidedAt: true,
+  newLocationDepartment: true,
   newLocationBuilding: true,
   newLocationFloor: true,
   newLocationRoom: true,
   newOwnerId: true,
   requestedById: true,
   reviewedById: true,
+  stage1ApprovedById: true,
+  stage1ApprovedAt: true,
+  stage2ApprovedById: true,
+  stage2ApprovedAt: true,
+  stage1ApprovedBy: { select: { id: true, fullName: true, email: true } },
+  stage2ApprovedBy: { select: { id: true, fullName: true, email: true } },
   item: { select: { id: true, tagId: true, name: true, status: true } },
   requestedBy: { select: { id: true, fullName: true, email: true, role: true } },
 } as const;
@@ -176,6 +185,9 @@ const REQUEST_DETAIL_SELECT = {
       tagId: true,
       name: true,
       status: true,
+      holderType: true,
+      holderId: true,
+      claimDueAt: true,
       /*
        * `department` and `building` are the item's OrgUnit and Building, not
        * free-text columns: both columns were dropped when those tables landed,
@@ -214,13 +226,57 @@ const REQUEST_DETAIL_SELECT = {
  * answer is an empty queue expressed as a filter that matches nothing, not a
  * missing clause that would fall back to every row.
  */
-function scopeToViewer(user: { id: string; role: UserRole }): Prisma.RequestWhereInput {
+async function scopeToViewer(user: { id: string; role: UserRole; orgUnitId?: string | null }): Promise<Prisma.RequestWhereInput> {
   if (user.role === "SYSTEM_ADMIN") return { id: { in: [] } };
-  return hasCapability(user.role, "REQUEST_READ_ALL") ? {} : { requestedById: user.id };
+  if (hasCapability(user.role, "REQUEST_READ_ALL")) return {};
+
+  if (user.role === "DEPARTMENT_HEAD") {
+    let orgUnitId = user.orgUnitId;
+    let deptName: string | null = null;
+
+    const u = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        orgUnitId: true,
+        orgUnitRef: { select: { id: true, name: true } },
+        headedOrgUnit: { select: { id: true, name: true } },
+      },
+    });
+
+    orgUnitId = u?.headedOrgUnit?.id || u?.orgUnitId || orgUnitId || null;
+    deptName = u?.headedOrgUnit?.name || u?.orgUnitRef?.name || null;
+
+    const orClauses: Prisma.RequestWhereInput[] = [
+      { requestedById: user.id },
+      { newOwnerId: user.id },
+    ];
+
+    if (orgUnitId) {
+      orClauses.push(
+        { item: { orgUnitId } },
+        { requestedBy: { orgUnitId } },
+      );
+    }
+    if (deptName) {
+      orClauses.push(
+        { newLocationDepartment: deptName },
+        { newLocationDepartment: { mode: "insensitive", equals: deptName } },
+      );
+    }
+
+    return { OR: orClauses };
+  }
+
+  return {
+    OR: [
+      { requestedById: user.id },
+      { newOwnerId: user.id },
+    ],
+  };
 }
 
 /** Every handler below has already run `authenticate`, so this is a wiring guard. */
-function requireUser(req: AuthenticatedRequest): { id: string; role: UserRole } {
+function requireUser(req: AuthenticatedRequest): { id: string; role: UserRole; orgUnitId?: string | null } {
   if (!req.user) {
     throw httpError(401, "Not authenticated");
   }
@@ -289,15 +345,24 @@ requestsRouter.post(
           throw httpError(409, ERROR_ITEM_DISPOSED);
         }
 
-        // D5 — one PENDING request per item. Two pending transfers approved in
-        // sequence silently double-move the item, and the second decision's
-        // `oldValue` no longer describes what the first reviewer saw.
         const pending = await tx.request.findFirst({
-          where: { itemId: item.id, status: "PENDING" },
+          where: {
+            itemId: item.id,
+            status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2", "WAITLISTED"] },
+          },
           select: { id: true },
         });
         if (pending) {
-          throw httpError(409, ERROR_ITEM_HAS_PENDING);
+          throw httpError(
+            409,
+            "This item already has an active request in progress. You must withdraw the existing request before filing a new one.",
+          );
+        }
+        if (item.status === "PENDING_CLAIM") {
+          throw httpError(
+            409,
+            "This item has a pending transfer/claim in progress and cannot be transferred until claimed or reverted.",
+          );
         }
 
         // `Request.newOwnerId` is a bare String with no foreign key, so a wrong id
@@ -333,6 +398,9 @@ requestsRouter.post(
             // refused by the schema, so this branch never writes stale columns.
             ...(body.type === "TRANSFER"
               ? {
+                  ...(body.newLocationDepartment
+                    ? { newLocationDepartment: body.newLocationDepartment }
+                    : {}),
                   ...(body.newLocationBuilding
                     ? { newLocationBuilding: body.newLocationBuilding }
                     : {}),
@@ -414,10 +482,11 @@ requestsRouter.get(
       toDate.setDate(toDate.getDate() + 6);
       toDate.setHours(23, 59, 59, 999);
 
+      const viewerScope = await scopeToViewer(user);
       const pendingCount = await prisma.request.count({
         where: {
-          ...scopeToViewer(user),
-          status: "PENDING",
+          ...viewerScope,
+          status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"] },
           createdAt: { gte: fromDate, lte: toDate },
         },
       });
@@ -439,7 +508,7 @@ requestsRouter.get(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const user = requireUser(req);
-      const where = scopeToViewer(user);
+      const where = await scopeToViewer(user);
 
       const [byStatus, byType, total] = await Promise.all([
         prisma.request.groupBy({
@@ -487,9 +556,10 @@ requestsRouter.get(
     try {
       const user = requireUser(req);
       const query = validatedQuery<ListQuery>(req);
+      const viewerScope = await scopeToViewer(user);
 
       const where: Prisma.RequestWhereInput = {
-        ...scopeToViewer(user),
+        ...viewerScope,
         ...(query.mine === "true" ? { requestedById: user.id } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.type ? { type: query.type } : {}),
@@ -563,15 +633,29 @@ requestsRouter.get(
         return res.status(400).json({ error: "Invalid request ID" });
       }
 
+      const viewerScope = await scopeToViewer(user);
       const request = await prisma.request.findFirst({
-        where: { id: requestId, ...scopeToViewer(user) },
+        where: { id: requestId, ...viewerScope },
         select: REQUEST_DETAIL_SELECT,
       });
       if (!request) {
         return res.status(404).json({ error: ERROR_REQUEST_NOT_FOUND });
       }
 
-      res.status(200).json({ request: withRowItemNames(request) });
+      let newOwner: { id: string; fullName: string; email: string; role: string } | null = null;
+      if (request.newOwnerId) {
+        newOwner = await prisma.user.findUnique({
+          where: { id: request.newOwnerId },
+          select: { id: true, fullName: true, email: true, role: true },
+        });
+      }
+
+      res.status(200).json({
+        request: {
+          ...withRowItemNames(request),
+          newOwner: newOwner ? { id: newOwner.id, fullName: newOwner.fullName, email: newOwner.email, role: newOwner.role } : null,
+        },
+      });
     } catch (err) {
       next(err);
     }
@@ -715,9 +799,21 @@ requestsRouter.post(
         throw httpError(403, "Only the original requester can withdraw this request");
       }
 
-      const allowedStatuses = ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"];
-      if (!allowedStatuses.includes(request.status)) {
+      const item = prisma.item
+        ? await prisma.item.findUnique({
+            where: { id: request.itemId },
+            select: { id: true, status: true, claimedAt: true },
+          })
+        : null;
+      const isPending = ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2", "WAITLISTED"].includes(request.status);
+      const isUnclaimedApproved = request.status === "APPROVED" && item?.status === "PENDING_CLAIM" && !item.claimedAt;
+
+      if (!isPending && !isUnclaimedApproved) {
         throw httpError(400, "Can only withdraw requests that have not been approved");
+      }
+
+      if (isUnclaimedApproved) {
+        await invalidatePendingClaim(prisma, request.itemId, "Request withdrawn by requester prior to claim");
       }
 
       const updated = await prisma.request.update({
@@ -726,6 +822,7 @@ requestsRouter.post(
           status: "WITHDRAWN",
           withdrawnAt: new Date(),
           withdrawnById: req.user!.id,
+          ...(body.reason ? { reason: body.reason } : {}),
         },
       });
 

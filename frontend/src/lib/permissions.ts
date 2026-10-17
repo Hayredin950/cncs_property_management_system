@@ -21,6 +21,7 @@ export type Capability =
   | "CATEGORY_MANAGE"
   | "AUDIT_RUN"
   | "AUDIT_VIEW"
+  | "AUDIT_ACKNOWLEDGE"
   | "REQUEST_DECIDE"
   | "TRANSFER_APPROVE_STAGE1"
   | "TRANSFER_APPROVE_STAGE2"
@@ -86,6 +87,7 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "REQUEST_READ_ALL",
     "REPORT_VIEW_ALL",
     "AUDIT_VIEW",
+    "AUDIT_ACKNOWLEDGE",
     "USER_READ",
   ],
   DEPARTMENT_HEAD: [
@@ -116,6 +118,9 @@ export const canDecideRequests = (role: Role | undefined | null) =>
 export const canRunAudits = (role: Role | undefined | null) => hasCapability(role, "AUDIT_RUN");
 /** Read audit history and reports. */
 export const canViewAudits = (role: Role | undefined | null) => hasCapability(role, "AUDIT_VIEW");
+/** Formal audit acknowledgement & sign-off — Property Officer & Admin. */
+export const canAcknowledgeAudit = (role: Role | undefined | null) =>
+  hasCapability(role, "AUDIT_ACKNOWLEDGE");
 /** Read college-wide reports. */
 export const canViewReports = (role: Role | undefined | null) =>
   hasCapability(role, "REPORT_VIEW_ALL");

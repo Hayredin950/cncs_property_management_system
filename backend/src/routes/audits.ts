@@ -36,6 +36,15 @@ const createScanSchema = z.object({
  * Creates a new AuditSession with the specified scope.
  * Scoped to authenticated users with ADMIN or STAFF role.
  */
+/**
+ * POST /api/v1/audits
+ * POST /audits
+ *
+ * Creates a new AuditSession with the specified scope.
+ * Excludes LOST, DISPOSED, and VOIDED items.
+ * Excludes items held or owned by AUDITORs and tracks excludedAuditorCount.
+ * Freezes the in-scope items into AuditItemResultRow as PENDING.
+ */
 auditsRouter.post(
   "/",
   authenticate,
@@ -58,11 +67,52 @@ auditsRouter.post(
 
       const { scopeType, scopeValue } = parsed.data;
 
+      // Calculate scope items with exclusions:
+      // 1. Exclude LOST, DISPOSED, VOIDED items
+      // 2. Exclude items held or owned by an AUDITOR
+      const scopeFilter = scopeItemFilter(scopeType, scopeValue ?? null);
+      let inScopeItemIds: string[] = [];
+      let excludedAuditorCount = 0;
+
+      if (scopeFilter.supported && scopeFilter.where) {
+        const candidateItems = await prisma.item.findMany({
+          where: {
+            ...scopeFilter.where,
+            status: { notIn: ["LOST", "DISPOSED", "VOIDED"] },
+            voidedAt: null,
+          },
+          include: {
+            owner: { select: { id: true, role: true } },
+          },
+        });
+
+        const auditorUsers = await prisma.user.findMany({
+          where: { role: "AUDITOR" },
+          select: { id: true },
+        });
+        const auditorUserIds = new Set(auditorUsers.map((u) => u.id));
+
+        const isAuditorHeld = (item: { ownerId: string; owner?: { role: string }; holderType?: string | null; holderId?: string | null }) => {
+          if (item.owner?.role === "AUDITOR") return true;
+          if (auditorUserIds.has(item.ownerId)) return true;
+          if (item.holderType === "STAFF" && item.holderId && auditorUserIds.has(item.holderId)) return true;
+          return false;
+        };
+
+        const auditorHeld = candidateItems.filter(isAuditorHeld);
+        const eligibleItems = candidateItems.filter((item) => !isAuditorHeld(item));
+        excludedAuditorCount = auditorHeld.length;
+        inScopeItemIds = eligibleItems.map((i) => i.id);
+      }
+
       const auditSession = await prisma.auditSession.create({
         data: {
           scopeType,
           scopeValue: scopeValue ?? null,
           runById: req.user.id,
+          status: "IN_PROGRESS",
+          snapshotTotalCount: inScopeItemIds.length,
+          excludedAuditorCount,
         },
         include: {
           runBy: {
@@ -70,6 +120,18 @@ auditsRouter.post(
           },
         },
       });
+
+      // Pre-freeze the in-scope items as PENDING rows
+      if (inScopeItemIds.length > 0) {
+        await prisma.auditItemResultRow.createMany({
+          data: inScopeItemIds.map((itemId) => ({
+            auditSessionId: auditSession.id,
+            itemId,
+            result: "PENDING" as const,
+            scannedAt: null,
+          })),
+        });
+      }
 
       res.status(201).json(auditSession);
     } catch (err) {
@@ -83,11 +145,8 @@ auditsRouter.post(
  * POST /audits/:id/scan
  *
  * Records that an item was physically scanned during an in-progress audit.
- * Always persists result: "FOUND" — the final classification (FOUND /
- * MISSING / LOCATION_MISMATCH) is computed by the completion endpoint, not
- * here. Does NOT touch Item.lastAuditedAt: that field is owned by audit
- * completion (Phase 3 Step 2), because an audit that is later abandoned
- * should never leave an item looking like it was audited.
+ * If the item was in scope (pre-seeded PENDING), updates row to FOUND.
+ * If the item was NOT in scope, creates row as LOCATION_MISMATCH.
  */
 auditsRouter.post(
   "/:id/scan",
@@ -125,7 +184,7 @@ auditsRouter.post(
         return;
       }
 
-      if (session.completedAt !== null) {
+      if (session.completedAt !== null || (session.status && session.status !== "IN_PROGRESS")) {
         res.status(409).json({ error: "Audit session is already completed" });
         return;
       }
@@ -140,19 +199,460 @@ auditsRouter.post(
 
       const scanTimestamp = scannedAt ?? new Date();
 
-      const auditResultRow = await prisma.auditItemResultRow.create({
+      // Check if a row already exists for this item in this session
+      const existingRow = await prisma.auditItemResultRow.findUnique({
+        where: {
+          auditSessionId_itemId: {
+            auditSessionId: id,
+            itemId,
+          },
+        },
+      });
+
+      let auditResultRow;
+      if (existingRow) {
+        auditResultRow = await prisma.auditItemResultRow.update({
+          where: { id: existingRow.id },
+          data: {
+            result: "FOUND",
+            scannedAt: scanTimestamp,
+          },
+          include: {
+            item: true,
+          },
+        });
+      } else {
+        // If not in pre-seeded list, check if session has any rows (if 0 total in scope, count as FOUND)
+        const hasScopeRows = session.snapshotTotalCount > 0;
+        const resultType = hasScopeRows ? "LOCATION_MISMATCH" : "FOUND";
+
+        auditResultRow = await prisma.auditItemResultRow.create({
+          data: {
+            auditSessionId: id,
+            itemId,
+            result: resultType as any,
+            scannedAt: scanTimestamp,
+          },
+          include: {
+            item: true,
+          },
+        });
+      }
+
+      res.status(201).json(auditResultRow);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * POST /api/v1/audits/:id/close-walk
+ * POST /audits/:id/close-walk
+ *
+ * Concludes the physical walk phase.
+ * Un-scanned items remaining as PENDING transition to NOT_LOCATED (never immediately MISSING).
+ * Session status transitions to SORTING.
+ */
+auditsRouter.post(
+  "/:id/close-walk",
+  authenticate,
+  requireCapability("AUDIT_RUN"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Audit session ID is required" });
+        return;
+      }
+
+      const session = await prisma.auditSession.findUnique({ where: { id } });
+      if (!session) {
+        res.status(404).json({ error: "Audit session not found" });
+        return;
+      }
+
+      if (session.completedAt !== null || session.status === "COMPLETED" || session.status === "ACKNOWLEDGED") {
+        res.status(409).json({ error: "Audit session is already completed" });
+        return;
+      }
+
+      // Convert all remaining PENDING items to NOT_LOCATED
+      await prisma.$transaction([
+        prisma.auditItemResultRow.updateMany({
+          where: {
+            auditSessionId: id,
+            result: "PENDING",
+          },
+          data: {
+            result: "NOT_LOCATED",
+          },
+        }),
+        prisma.auditSession.update({
+          where: { id },
+          data: {
+            status: "SORTING",
+          },
+        }),
+      ]);
+
+      const [foundCount, notLocatedCount, mismatchCount] = await Promise.all([
+        prisma.auditItemResultRow.count({ where: { auditSessionId: id, result: "FOUND" } }),
+        prisma.auditItemResultRow.count({ where: { auditSessionId: id, result: "NOT_LOCATED" } }),
+        prisma.auditItemResultRow.count({ where: { auditSessionId: id, result: "LOCATION_MISMATCH" } }),
+      ]);
+
+      res.status(200).json({
+        message: "Walk completed. Ready for sorting phase.",
+        status: "SORTING",
+        counts: {
+          found: foundCount,
+          notLocated: notLocatedCount,
+          locationMismatch: mismatchCount,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+const sortItemSchema = z.object({
+  itemId: z.string().uuid("Valid itemId is required"),
+  result: z.enum(["NOT_ACCESSIBLE", "CHECK_AGAIN", "MISSING"]),
+  sortReason: z.string().trim().min(1, "Sort reason is required"),
+  sortNote: z.string().trim().optional().nullable(),
+  checkAgainDays: z.coerce.number().int().min(1).max(90).optional().nullable(),
+});
+
+/**
+ * POST /api/v1/audits/:id/sort-item
+ * POST /audits/:id/sort-item
+ *
+ * Categorizes an un-scanned / NOT_LOCATED item during the SORTING phase into:
+ * - NOT_ACCESSIBLE (locked room, holder away)
+ * - CHECK_AGAIN (retry in N days)
+ * - MISSING (confirmed missing, leads to investigation)
+ */
+auditsRouter.post(
+  "/:id/sort-item",
+  authenticate,
+  requireCapability("AUDIT_RUN"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Audit session ID is required" });
+        return;
+      }
+
+      const session = await prisma.auditSession.findUnique({ where: { id } });
+      if (!session) {
+        res.status(404).json({ error: "Audit session not found" });
+        return;
+      }
+
+      if (session.status !== "SORTING" && session.status !== "IN_PROGRESS") {
+        res.status(409).json({ error: `Cannot sort items when audit status is ${session.status}` });
+        return;
+      }
+
+      const parsed = sortItemSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: "Validation failed",
+          details: parsed.error.issues,
+        });
+        return;
+      }
+
+      const { itemId, result, sortReason, sortNote, checkAgainDays } = parsed.data;
+
+      const existingRow = await prisma.auditItemResultRow.findUnique({
+        where: {
+          auditSessionId_itemId: {
+            auditSessionId: id,
+            itemId,
+          },
+        },
+      });
+
+      if (!existingRow) {
+        res.status(404).json({ error: "Audit result row not found for item" });
+        return;
+      }
+
+      const updatedRow = await prisma.auditItemResultRow.update({
+        where: { id: existingRow.id },
         data: {
-          auditSessionId: id,
-          itemId,
-          result: "FOUND",
-          scannedAt: scanTimestamp,
+          result,
+          sortReason,
+          sortNote: sortNote ?? null,
+          checkAgainDays: result === "CHECK_AGAIN" ? (checkAgainDays ?? 7) : null,
         },
         include: {
           item: true,
         },
       });
 
-      res.status(201).json(auditResultRow);
+      res.status(200).json(updatedRow);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * POST /api/v1/audits/:id/finalize
+ * POST /audits/:id/finalize
+ *
+ * Finalizes the audit:
+ * 1. Assigns a sequential reportNumber (AUD-YYYY-NNNN).
+ * 2. Creates a permanent, immutable frozenReport snapshot.
+ * 3. Updates Item.lastAuditedAt for FOUND items.
+ * 4. Dispatches loss notifications to Property Officers if MISSING items exist.
+ * 5. Transitions session status to COMPLETED.
+ */
+auditsRouter.post(
+  "/:id/finalize",
+  authenticate,
+  requireCapability("AUDIT_RUN"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Audit session ID is required" });
+        return;
+      }
+
+      const session = await prisma.auditSession.findUnique({
+        where: { id },
+        include: {
+          runBy: { select: { id: true, fullName: true, email: true } },
+        },
+      });
+
+      if (!session) {
+        res.status(404).json({ error: "Audit session not found" });
+        return;
+      }
+
+      if (session.completedAt !== null || session.status === "COMPLETED" || session.status === "ACKNOWLEDGED") {
+        res.status(409).json({ error: "Audit session is already finalized" });
+        return;
+      }
+
+      // Convert any leftover PENDING items to NOT_LOCATED
+      await prisma.auditItemResultRow.updateMany({
+        where: { auditSessionId: id, result: "PENDING" },
+        data: { result: "NOT_LOCATED" },
+      });
+
+      // Generate sequential report number (AUD-YYYY-NNNN)
+      const year = new Date().getFullYear();
+      const lastSession = await prisma.auditSession.findFirst({
+        where: { reportNumber: { startsWith: `AUD-${year}-` } },
+        orderBy: { reportNumber: "desc" },
+        select: { reportNumber: true },
+      });
+
+      let nextSeq = 1;
+      if (lastSession?.reportNumber) {
+        const parts = lastSession.reportNumber.split("-");
+        const num = parseInt(parts[2] || "0", 10);
+        if (!isNaN(num)) nextSeq = num + 1;
+      }
+      const reportNumber = `AUD-${year}-${String(nextSeq).padStart(4, "0")}`;
+
+      // Fetch all rows with complete item context
+      const allRows = await prisma.auditItemResultRow.findMany({
+        where: { auditSessionId: id },
+        include: {
+          item: {
+            select: {
+              id: true,
+              tagId: true,
+              name: true,
+              category: { select: { name: true } },
+              orgUnitRef: { select: { name: true } },
+              buildingRef: { select: { name: true } },
+              floor: true,
+              room: true,
+              status: true,
+              condition: true,
+            },
+          },
+        },
+      });
+
+      const counts = {
+        found: allRows.filter((r) => r.result === "FOUND").length,
+        notAccessible: allRows.filter((r) => r.result === "NOT_ACCESSIBLE").length,
+        checkAgain: allRows.filter((r) => r.result === "CHECK_AGAIN").length,
+        missing: allRows.filter((r) => r.result === "MISSING").length,
+        locationMismatch: allRows.filter((r) => r.result === "LOCATION_MISMATCH").length,
+        notLocated: allRows.filter((r) => r.result === "NOT_LOCATED").length,
+      };
+
+      const completedAt = new Date();
+
+      const frozenReport = {
+        reportNumber,
+        sessionId: session.id,
+        scopeType: session.scopeType,
+        scopeValue: session.scopeValue,
+        startedAt: session.startedAt,
+        completedAt,
+        runBy: session.runBy,
+        snapshotTotalCount: session.snapshotTotalCount,
+        excludedAuditorCount: session.excludedAuditorCount,
+        counts,
+        items: allRows.map((r) => ({
+          itemId: r.itemId,
+          tagId: r.item.tagId,
+          name: r.item.name,
+          category: r.item.category?.name || "General",
+          department: r.item.orgUnitRef?.name || null,
+          building: r.item.buildingRef?.name || null,
+          floor: r.item.floor,
+          room: r.item.room,
+          result: r.result,
+          sortReason: r.sortReason,
+          sortNote: r.sortNote,
+          checkAgainDays: r.checkAgainDays,
+          scannedAt: r.scannedAt,
+        })),
+      };
+
+      const foundItemIds = allRows.filter((r) => r.result === "FOUND").map((r) => r.itemId);
+
+      await prisma.$transaction([
+        prisma.auditSession.update({
+          where: { id },
+          data: {
+            status: "COMPLETED",
+            completedAt,
+            reportNumber,
+            frozenReport: frozenReport as any,
+          },
+        }),
+        ...(foundItemIds.length > 0
+          ? [
+              prisma.item.updateMany({
+                where: { id: { in: foundItemIds } },
+                data: { lastAuditedAt: completedAt },
+              }),
+            ]
+          : []),
+      ]);
+
+      // If MISSING items exist, dispatch notification to Property Officers
+      if (counts.missing > 0) {
+        const propertyOfficers = await prisma.user.findMany({
+          where: { role: "PROPERTY_OFFICER" },
+          select: { id: true },
+        });
+
+        if (propertyOfficers.length > 0) {
+          await prisma.notification.createMany({
+            data: propertyOfficers.map((po) => ({
+              userId: po.id,
+              message: `Audit report ${reportNumber} finalized with ${counts.missing} missing item(s) requiring investigation.`,
+              relatedRequestId: session.id,
+            })),
+          });
+        }
+      }
+
+      res.status(200).json({
+        id: session.id,
+        status: "COMPLETED",
+        reportNumber,
+        completedAt,
+        counts,
+        frozenReport,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * POST /api/v1/audits/:id/acknowledge
+ * POST /audits/:id/acknowledge
+ *
+ * Property Officer formal acknowledgement & sign-off on the completed audit report.
+ */
+auditsRouter.post(
+  "/:id/acknowledge",
+  authenticate,
+  requireCapability("AUDIT_ACKNOWLEDGE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Audit session ID is required" });
+        return;
+      }
+
+      const session = await prisma.auditSession.findUnique({
+        where: { id },
+        include: {
+          runBy: { select: { id: true, fullName: true } },
+        },
+      });
+
+      if (!session) {
+        res.status(404).json({ error: "Audit session not found" });
+        return;
+      }
+
+      if (session.status === "ACKNOWLEDGED") {
+        res.status(409).json({ error: "Audit session has already been acknowledged" });
+        return;
+      }
+
+      if (session.status !== "COMPLETED" && session.completedAt === null) {
+        res.status(400).json({ error: "Audit session must be completed before acknowledgement" });
+        return;
+      }
+
+      const acknowledgedAt = new Date();
+
+      const updated = await prisma.auditSession.update({
+        where: { id },
+        data: {
+          status: "ACKNOWLEDGED",
+          acknowledgedAt,
+          acknowledgedById: req.user.id,
+        },
+        include: {
+          acknowledgedBy: { select: { id: true, fullName: true, email: true } },
+        },
+      });
+
+      // Notify the auditor who ran this session
+      const officerUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { fullName: true },
+      });
+      const officerName = officerUser?.fullName || "Property Officer";
+
+      await prisma.notification.create({
+        data: {
+          userId: session.runById,
+          message: `Property Officer ${officerName} acknowledged Audit report ${session.reportNumber || session.id}.`,
+          relatedRequestId: session.id,
+        },
+      });
+
+      res.status(200).json(updated);
     } catch (err) {
       next(err);
     }
@@ -163,12 +663,7 @@ auditsRouter.post(
  * POST /api/v1/audits/:id/complete
  * POST /audits/:id/complete
  *
- * Finalizes a department audit from its scans. LOCATION and any other scope
- * types remain unsupported here: scopeValue has no documented, parseable
- * location format, so guessing one would misclassify inventory.
- *
- * Includes grace window: after close, MISSING items enter a grace window
- * (default 7 days) before becoming LOST.
+ * Backward-compatible endpoint that closes walk, computes results, and marks completed.
  */
 auditsRouter.post(
   "/:id/complete",
@@ -253,7 +748,7 @@ auditsRouter.post(
           : []),
         prisma.auditSession.updateMany({
           where: { id, completedAt: null },
-          data: { completedAt, graceEndsAt },
+          data: { completedAt, graceEndsAt, status: "COMPLETED" },
         }),
       ]);
 
@@ -421,11 +916,17 @@ auditsRouter.get(
           where,
           select: {
             id: true,
+            status: true,
+            reportNumber: true,
             scopeType: true,
             scopeValue: true,
+            snapshotTotalCount: true,
+            excludedAuditorCount: true,
             runById: true,
             startedAt: true,
             completedAt: true,
+            acknowledgedAt: true,
+            acknowledgedBy: { select: { id: true, fullName: true, email: true } },
             runBy: { select: { id: true, fullName: true, email: true } },
           },
           orderBy: [{ startedAt: "desc" }, { id: "desc" }],
@@ -438,9 +939,6 @@ auditsRouter.get(
       /**
        * One grouped query for the whole page rather than a query per row, grouped
        * by `itemId` as well as `result` so a double-scanned item is counted once.
-       * Each returned group *is* one item in one result state, so the count of
-       * groups — not `_count._all` — is the number this session reports. A session
-       * with no rows at all simply has no group and falls through to zero.
        */
       const grouped = sessions.length
         ? await prisma.auditItemResultRow.groupBy({
@@ -461,6 +959,10 @@ auditsRouter.get(
             found: countFor(session.id, "FOUND"),
             missing: countFor(session.id, "MISSING"),
             locationMismatch: countFor(session.id, "LOCATION_MISMATCH"),
+            notLocated: countFor(session.id, "NOT_LOCATED"),
+            notAccessible: countFor(session.id, "NOT_ACCESSIBLE"),
+            checkAgain: countFor(session.id, "CHECK_AGAIN"),
+            pending: countFor(session.id, "PENDING"),
           },
         })),
         total,
@@ -498,6 +1000,7 @@ auditsRouter.get(
         where: {
           runById: req.user.id,
           completedAt: null,
+          status: { in: ["IN_PROGRESS", "SORTING"] },
         },
         include: {
           runBy: {
@@ -526,8 +1029,11 @@ auditsRouter.get(
         active: true,
         session: {
           id: activeSession.id,
+          status: activeSession.status,
           scopeType: activeSession.scopeType,
           scopeValue: activeSession.scopeValue,
+          snapshotTotalCount: activeSession.snapshotTotalCount,
+          excludedAuditorCount: activeSession.excludedAuditorCount,
           startedAt: activeSession.startedAt,
           runBy: activeSession.runBy,
         },
@@ -584,11 +1090,8 @@ auditsRouter.get(
 /**
  * `GET /api/v1/audits/:id` — read a session back, completed or not.
  *
- * Closes gap G1: before this, a completed audit existed only in the response
- * that completed it, so reloading `/audit/:id/report` lost the summary for
- * good. The counts are derived from the stored result rows (not recomputed),
- * and the per-item rows are included with just enough item detail for the
- * report to be useful without a second request.
+ * If the session is finalized and has a frozenReport snapshot, returns the
+ * permanently frozen report to guarantee historical immutability.
  */
 auditsRouter.get(
   "/:id",
@@ -602,9 +1105,64 @@ auditsRouter.get(
         return;
       }
 
-      const session = await prisma.auditSession.findUnique({ where: { id } });
+      const session = await prisma.auditSession.findUnique({
+        where: { id },
+        include: {
+          runBy: { select: { id: true, fullName: true, email: true } },
+          acknowledgedBy: { select: { id: true, fullName: true, email: true } },
+        },
+      });
+
       if (!session) {
         res.status(404).json({ error: "Audit session not found" });
+        return;
+      }
+
+      // If the session has an immutable frozen report, return it directly
+      if (session.frozenReport && typeof session.frozenReport === "object") {
+        const report = session.frozenReport as any;
+        res.status(200).json({
+          id: session.id,
+          status: session.status,
+          reportNumber: session.reportNumber,
+          scopeType: session.scopeType,
+          scopeValue: session.scopeValue,
+          runById: session.runById,
+          runBy: session.runBy,
+          startedAt: session.startedAt,
+          completedAt: session.completedAt,
+          completed: session.completedAt !== null,
+          snapshotTotalCount: session.snapshotTotalCount,
+          excludedAuditorCount: session.excludedAuditorCount,
+          acknowledgedAt: session.acknowledgedAt,
+          acknowledgedById: session.acknowledgedById,
+          acknowledgedBy: session.acknowledgedBy,
+          frozenReport: session.frozenReport,
+          counts: report.counts,
+          found: report.items.filter((i: any) => i.result === "FOUND").map((i: any) => i.itemId),
+          missing: report.items.filter((i: any) => i.result === "MISSING").map((i: any) => i.itemId),
+          locationMismatch: report.items.filter((i: any) => i.result === "LOCATION_MISMATCH").map((i: any) => i.itemId),
+          notLocated: report.items.filter((i: any) => i.result === "NOT_LOCATED").map((i: any) => i.itemId),
+          notAccessible: report.items.filter((i: any) => i.result === "NOT_ACCESSIBLE").map((i: any) => i.itemId),
+          checkAgain: report.items.filter((i: any) => i.result === "CHECK_AGAIN").map((i: any) => i.itemId),
+          rows: report.items.map((i: any) => ({
+            itemId: i.itemId,
+            result: i.result,
+            scannedAt: i.scannedAt,
+            sortReason: i.sortReason,
+            sortNote: i.sortNote,
+            checkAgainDays: i.checkAgainDays,
+            item: {
+              tagId: i.tagId,
+              name: i.name,
+              category: i.category,
+              department: i.department,
+              building: i.building,
+              floor: i.floor,
+              room: i.room,
+            },
+          })),
+        });
         return;
       }
 
@@ -614,15 +1172,13 @@ auditsRouter.get(
           itemId: true,
           result: true,
           scannedAt: true,
+          sortReason: true,
+          sortNote: true,
+          checkAgainDays: true,
           item: {
             select: {
               tagId: true,
               name: true,
-              /**
-               * `department`/`building` are the item's OrgUnit and Building —
-               * selecting the old free-text columns is what answered 500 here,
-               * exactly as it did for the exports (`utils/itemLocation.ts`).
-               */
               ...ITEM_LOCATION_SELECT,
               floor: true,
               room: true,
@@ -631,11 +1187,6 @@ auditsRouter.get(
         },
       });
 
-      /*
-        One row per item, even when a sticker was scanned twice: the scan endpoint
-        appends a row per accepted call, so without this the read-back would report
-        an inflated FOUND count and render the same item twice in the breakdown.
-      */
       const collapsedRows = collapseAuditRows(rows);
 
       const byResult = (result: string) =>
@@ -643,22 +1194,36 @@ auditsRouter.get(
 
       res.status(200).json({
         id: session.id,
+        status: session.status,
+        reportNumber: session.reportNumber,
         scopeType: session.scopeType,
         scopeValue: session.scopeValue,
         runById: session.runById,
+        runBy: session.runBy,
         startedAt: session.startedAt,
         completedAt: session.completedAt,
         completed: session.completedAt !== null,
+        snapshotTotalCount: session.snapshotTotalCount,
+        excludedAuditorCount: session.excludedAuditorCount,
+        acknowledgedAt: session.acknowledgedAt,
+        acknowledgedById: session.acknowledgedById,
+        acknowledgedBy: session.acknowledgedBy,
         counts: {
           found: collapsedRows.filter((row) => row.result === "FOUND").length,
           missing: collapsedRows.filter((row) => row.result === "MISSING").length,
           locationMismatch: collapsedRows.filter((row) => row.result === "LOCATION_MISMATCH").length,
+          notLocated: collapsedRows.filter((row) => row.result === "NOT_LOCATED").length,
+          notAccessible: collapsedRows.filter((row) => row.result === "NOT_ACCESSIBLE").length,
+          checkAgain: collapsedRows.filter((row) => row.result === "CHECK_AGAIN").length,
+          pending: collapsedRows.filter((row) => row.result === "PENDING").length,
         },
         found: byResult("FOUND"),
         missing: byResult("MISSING"),
         locationMismatch: byResult("LOCATION_MISMATCH"),
-        // Each row keeps its own `itemId`/`result`/`scannedAt`, with the nested
-        // item reshaped to the `department`/`building` names both clients read.
+        notLocated: byResult("NOT_LOCATED"),
+        notAccessible: byResult("NOT_ACCESSIBLE"),
+        checkAgain: byResult("CHECK_AGAIN"),
+        pending: byResult("PENDING"),
         rows: collapsedRows.map((row) => withRowItemNames(row)),
       });
     } catch (err) {

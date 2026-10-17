@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
+import { BuildingPicker } from "../../components/BuildingPicker";
 import { DepartmentPicker } from "../../components/DepartmentPicker";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
@@ -289,7 +290,13 @@ function CreateItemForm() {
         </FormSection>
 
         <FormSection heading="Location" columns>
-          <Input label="Building" error={errors.building?.message} {...register("building")} required />
+          <BuildingPicker
+            label="Building"
+            value={watch("building") || ""}
+            onChange={(v) => setValue("building", v, { shouldDirty: true, shouldValidate: true })}
+            error={errors.building?.message}
+            required
+          />
           <Input label="Floor" error={errors.floor?.message} {...register("floor")} required />
           <Input label="Room" error={errors.room?.message} {...register("room")} required />
         </FormSection>

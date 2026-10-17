@@ -183,3 +183,74 @@ export function useCompleteAuditSession(auditId: string) {
       toast.error(error instanceof Error ? error.message : "Couldn't complete the audit"),
   });
 }
+
+/**
+ * Concludes the physical walk and transitions remaining items to NOT_LOCATED for sorting.
+ */
+export function useCloseAuditWalk(auditId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => import("../api/audits").then((m) => m.closeAuditWalk(auditId)),
+    onSuccess: (data) => {
+      toast.success(data.message || "Walk completed. Proceeding to sorting phase.");
+      void queryClient.invalidateQueries({ queryKey: ["audits"] });
+      void queryClient.invalidateQueries({ queryKey: ["audit", auditId] });
+      void queryClient.invalidateQueries({ queryKey: ["audits", "active"] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Failed to close audit walk"),
+  });
+}
+
+/**
+ * Sorts an un-scanned item into NOT_ACCESSIBLE, CHECK_AGAIN, or MISSING.
+ */
+export function useSortAuditItem(auditId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: import("../types/audit").SortAuditItemPayload) =>
+      import("../api/audits").then((m) => m.sortAuditItem(auditId, payload)),
+    onSuccess: (row) => {
+      toast.success(`Updated item ${row.item?.name || "status"}.`);
+      void queryClient.invalidateQueries({ queryKey: ["audit", auditId] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Failed to update item status"),
+  });
+}
+
+/**
+ * Finalizes the audit: freezes report, generates reportNumber, updates Item.lastAuditedAt.
+ */
+export function useFinalizeAudit(auditId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => import("../api/audits").then((m) => m.finalizeAudit(auditId)),
+    onSuccess: (data) => {
+      toast.success(`Audit ${data.reportNumber} finalized and report locked.`);
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void queryClient.invalidateQueries({ queryKey: ["audits"] });
+      void queryClient.invalidateQueries({ queryKey: ["audit", auditId] });
+      void queryClient.invalidateQueries({ queryKey: ["audits", "active"] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Failed to finalize audit"),
+  });
+}
+
+/**
+ * Property Officer formal acknowledgement and report sign-off.
+ */
+export function useAcknowledgeAudit(auditId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => import("../api/audits").then((m) => m.acknowledgeAudit(auditId)),
+    onSuccess: (session) => {
+      toast.success(`Audit report ${session.reportNumber || session.id} signed off and acknowledged.`);
+      void queryClient.invalidateQueries({ queryKey: ["audits"] });
+      void queryClient.invalidateQueries({ queryKey: ["audit", auditId] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Failed to acknowledge audit"),
+  });
+}

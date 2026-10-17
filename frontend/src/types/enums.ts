@@ -64,8 +64,25 @@ export type RequestType = (typeof REQUEST_TYPES)[number];
 export const REQUEST_STATUSES = ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2", "APPROVED", "REJECTED", "WAITLISTED", "WITHDRAWN", "INVALIDATED"] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
-export const AUDIT_ITEM_RESULTS = ["FOUND", "MISSING", "LOCATION_MISMATCH"] as const;
+export const AUDIT_ITEM_RESULTS = [
+  "PENDING",
+  "FOUND",
+  "LOCATION_MISMATCH",
+  "DAMAGED",
+  "NOT_LOCATED",
+  "NOT_ACCESSIBLE",
+  "CHECK_AGAIN",
+  "MISSING",
+] as const;
 export type AuditItemResult = (typeof AUDIT_ITEM_RESULTS)[number];
+
+export const AUDIT_SESSION_STATUSES = [
+  "IN_PROGRESS",
+  "SORTING",
+  "COMPLETED",
+  "ACKNOWLEDGED",
+] as const;
+export type AuditSessionStatus = (typeof AUDIT_SESSION_STATUSES)[number];
 
 export const NOTIFICATION_CODES = [
   "REQUEST_SUBMITTED",
@@ -95,8 +112,8 @@ export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
 
 export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {
   PENDING: "Pending review",
-  PENDING_STAGE1: "Stage 1 approved",
-  PENDING_STAGE2: "Stage 2 approved",
+  PENDING_STAGE1: "Stage 1 pending approval",
+  PENDING_STAGE2: "Stage 2 pending approval",
   APPROVED: "Approved",
   REJECTED: "Rejected",
   WAITLISTED: "Waitlisted",
@@ -110,9 +127,21 @@ export const REQUEST_TYPE_LABELS: Record<RequestType, string> = {
 };
 
 export const AUDIT_RESULT_LABELS: Record<AuditItemResult, string> = {
+  PENDING: "Pending scan",
   FOUND: "Found",
-  MISSING: "Missing",
   LOCATION_MISMATCH: "Wrong location",
+  DAMAGED: "Damaged",
+  NOT_LOCATED: "Not located",
+  NOT_ACCESSIBLE: "Not accessible",
+  CHECK_AGAIN: "Check again",
+  MISSING: "Missing",
+};
+
+export const AUDIT_SESSION_STATUS_LABELS: Record<AuditSessionStatus, string> = {
+  IN_PROGRESS: "In progress",
+  SORTING: "Sorting / Review",
+  COMPLETED: "Completed (Locked)",
+  ACKNOWLEDGED: "Acknowledged & Signed Off",
 };
 
 export const ACCOUNT_STATUS_LABELS: Record<AccountStatus, string> = {

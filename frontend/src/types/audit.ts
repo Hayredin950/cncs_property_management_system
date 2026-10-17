@@ -1,13 +1,8 @@
-import type { AuditItemResult } from "./enums";
+import type { AuditItemResult, AuditSessionStatus } from "./enums";
 import type { Item } from "./item";
 
 /**
  * Typed from `backend/src/routes/audits.ts` and the backend's Prisma schema.
- *
- * Gap G1 is closed in both directions now: `GET /audits/:id` reads one session
- * back, and `GET /audits` lists them. Before the list existed, a session id was
- * the only way to reach a stored audit and nothing in the app ever showed one —
- * the rows were saved and simultaneously undiscoverable.
  */
 
 /** One nested user reference, as the creation response selects it. */
@@ -17,19 +12,19 @@ export interface AuditUserSummary {
   email: string;
 }
 
-/**
- * `POST /audits` 201 response. `scopeType` stays a plain string because the API
- * accepts any non-empty value — only `DEPARTMENT` can actually be *completed*
- * (the completion endpoint 400s otherwise), which is why the UI only offers
- * department scope in the first place.
- */
 export interface AuditSession {
   id: string;
+  status: AuditSessionStatus;
+  reportNumber?: string | null;
   scopeType: string;
   scopeValue: string | null;
+  snapshotTotalCount?: number;
+  excludedAuditorCount?: number;
   runById: string;
   startedAt: string;
   completedAt: string | null;
+  acknowledgedAt?: string | null;
+  acknowledgedBy?: AuditUserSummary | null;
   runBy: AuditUserSummary;
 }
 
@@ -39,11 +34,15 @@ export interface CreateAuditPayload {
   scopeValue?: string | null;
 }
 
-/**
- * `POST /audits/:id/scan` 201 response — the persisted row plus its item.
- * `result` is always `FOUND` on this path by design: the final classification is
- * computed at completion, never supplied by the client.
- */
+/** Body of `POST /audits/:id/sort-item`. */
+export interface SortAuditItemPayload {
+  itemId: string;
+  result: "NOT_ACCESSIBLE" | "CHECK_AGAIN" | "MISSING";
+  sortReason: string;
+  sortNote?: string | null;
+  checkAgainDays?: number | null;
+}
+
 export interface AuditScanRow {
   id: string;
   auditSessionId: string;
@@ -53,12 +52,6 @@ export interface AuditScanRow {
   item: Item;
 }
 
-/**
- * What the scan walkthrough keeps for *this* session in the browser — the server
- * stores scan rows but exposes no scan listing, so the running list is the only
- * view of "what have I scanned so far". Persisted to `sessionStorage` so a phone
- * reload mid-walkthrough doesn't lose the count.
- */
 export interface ScannedAuditItem {
   itemId: string;
   tagId: string;
@@ -67,18 +60,11 @@ export interface ScannedAuditItem {
   scannedAt: string;
 }
 
-/** In-progress walkthrough state, scoped to one audit session id. */
 export interface AuditWalkthroughState {
   scopeValue: string;
   scanned: ScannedAuditItem[];
 }
 
-/**
- * `POST /audits/:id/complete` 200 response. `counts` is the summary the report
- * page renders; `found`/`missing`/`locationMismatch` are item-id lists and carry
- * no item detail, which is why the per-item breakdown comes from
- * `GET /audits/:id` instead — its `rows` do.
- */
 export interface AuditCompletionResponse {
   auditSessionId: string;
   completedAt: string;
@@ -86,6 +72,9 @@ export interface AuditCompletionResponse {
     found: number;
     missing: number;
     locationMismatch: number;
+    notLocated?: number;
+    notAccessible?: number;
+    checkAgain?: number;
   };
   found: string[];
   missing: string[];
@@ -97,6 +86,9 @@ export interface AuditResultRow {
   itemId: string;
   result: AuditItemResult;
   scannedAt: string | null;
+  sortReason?: string | null;
+  sortNote?: string | null;
+  checkAgainDays?: number | null;
   item: {
     tagId: string;
     name: string;
@@ -107,31 +99,34 @@ export interface AuditResultRow {
   };
 }
 
-/**
- * One row of `GET /audits` — a session plus the counts the server derives from its
- * stored rows. `completed` is explicit rather than implied by `completedAt`, so a
- * caller never has to know that the timestamp's presence is the flag.
- */
+export interface AuditCounts {
+  found: number;
+  missing: number;
+  locationMismatch: number;
+  notLocated?: number;
+  notAccessible?: number;
+  checkAgain?: number;
+  pending?: number;
+}
+
 export interface AuditSessionSummary {
   id: string;
+  status?: AuditSessionStatus;
+  reportNumber?: string | null;
   scopeType: string;
   scopeValue: string | null;
+  snapshotTotalCount?: number;
+  excludedAuditorCount?: number;
   runById: string;
   startedAt: string;
   completedAt: string | null;
   completed: boolean;
-  counts: {
-    found: number;
-    missing: number;
-    locationMismatch: number;
-  };
+  acknowledgedAt?: string | null;
+  acknowledgedBy?: AuditUserSummary | null;
+  counts: AuditCounts;
   runBy: AuditUserSummary;
 }
 
-/**
- * `GET /audits` 200 response. Paginated like every other list in the API
- * (`items`, `requests`, `notifications`): a page of `audits` plus the `total`.
- */
 export interface AuditListResponse {
   audits: AuditSessionSummary[];
   total: number;
@@ -139,28 +134,30 @@ export interface AuditListResponse {
   offset: number;
 }
 
-/**
- * `GET /audits/:id` 200 response — the read-back that closes gap G1. It carries
- * the same `counts`/id-lists the completion response returns, plus the stored
- * `rows`, so the report survives a reload instead of living only in router
- * state — and `rows` is the only place the breakdown's item detail (tag, name,
- * room) comes from.
- */
 export interface AuditSessionReadback {
   id: string;
+  status: AuditSessionStatus;
+  reportNumber?: string | null;
   scopeType: string;
   scopeValue: string | null;
   runById: string;
+  runBy: AuditUserSummary;
   startedAt: string;
   completedAt: string | null;
   completed: boolean;
-  counts: {
-    found: number;
-    missing: number;
-    locationMismatch: number;
-  };
+  snapshotTotalCount?: number;
+  excludedAuditorCount?: number;
+  acknowledgedAt?: string | null;
+  acknowledgedById?: string | null;
+  acknowledgedBy?: AuditUserSummary | null;
+  frozenReport?: any;
+  counts: AuditCounts;
   found: string[];
   missing: string[];
   locationMismatch: string[];
+  notLocated?: string[];
+  notAccessible?: string[];
+  checkAgain?: string[];
+  pending?: string[];
   rows: AuditResultRow[];
 }

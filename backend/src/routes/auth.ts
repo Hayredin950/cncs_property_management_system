@@ -291,7 +291,9 @@ router.get(
           fullName: true,
           email: true,
           role: true,
-          departmentId: true,
+          orgUnitId: true,
+          orgUnitRef: { select: { id: true, name: true } },
+          headedOrgUnit: { select: { id: true, name: true } },
           createdAt: true,
           mustChangePassword: true,
         },
@@ -301,12 +303,17 @@ router.get(
         return res.status(404).json({ error: "User not found" });
       }
 
+      const department = user.headedOrgUnit?.name || user.orgUnitRef?.name || undefined;
+      const departmentId = user.headedOrgUnit?.id || user.orgUnitId || undefined;
+
       const safeUser = {
         id: user.id,
         name: user.fullName,
         fullName: user.fullName,
         email: user.email,
         role: user.role,
+        department,
+        departmentId,
         createdAt: user.createdAt,
         mustChangePassword: user.mustChangePassword,
       };

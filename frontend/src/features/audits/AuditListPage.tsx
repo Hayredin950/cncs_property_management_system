@@ -149,31 +149,37 @@ export function AuditListPage() {
               <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    {/* The link is the title, not the whole card: the CSV button
-                        below is a real control, and a button inside an anchor is
-                        invalid HTML the browser resolves unpredictably. */}
-                    <Link
-                      to={`/audit/${audit.id}/report`}
-                      className="font-semibold text-slate-900 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
-                    >
-                      {audit.scopeValue || audit.scopeType}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to={`/audit/${audit.id}/report`}
+                        className="font-semibold text-slate-900 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
+                      >
+                        {audit.scopeValue || audit.scopeType}
+                      </Link>
+                      {audit.reportNumber && (
+                        <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                          {audit.reportNumber}
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-0.5 text-xs text-slate-500">
                       {audit.runBy.fullName} ·{" "}
                       <span title={formatDateTimeUTC(audit.startedAt) ?? undefined}>
                         started {formatRelativeTime(audit.startedAt)}
                       </span>
+                      {audit.snapshotTotalCount !== undefined && audit.snapshotTotalCount > 0 && (
+                        <span> · {audit.snapshotTotalCount} items in snapshot</span>
+                      )}
                     </p>
                   </div>
-                  {audit.completed ? (
-                    <Badge tone="success">
-                      Completed{" "}
-                      <span title={formatDateTimeUTC(audit.completedAt ?? audit.startedAt) ?? undefined}>
-                        {audit.completedAt ? formatRelativeTime(audit.completedAt) : ""}
-                      </span>
-                    </Badge>
+                  {audit.status === "ACKNOWLEDGED" ? (
+                    <Badge tone="success">Acknowledged</Badge>
+                  ) : audit.status === "COMPLETED" || audit.completed ? (
+                    <Badge tone="brand">Completed</Badge>
+                  ) : audit.status === "SORTING" ? (
+                    <Badge tone="warning">Sorting Phase</Badge>
                   ) : (
-                    <Badge tone="warning">In progress</Badge>
+                    <Badge tone="neutral">In progress</Badge>
                   )}
                 </div>
 
@@ -182,18 +188,41 @@ export function AuditListPage() {
                     <ClipboardCheck className="h-4 w-4 text-success-600" aria-hidden="true" />
                     <strong className="font-semibold tabular-nums">{audit.counts.found}</strong> found
                   </span>
+                  {(audit.counts.notAccessible ?? 0) > 0 && (
+                    <span className="flex items-center gap-1.5 text-slate-600 text-xs">
+                      <strong className="font-semibold tabular-nums">{audit.counts.notAccessible}</strong> inaccessible
+                    </span>
+                  )}
+                  {(audit.counts.checkAgain ?? 0) > 0 && (
+                    <span className="flex items-center gap-1.5 text-blue-700 text-xs">
+                      <strong className="font-semibold tabular-nums">{audit.counts.checkAgain}</strong> check again
+                    </span>
+                  )}
                   <span className="flex items-center gap-1.5 text-slate-700">
                     <MinusCircle className="h-4 w-4 text-danger-600" aria-hidden="true" />
                     <strong className="font-semibold tabular-nums">{audit.counts.missing}</strong> missing
                   </span>
                   <span className="flex items-center gap-1.5 text-slate-700">
                     <MapPinOff className="h-4 w-4 text-warning-600" aria-hidden="true" />
-                    <strong className="font-semibold tabular-nums">{audit.counts.locationMismatch}</strong> at the
-                    wrong location
+                    <strong className="font-semibold tabular-nums">{audit.counts.locationMismatch}</strong> outside scope
                   </span>
                 </div>
 
                 <div className="flex flex-wrap justify-end gap-2">
+                  {audit.status === "SORTING" && canRun && (
+                    <Link to={`/audit/${audit.id}/sort`}>
+                      <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                        Sorting Workbench
+                      </Button>
+                    </Link>
+                  )}
+                  {audit.status === "IN_PROGRESS" && canRun && (
+                    <Link to={`/audit/${audit.id}/scan`}>
+                      <Button size="sm" variant="outline">
+                        Continue Walk
+                      </Button>
+                    </Link>
+                  )}
                   <Link to={`/audit/${audit.id}/report`}>
                     <Button variant="outline" size="sm">
                       View report

@@ -210,14 +210,31 @@ export interface TransferRequestFields {
  * because `exactOptionalPropertyTypes` is on: an explicit `building: undefined`
  * is a type error, not a no-op.
  */
-export function buildTransferChanges(request: TransferRequestFields): ItemChanges {
+export function buildTransferChanges(
+  request: TransferRequestFields,
+  resolved?: {
+    buildingId?: string | null;
+    orgUnitId?: string | null;
+    destDeptHeadId?: string | null;
+  },
+): ItemChanges {
+  const buildingId = resolved?.buildingId !== undefined ? resolved.buildingId : request.newLocationBuilding;
+  const orgUnitId = resolved?.orgUnitId;
+
   return {
-    ...(request.newLocationBuilding ? { buildingId: request.newLocationBuilding } : {}),
+    ...(buildingId ? { buildingId } : {}),
+    ...(orgUnitId ? { orgUnitId } : {}),
     ...(request.newLocationFloor ? { floor: request.newLocationFloor } : {}),
     ...(request.newLocationRoom ? { room: request.newLocationRoom } : {}),
     ...(request.newOwnerId
       ? { ownerId: request.newOwnerId, ...staffHolderFields(request.newOwnerId) }
-      : {}),
+      : orgUnitId
+        ? {
+            holderType: "DEPARTMENT" as const,
+            holderId: orgUnitId,
+            ...(resolved?.destDeptHeadId ? { ownerId: resolved.destDeptHeadId } : {}),
+          }
+        : {}),
   };
 }
 
@@ -365,10 +382,12 @@ export async function applyDecision(
       status: true,
       reason: true,
       requestedById: true,
+      newLocationDepartment: true,
       newLocationBuilding: true,
       newLocationFloor: true,
       newLocationRoom: true,
       newOwnerId: true,
+      stage1ApprovedById: true,
       requestedBy: { select: { id: true, fullName: true, email: true, role: true } },
       item: {
         select: {
@@ -376,6 +395,7 @@ export async function applyDecision(
           tagId: true,
           name: true,
           status: true,
+          orgUnitId: true,
           buildingId: true,
           floor: true,
           room: true,
@@ -403,17 +423,65 @@ export async function applyDecision(
   const isStage2 = request.status === "PENDING_STAGE2";
   const isInitialPending = request.status === "PENDING";
 
-  // Capability check based on request type and stage
+  // Capability and approver checks based on request type and stage
+  const itemOrgUnit =
+    request.item.orgUnitId && tx.orgUnit
+      ? await tx.orgUnit.findUnique({
+          where: { id: request.item.orgUnitId },
+          select: { id: true, name: true, headId: true },
+        })
+      : null;
+
+  const isIntraDept =
+    Boolean(request.newLocationDepartment) &&
+    Boolean(itemOrgUnit) &&
+    request.newLocationDepartment!.trim().toLowerCase() === itemOrgUnit!.name.trim().toLowerCase();
+
   if (isTransfer) {
     if (isStage1 || isInitialPending) {
-      // Stage 1 approval (releasing head) - requires TRANSFER_APPROVE_STAGE1
+      // Stage 1 approval (releasing head / property officer)
       if (!hasCapability(reviewer.role, "TRANSFER_APPROVE_STAGE1")) {
         throw httpError(403, "Insufficient permissions for stage 1 transfer approval");
       }
-    } else if (request.status === "PENDING_STAGE2") {
-      // Stage 2 approval (receiving head) - requires TRANSFER_APPROVE_STAGE2
+      if (reviewer.role === "DEPARTMENT_HEAD") {
+        const reviewerUser = tx.user
+          ? await tx.user.findUnique({
+              where: { id: reviewer.id },
+              select: { orgUnitId: true, headedOrgUnit: { select: { id: true, name: true } } },
+            })
+          : null;
+        const reviewerDeptId = reviewerUser?.headedOrgUnit?.id || reviewerUser?.orgUnitId;
+        if (itemOrgUnit && reviewerDeptId && reviewerDeptId !== itemOrgUnit.id) {
+          throw httpError(403, "Only the department head of the releasing department can grant Stage 1 approval");
+        }
+      }
+    } else if (isStage2) {
+      // Stage 2 approval (receiving head / property officer)
       if (!hasCapability(reviewer.role, "TRANSFER_APPROVE_STAGE2")) {
         throw httpError(403, "Insufficient permissions for stage 2 transfer approval");
+      }
+      // Two-approver separation: cannot be the same person as Stage 1 approver for department heads
+      if (request.stage1ApprovedById && request.stage1ApprovedById === reviewer.id && reviewer.role === "DEPARTMENT_HEAD") {
+        throw httpError(403, "Stage 1 and Stage 2 approvals must be performed by different approvers");
+      }
+      if (reviewer.role === "DEPARTMENT_HEAD") {
+        const reviewerUser = tx.user
+          ? await tx.user.findUnique({
+              where: { id: reviewer.id },
+              select: { orgUnitId: true, headedOrgUnit: { select: { id: true, name: true } } },
+            })
+          : null;
+        const reviewerDeptId = reviewerUser?.headedOrgUnit?.id || reviewerUser?.orgUnitId;
+        const destDept =
+          request.newLocationDepartment && tx.orgUnit
+            ? await tx.orgUnit.findFirst({
+                where: { name: { equals: request.newLocationDepartment, mode: "insensitive" } },
+                select: { id: true },
+              })
+            : null;
+        if (destDept && reviewerDeptId && reviewerDeptId !== destDept.id) {
+          throw httpError(403, "Only the department head of the receiving department can grant Stage 2 approval");
+        }
       }
     }
   } else if (request.type === "DISPOSAL") {
@@ -457,11 +525,16 @@ export async function applyDecision(
     decidedAt = input.decidedAt;
   } else if (input.decision === "APPROVED") {
     if (request.type === "TRANSFER") {
-      if (request.status === "PENDING_STAGE1" || request.status === "PENDING") {
-        nextStatus = "PENDING_STAGE2";
-      } else if (request.status === "PENDING_STAGE2") {
+      if (request.status === "PENDING_STAGE2") {
         nextStatus = "APPROVED";
         decidedAt = input.decidedAt;
+      } else if (isIntraDept) {
+        // Intra-department transfer: only 1 stage needed
+        nextStatus = "APPROVED";
+        decidedAt = input.decidedAt;
+      } else {
+        // Stage 1 of inter-department transfer
+        nextStatus = "PENDING_STAGE2";
       }
     } else if (request.type === "DISPOSAL") {
       nextStatus = "APPROVED";
@@ -479,9 +552,11 @@ export async function applyDecision(
   if (input.decision === "APPROVED") {
     if (request.type === "TRANSFER") {
       // Only apply item changes on stage 2 or final approval
-      const isStage1Approval = request.status === "PENDING" && nextStatus === "PENDING_STAGE2";
+      const isStage1Approval =
+        (request.status === "PENDING" || request.status === "PENDING_STAGE1") &&
+        nextStatus === "PENDING_STAGE2";
       if (!isStage1Approval) {
-        if (request.newOwnerId) {
+        if (request.newOwnerId && tx.user) {
           // `Request.newOwnerId` is a bare String with no foreign key, so it can
           // dangle if that user was removed after the request was filed.
           const newOwner = await tx.user.findUnique({
@@ -493,7 +568,56 @@ export async function applyDecision(
           }
           labels[newOwner.id] = newOwner.fullName;
         }
-        itemChanges = buildTransferChanges(request);
+
+        // Resolving building:
+        let resolvedBuildingId: string | null = null;
+        if (request.newLocationBuilding) {
+          if (tx.building) {
+            const bldg = await tx.building.findFirst({
+              where: {
+                OR: [
+                  { id: request.newLocationBuilding },
+                  { name: { equals: request.newLocationBuilding, mode: "insensitive" } },
+                  { code: { equals: request.newLocationBuilding, mode: "insensitive" } },
+                ],
+              },
+              select: { id: true, name: true },
+            });
+            if (bldg) {
+              resolvedBuildingId = bldg.id;
+              labels[bldg.id] = bldg.name;
+            }
+          } else {
+            resolvedBuildingId = request.newLocationBuilding;
+          }
+        }
+
+        // Resolving department:
+        let resolvedOrgUnitId: string | null = null;
+        let destDeptHeadId: string | null = null;
+        if (request.newLocationDepartment && tx.orgUnit) {
+          const dept = await tx.orgUnit.findFirst({
+            where: {
+              OR: [
+                { id: request.newLocationDepartment },
+                { name: { equals: request.newLocationDepartment, mode: "insensitive" } },
+                { code: { equals: request.newLocationDepartment, mode: "insensitive" } },
+              ],
+            },
+            select: { id: true, name: true, headId: true },
+          });
+          if (dept) {
+            resolvedOrgUnitId = dept.id;
+            destDeptHeadId = dept.headId;
+            labels[dept.id] = dept.name;
+          }
+        }
+
+        itemChanges = buildTransferChanges(request, {
+          buildingId: resolvedBuildingId,
+          orgUnitId: resolvedOrgUnitId,
+          destDeptHeadId,
+        });
         
         // §2.3: Transfer to individual requires claim handshake
         // Transfer to department (no newOwnerId) does not need claim
@@ -566,6 +690,53 @@ export async function applyDecision(
   });
   if (requestUpdate.count === 0) {
     throw httpError(409, ERROR_ALREADY_DECIDED);
+  }
+
+  // If Stage 1 of inter-department transfer was approved, notify receiving staff and head
+  if (request.type === "TRANSFER" && nextStatus === "PENDING_STAGE2") {
+    // Notify receiving staff member so they can follow up with their department head
+    if (request.newOwnerId) {
+      await tx.notification.create({
+        data: {
+          userId: request.newOwnerId,
+          message: `[TRANSFER_STAGE1_APPROVED] Releasing department head approved transfer of "${request.item.name}" (${request.item.tagId}) to you. Waiting for your department head's approval.`,
+          relatedRequestId: request.id,
+          createdAt: input.decidedAt,
+        },
+      });
+    }
+
+    // Notify receiving department head
+    if (request.newLocationDepartment && tx.orgUnit) {
+      const destDept = await tx.orgUnit.findFirst({
+        where: { name: { equals: request.newLocationDepartment, mode: "insensitive" } },
+        select: { id: true, headId: true },
+      });
+      if (destDept?.headId && destDept.headId !== reviewer.id) {
+        await tx.notification.create({
+          data: {
+            userId: destDept.headId,
+            message: `[TRANSFER_STAGE2_PENDING] Transfer request for "${request.item.name}" (${request.item.tagId}) to your department requires your Stage 2 approval.`,
+            relatedRequestId: request.id,
+            createdAt: input.decidedAt,
+          },
+        });
+      }
+    }
+  }
+
+  // If Stage 2 / final transfer approval was granted, notify the new owner to claim custody
+  if (request.type === "TRANSFER" && nextStatus === "APPROVED") {
+    if (request.newOwnerId) {
+      await tx.notification.create({
+        data: {
+          userId: request.newOwnerId,
+          message: `[TRANSFER_APPROVED_CLAIM_PENDING] Transfer of "${request.item.name}" (${request.item.tagId}) to you was approved by ${reviewer.fullName}. Please confirm receipt and claim custody of the item.`,
+          relatedRequestId: request.id,
+          createdAt: input.decidedAt,
+        },
+      });
+    }
   }
 
   const cascadedItemIds: string[] = [];

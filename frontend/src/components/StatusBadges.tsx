@@ -105,8 +105,8 @@ export function RoleBadge({ role, className, collapsed }: { role: Role; classNam
 /** §3.2 request maps — the same vocabulary the Phase 2 queue screens reuse. */
 const REQUEST_STATUS_TONE: Record<RequestStatus, BadgeTone> = {
   PENDING: "warning",
-  PENDING_STAGE1: "info",
-  PENDING_STAGE2: "info",
+  PENDING_STAGE1: "warning",
+  PENDING_STAGE2: "warning",
   APPROVED: "success",
   REJECTED: "danger",
   WAITLISTED: "neutral",
@@ -116,8 +116,8 @@ const REQUEST_STATUS_TONE: Record<RequestStatus, BadgeTone> = {
 
 const REQUEST_STATUS_ICON: Record<RequestStatus, ReactNode> = {
   PENDING: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,
-  PENDING_STAGE1: <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />,
-  PENDING_STAGE2: <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />,
+  PENDING_STAGE1: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,
+  PENDING_STAGE2: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,
   APPROVED: <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />,
   REJECTED: <XCircle className="h-3.5 w-3.5" aria-hidden="true" />,
   WAITLISTED: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,

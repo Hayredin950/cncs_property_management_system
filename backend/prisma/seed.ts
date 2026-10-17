@@ -47,7 +47,26 @@ async function main() {
   );
   const byName = Object.fromEntries(categories.map((c) => [c.name, c]));
 
+  console.log("Seeding buildings...");
+  const buildingDefs = [
+    { name: "CNCS Building", code: "CNCS-BLD" },
+    { name: "Science Complex", code: "SCI-CMPLX" },
+    { name: "Chemistry Building", code: "CHEM-BLD" },
+    { name: "Physics Building", code: "PHYS-BLD" },
+  ];
+  const buildings = await Promise.all(
+    buildingDefs.map((b) =>
+      prisma.building.upsert({
+        where: { name: b.name },
+        update: {},
+        create: b,
+      })
+    )
+  );
+  const buildingByName = Object.fromEntries(buildings.map((b) => [b.name, b]));
+
   console.log("Seeding OrgUnits (College + Departments)...");
+
   // College
   const college = await prisma.orgUnit.upsert({
     where: { name: "CNCS" },
@@ -117,30 +136,47 @@ async function main() {
   console.log("Seeding users...");
   await prisma.user.upsert({
     where: { email: SEED_USERS.admin.email },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "System Admin",
       email: SEED_USERS.admin.email,
       passwordHash: await argon2.hash(SEED_USERS.admin.password, { type: argon2.argon2id }),
       role: Role.SYSTEM_ADMIN,
+      accountStatus: "ACTIVE",
     },
   });
 
   const officer = await prisma.user.upsert({
     where: { email: SEED_USERS.officer.email },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "Property Officer",
       email: SEED_USERS.officer.email,
       passwordHash: await argon2.hash(SEED_USERS.officer.password, { type: argon2.argon2id }),
       role: Role.PROPERTY_OFFICER,
+      accountStatus: "ACTIVE",
+    },
+  });
+
+  // General Staff (staff@cncs.aau.edu.et)
+  await prisma.user.upsert({
+    where: { email: SEED_USERS.staff.email },
+    update: { accountStatus: "ACTIVE" },
+    create: {
+      fullName: "General Staff",
+      email: SEED_USERS.staff.email,
+      passwordHash: await argon2.hash(SEED_USERS.staff.password, { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: csDept.id,
+      accountStatus: "ACTIVE",
+      staffId: "STAFF-GEN-001",
     },
   });
 
   // CS Department Head
   const csHead = await prisma.user.upsert({
     where: { email: "head.cs@cncs.aau.edu.et" },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "CS Department Head",
       email: "head.cs@cncs.aau.edu.et",
@@ -154,7 +190,7 @@ async function main() {
   // Biology Department Head
   const bioHead = await prisma.user.upsert({
     where: { email: "head.bio@cncs.aau.edu.et" },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "Biology Department Head",
       email: "head.bio@cncs.aau.edu.et",
@@ -168,7 +204,7 @@ async function main() {
   // Chemistry Department Head
   const chemHead = await prisma.user.upsert({
     where: { email: "head.chem@cncs.aau.edu.et" },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "Chemistry Department Head",
       email: "head.chem@cncs.aau.edu.et",
@@ -184,7 +220,7 @@ async function main() {
   // CS Staff
   const csStaff1 = await prisma.user.upsert({
     where: { email: "staff.cs1@cncs.aau.edu.et" },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "CS Staff 1",
       email: "staff.cs1@cncs.aau.edu.et",
@@ -198,7 +234,7 @@ async function main() {
 
   const csStaff2 = await prisma.user.upsert({
     where: { email: "staff.cs2@cncs.aau.edu.et" },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "CS Staff 2",
       email: "staff.cs2@cncs.aau.edu.et",
@@ -213,7 +249,7 @@ async function main() {
   // Biology Staff
   const bioStaff1 = await prisma.user.upsert({
     where: { email: "staff.bio1@cncs.aau.edu.et" },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "Biology Staff 1",
       email: "staff.bio1@cncs.aau.edu.et",
@@ -227,7 +263,7 @@ async function main() {
 
   const bioStaff2 = await prisma.user.upsert({
     where: { email: "staff.bio2@cncs.aau.edu.et" },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "Biology Staff 2",
       email: "staff.bio2@cncs.aau.edu.et",
@@ -242,7 +278,7 @@ async function main() {
   // Chemistry Staff
   const chemStaff1 = await prisma.user.upsert({
     where: { email: "staff.chem1@cncs.aau.edu.et" },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "Chemistry Staff 1",
       email: "staff.chem1@cncs.aau.edu.et",
@@ -256,12 +292,13 @@ async function main() {
 
   const auditor = await prisma.user.upsert({
     where: { email: SEED_USERS.auditor.email },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "Auditor Test",
       email: SEED_USERS.auditor.email,
       passwordHash: await argon2.hash(SEED_USERS.auditor.password, { type: argon2.argon2id }),
       role: Role.AUDITOR,
+      accountStatus: "ACTIVE",
     },
   });
 
@@ -289,7 +326,7 @@ async function main() {
       name: "Dell Latitude Laptop",
       categoryId: byName["Electronics"].id,
       orgUnitId: csDept.id,
-      building: "CNCS Building",
+      buildingId: buildingByName["CNCS Building"].id,
       floor: "3",
       room: "312",
       ownerId: csStaff1.id,
@@ -304,7 +341,7 @@ async function main() {
       name: "Office Desk",
       categoryId: byName["Furniture"].id,
       orgUnitId: csDept.id,
-      building: "CNCS Building",
+      buildingId: buildingByName["CNCS Building"].id,
       floor: "1",
       room: "101",
       ownerId: csHead.id,
@@ -318,7 +355,7 @@ async function main() {
       name: "Microscope",
       categoryId: byName["Lab Equipment"].id,
       orgUnitId: bioDept.id,
-      building: "Science Complex",
+      buildingId: buildingByName["Science Complex"].id,
       floor: "2",
       room: "204",
       ownerId: bioStaff1.id,
@@ -334,7 +371,7 @@ async function main() {
       name: "Dell 65W Charger",
       categoryId: byName["Electronics"].id,
       orgUnitId: chemDept.id,
-      building: "Chemistry Building",
+      buildingId: buildingByName["Chemistry Building"].id,
       floor: "1",
       room: "101",
       ownerId: chemStaff1.id,
@@ -350,10 +387,10 @@ async function main() {
       name: "Physics Lab Equipment",
       categoryId: byName["Lab Equipment"].id,
       orgUnitId: physDept.id,
-      building: "Physics Building",
+      buildingId: buildingByName["Physics Building"].id,
       floor: "1",
       room: "101",
-      ownerId: physDept.id, // Department-held
+      ownerId: officer.id, // Property Officer is the custodian of record for headless department
       holderType: "DEPARTMENT",
       holderId: physDept.id,
       purchaseCost: 50000,
@@ -388,7 +425,7 @@ async function main() {
       name: "Dell 65W Charger",
       categoryId: byName["Electronics"].id,
       orgUnitId: csDept.id,
-      building: "CNCS Building",
+      buildingId: buildingByName["CNCS Building"].id,
       floor: "3",
       room: "312",
       ownerId: csStaff1.id,
@@ -406,7 +443,7 @@ async function main() {
   await prisma.item.updateMany({
     where: { tagId: { in: [LAPTOP_TAG_ID, CHARGER_TAG_ID] } },
     data: {
-      building: "CNCS Building",
+      buildingId: buildingByName["CNCS Building"].id,
       floor: "3",
       room: "312",
       ownerId: csStaff1.id,

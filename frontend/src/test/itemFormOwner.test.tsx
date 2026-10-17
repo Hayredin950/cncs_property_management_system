@@ -38,7 +38,12 @@ async function fillRequiredFields() {
 
   // Department is a dropdown now (lib/departments.ts), not a free-text input.
   await user.selectOptions(screen.getByLabelText("Department"), "Computer Science");
-  await user.type(screen.getByLabelText("Building"), "Freshmen Bldg");
+  const buildingEl = screen.getByLabelText("Building");
+  if (buildingEl.tagName === "SELECT") {
+    await user.selectOptions(buildingEl, "CNCS Building");
+  } else {
+    await user.type(buildingEl, "Freshmen Bldg");
+  }
   await user.type(screen.getByLabelText("Floor"), "2nd");
   await user.type(screen.getByLabelText("Room"), "213");
   await user.type(screen.getByLabelText("Purchase cost (ETB)"), "28000");

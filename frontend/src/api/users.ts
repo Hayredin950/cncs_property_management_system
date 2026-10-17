@@ -120,3 +120,31 @@ export function resetUserPassword(
 export function deleteUser(id: string): Promise<{ id: string; deleted: boolean }> {
   return apiClient.delete<{ id: string; deleted: boolean }>(`/users/${encodeURIComponent(id)}`);
 }
+
+export interface TransferRecipient {
+  id: string;
+  fullName: string;
+  email: string;
+  role: string;
+  departmentId: string | null;
+  departmentName: string | null;
+}
+
+/**
+ * `GET /users/transfer-recipients` — active staff/heads across departments for transfer selection.
+ */
+export function fetchTransferRecipients(
+  search: string,
+  department?: string,
+  signal?: AbortSignal,
+): Promise<TransferRecipient[]> {
+  if (!search || search.trim().length < 2) {
+    return Promise.resolve([]);
+  }
+  return apiClient.get<TransferRecipient[]>(
+    "/users/transfer-recipients",
+    { search: search.trim(), ...(department ? { department: department.trim() } : {}) },
+    signal,
+  );
+}
+

@@ -29,12 +29,19 @@ export interface RequestSummary {
   rejectionReason: string | null;
   createdAt: string;
   decidedAt: string | null;
+  newLocationDepartment: string | null;
   newLocationBuilding: string | null;
   newLocationFloor: string | null;
   newLocationRoom: string | null;
   newOwnerId: string | null;
   requestedById: string;
   reviewedById: string | null;
+  stage1ApprovedById?: string | null;
+  stage1ApprovedAt?: string | null;
+  stage1ApprovedBy?: RequestUserSummary | null;
+  stage2ApprovedById?: string | null;
+  stage2ApprovedAt?: string | null;
+  stage2ApprovedBy?: RequestUserSummary | null;
   item: RequestItemSummary;
   requestedBy: RequestUserSummary;
 }
@@ -49,11 +56,15 @@ export interface RequestDetailItem extends RequestItemSummary {
   floor: string;
   room: string;
   parentItemId: string | null;
+  holderType?: string | null;
+  holderId?: string | null;
+  claimDueAt?: string | null;
 }
 
 export interface RequestDetail extends Omit<RequestSummary, "item"> {
   item: RequestDetailItem;
   reviewedBy: RequestUserSummary | null;
+  newOwner?: RequestUserSummary | null;
 }
 
 /**
@@ -79,6 +90,7 @@ export interface CreateRequestPayload {
   type: RequestType;
   itemId: string;
   reason: string;
+  newLocationDepartment?: string;
   newLocationBuilding?: string;
   newLocationFloor?: string;
   newLocationRoom?: string;

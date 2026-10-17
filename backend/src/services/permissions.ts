@@ -38,6 +38,8 @@ export type Capability =
   | "AUDIT_RUN"
   /** Read audit history and reports — the auditor who ran them and the officer who acts on findings. */
   | "AUDIT_VIEW"
+  /** Acknowledge and sign off an audit report (spec §8 — Property Officer only). */
+  | "AUDIT_ACKNOWLEDGE"
   /** Decide a transfer/disposal request (spec 5.1/5.2). */
   | "REQUEST_DECIDE"
   /** First-stage approval for a transfer (releasing head / property officer). */
@@ -104,6 +106,7 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "REQUEST_READ_ALL",
     "REPORT_VIEW_ALL",
     "AUDIT_VIEW",
+    "AUDIT_ACKNOWLEDGE",
     "USER_READ",
   ],
   // Scoped to one department. Approves transfers for their department and can

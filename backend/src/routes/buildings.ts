@@ -21,12 +21,11 @@ const buildingSchema = z.object({
 const buildingUpdateSchema = buildingSchema.partial();
 
 /**
- * GET /buildings — list buildings (Property Officer only).
+ * GET /buildings — list buildings (all authenticated users can read for dropdowns).
  */
 buildingsRouter.get(
   "/",
   authenticate,
-  requireCapability("BUILDING_MANAGE"),
   async (req, res, next) => {
     try {
       const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
@@ -76,7 +75,6 @@ buildingsRouter.get(
 buildingsRouter.get(
   "/:id",
   authenticate,
-  requireCapability("BUILDING_MANAGE"),
   async (req, res, next) => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

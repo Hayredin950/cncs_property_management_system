@@ -60,7 +60,7 @@ export function ReportsPage() {
   const [auditId, setAuditId] = useState("");
   const [evidencePack, setEvidencePack] = useState({ dateFrom: "", dateTo: "" });
 
-  const departmentOptions = (departmentsQuery.data ?? []).map((d) => ({ value: d.id, label: d.name }));
+  const departmentOptions = (departmentsQuery.data ?? []).map((d) => ({ value: d.name, label: d.name }));
   const categoryOptions = (categoriesQuery.data ?? []).map((c) => ({ value: c.id, label: c.name }));
 
   async function run(key: string, fetcher: () => Promise<ReportDownload>) {

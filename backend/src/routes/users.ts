@@ -733,6 +733,73 @@ usersRouter.post(
   }
 );
 
+/**
+ * GET /users/transfer-recipients
+ * Returns active staff and department heads with their department info.
+ * Accessible to all authenticated users for populating the recipient dropdown when filing transfers.
+ */
+usersRouter.get(
+  "/transfer-recipients",
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+      if (search.length < 2) {
+        res.status(200).json([]);
+        return;
+      }
+
+      const departmentId = typeof req.query.departmentId === "string" ? req.query.departmentId.trim() : undefined;
+      const departmentName = typeof req.query.department === "string" ? req.query.department.trim() : undefined;
+
+      const where: Prisma.UserWhereInput = {
+        accountStatus: "ACTIVE",
+        role: { in: ["STAFF", "DEPARTMENT_HEAD", "PROPERTY_OFFICER"] },
+        fullName: { contains: search, mode: "insensitive" },
+      };
+
+      if (departmentId) {
+        where.orgUnitId = departmentId;
+      } else if (departmentName) {
+        where.orgUnitRef = { name: departmentName };
+      }
+
+      const users = await prisma.user.findMany({
+        where,
+        take: 10,
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true,
+          orgUnitId: true,
+          orgUnitRef: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+        },
+        orderBy: { fullName: "asc" },
+      });
+
+      res.status(200).json(
+        users.map((u) => ({
+          id: u.id,
+          fullName: u.fullName,
+          email: u.email,
+          role: u.role,
+          departmentId: u.orgUnitId,
+          departmentName: u.orgUnitRef?.name ?? null,
+        }))
+      );
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 usersRouter.get(
   "/",
   authenticate,

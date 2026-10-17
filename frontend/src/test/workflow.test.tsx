@@ -139,7 +139,12 @@ describe("request form validation parity", () => {
     // guarded shell waits for `GET /auth/me` before rendering anything.
     await user.selectOptions(await screen.findByLabelText("Request type"), "DISPOSAL");
     await user.selectOptions(screen.getByLabelText("Item"), "item-1");
-    await user.type(screen.getByLabelText("Building"), "Building 9");
+    const buildingEl = screen.getByLabelText("Building");
+    if (buildingEl.tagName === "SELECT") {
+      await user.selectOptions(buildingEl, "CNCS Building");
+    } else {
+      await user.type(buildingEl, "Building 9");
+    }
     await user.type(screen.getByLabelText(/^Reason/), "This item no longer works at all");
     await user.click(screen.getByRole("button", { name: "Submit request" }));
 

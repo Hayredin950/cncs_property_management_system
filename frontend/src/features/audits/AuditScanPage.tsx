@@ -8,7 +8,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { EmptyState } from "../../components/EmptyState";
 import { Input } from "../../components/Input";
 import { QrScanner } from "../../components/QrScanner";
-import { useAuditSession, useCompleteAuditSession, useScanAuditItem } from "../../hooks/useAudits";
+import { useAuditSession, useCloseAuditWalk, useCompleteAuditSession, useScanAuditItem } from "../../hooks/useAudits";
 import {
   appendScan,
   clearWalkthrough,
@@ -68,6 +68,7 @@ export function AuditScanPage() {
 
   const scanMutation = useScanAuditItem(id);
   const completeMutation = useCompleteAuditSession(id);
+  const closeWalkMutation = useCloseAuditWalk(id);
 
   /**
    * The stored session. This is what makes the count survive a *new tab*:
@@ -87,7 +88,8 @@ export function AuditScanPage() {
   // The scope comes from the session, so a fresh tab still says which department
   // is being walked instead of the generic "scan each item as you reach it".
   const scopeValue = stored?.scopeValue || walkthrough.scopeValue;
-  const completed = stored?.completed ?? false;
+  const isSorting = stored?.status === "SORTING";
+  const completed = stored?.completed || stored?.status === "COMPLETED" || stored?.status === "ACKNOWLEDGED";
 
   const handleTag = useCallback(
     async (raw: string) => {
@@ -147,6 +149,16 @@ export function AuditScanPage() {
       navigate(`/audit/${id}/report`, { state: { summary } });
     } catch {
       // Toast already shown; the dialog stays open so the failure isn't hidden.
+    }
+  }
+
+  async function handleFinishWalk() {
+    try {
+      await closeWalkMutation.mutateAsync();
+      clearWalkthrough(id);
+      navigate(`/audit/${id}/sort`);
+    } catch {
+      // Toast handles error
     }
   }
 
@@ -244,12 +256,13 @@ export function AuditScanPage() {
             {completed ? "View report" : "View report so far"}
           </Button>
         </Link>
-        {/*
-          A completed session is read-only here — the server answers 409 — so the
-          button is replaced rather than left enabled to fail. Reachable now that
-          this page reads stored rows: before, an old session id showed an empty
-          list and the button was disabled for the wrong reason.
-        */}
+        {!completed && (
+          <Link to={`/audit/${id}/sort`}>
+            <Button variant="outline" type="button">
+              Sorting Workbench
+            </Button>
+          </Link>
+        )}
         <Button
           type="button"
           disabled={scanned.length === 0 || completed}
@@ -259,11 +272,23 @@ export function AuditScanPage() {
         </Button>
       </div>
 
+      {isSorting && (
+        <div className="flex items-start justify-between gap-3 rounded-md bg-amber-50 p-4 text-sm text-amber-900 border border-amber-200">
+          <div>
+            <strong className="font-semibold">Walk phase has been completed.</strong> This session is currently in the
+            post-audit sorting phase.
+          </div>
+          <Link to={`/audit/${id}/sort`}>
+            <Button size="sm">Open Sorting Workbench</Button>
+          </Link>
+        </div>
+      )}
+
       {completed && (
         <p className="flex items-start gap-2 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success-600" aria-hidden="true" />
-          This audit was completed and can't be scanned into any more. Its report and CSV are on the audit
-          history page.
+          This audit was completed and can't be scanned into any more. Its official report and CSV are available on the
+          report page.
         </p>
       )}
 

@@ -77,13 +77,42 @@ export function scanAuditItem(auditId: string, itemId: string): Promise<AuditSca
   return apiClient.post<AuditScanRow>(`/audits/${encodeURIComponent(auditId)}/scan`, { itemId });
 }
 
-/**
- * `POST /audits/:id/complete` — finalizes the audit and returns the summary.
- * Idempotence is *not* promised by the API: completing twice answers `409`, so
- * the UI confirms before calling and never retries on its own.
- */
 export function completeAuditSession(auditId: string): Promise<AuditCompletionResponse> {
   return apiClient.post<AuditCompletionResponse>(`/audits/${encodeURIComponent(auditId)}/complete`);
+}
+
+/**
+ * `POST /audits/:id/close-walk` — ends physical scanning, converts PENDING items
+ * to NOT_LOCATED, and transitions session to SORTING.
+ */
+export function closeAuditWalk(
+  auditId: string,
+): Promise<{ message: string; status: string; counts: { found: number; notLocated: number; locationMismatch: number } }> {
+  return apiClient.post(`/audits/${encodeURIComponent(auditId)}/close-walk`);
+}
+
+/**
+ * `POST /audits/:id/sort-item` — categorizes a NOT_LOCATED item in the sorting workbench.
+ */
+export function sortAuditItem(auditId: string, payload: import("../types/audit").SortAuditItemPayload): Promise<AuditScanRow> {
+  return apiClient.post<AuditScanRow>(`/audits/${encodeURIComponent(auditId)}/sort-item`, payload);
+}
+
+/**
+ * `POST /audits/:id/finalize` — locks the report, generates permanent reportNumber
+ * and immutable frozenReport snapshot, and dispatches PO alerts if missing items exist.
+ */
+export function finalizeAudit(
+  auditId: string,
+): Promise<{ id: string; status: string; reportNumber: string; counts: any; frozenReport: any }> {
+  return apiClient.post(`/audits/${encodeURIComponent(auditId)}/finalize`);
+}
+
+/**
+ * `POST /audits/:id/acknowledge` — Property Officer formal sign-off.
+ */
+export function acknowledgeAudit(auditId: string): Promise<AuditSession> {
+  return apiClient.post<AuditSession>(`/audits/${encodeURIComponent(auditId)}/acknowledge`);
 }
 
 /**

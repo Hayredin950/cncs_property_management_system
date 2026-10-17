@@ -474,4 +474,26 @@ export const handlers = [
    */
   http.get(`${API}/system/status`, () => (getToken() ? HttpResponse.json(SYSTEM_STATUS) : unauthorized())),
   http.get(`${API}/system/events`, () => (getToken() ? HttpResponse.json(SYSTEM_EVENTS) : unauthorized())),
+
+  http.get(`${API}/buildings`, () =>
+    HttpResponse.json([
+      { id: "bld-1", name: "CNCS Building", code: "CNCS-BLD" },
+      { id: "bld-2", name: "Science Complex", code: "SCI-CMPLX" },
+      { id: "bld-3", name: "Chemistry Building", code: "CHEM-BLD" },
+      { id: "bld-4", name: "Physics Building", code: "PHYS-BLD" },
+    ]),
+  ),
+
+  http.get(`${API}/users/transfer-recipients`, () =>
+    HttpResponse.json([
+      {
+        id: "recipient-1",
+        fullName: "Dr. Abera Test",
+        email: "abera@cncs.aau.edu.et",
+        role: "STAFF",
+        departmentId: "cs-dept-id",
+        departmentName: "Computer Science",
+      },
+    ]),
+  ),
 ];

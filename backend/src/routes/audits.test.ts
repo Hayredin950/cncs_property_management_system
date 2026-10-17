@@ -15,15 +15,26 @@ vi.mock("../lib/prisma.js", () => {
         findMany: vi.fn(),
         count: vi.fn(),
         create: vi.fn(),
+        update: vi.fn(),
         updateMany: vi.fn(),
       },
       auditItemResultRow: {
         create: vi.fn(),
+        findUnique: vi.fn(),
+        update: vi.fn(),
         findMany: vi.fn(),
         updateMany: vi.fn(),
         createMany: vi.fn(),
         groupBy: vi.fn(),
         count: vi.fn(),
+      },
+      user: {
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+      },
+      notification: {
+        create: vi.fn(),
+        createMany: vi.fn(),
       },
       item: {
         findUnique: vi.fn(),
@@ -31,7 +42,12 @@ vi.mock("../lib/prisma.js", () => {
         findMany: vi.fn(),
         updateMany: vi.fn(),
       },
-      $transaction: vi.fn(),
+      $transaction: vi.fn((operations) => {
+        if (Array.isArray(operations)) {
+          return Promise.all(operations);
+        }
+        return operations;
+      }),
     },
   };
 });
@@ -136,6 +152,9 @@ describe("Audit Endpoints", () => {
           scopeType: "LOCATION",
           scopeValue: "Building A / Room 101",
           runById: "user-staff-1",
+          status: "IN_PROGRESS",
+          snapshotTotalCount: 0,
+          excludedAuditorCount: 0,
         },
         include: {
           runBy: {
@@ -482,7 +501,7 @@ describe("GET /audits", () => {
 
     const res = await request(app).get("/api/v1/audits").set("Authorization", `Bearer ${staffToken}`);
 
-    expect(res.body.audits[0].counts).toEqual({ found: 1, missing: 0, locationMismatch: 0 });
+    expect(res.body.audits[0].counts).toMatchObject({ found: 1, missing: 0, locationMismatch: 0 });
   });
 
   it("derives the counts from the stored rows and marks the session complete", async () => {
@@ -492,7 +511,7 @@ describe("GET /audits", () => {
       id: "session-1",
       scopeValue: "Computer Science",
       completed: true,
-      counts: { found: 12, missing: 3, locationMismatch: 0 },
+      counts: expect.objectContaining({ found: 12, missing: 3, locationMismatch: 0 }),
     });
     // One grouped query for the page, not one per audit listed.
     expect(prisma.auditItemResultRow.groupBy).toHaveBeenCalledTimes(1);
@@ -529,8 +548,6 @@ describe("GET /audits/:id", () => {
   const item = {
     tagId: "CNCS-0001",
     name: "Dell Laptop",
-    // The item's OrgUnit and Building, which is what the route selects — the
-    // free-text `department`/`building` columns no longer exist.
     orgUnitRef: { name: "CNCS" },
     buildingRef: { name: "CNCS Building" },
     floor: "3",
@@ -557,10 +574,171 @@ describe("GET /audits/:id", () => {
       .set("Authorization", `Bearer ${staffToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.counts).toEqual({ found: 1, missing: 1, locationMismatch: 0 });
+    expect(res.body.counts).toMatchObject({ found: 1, missing: 1, locationMismatch: 0 });
     expect(res.body.found).toEqual(["item-1"]);
     expect(res.body.rows).toHaveLength(2);
-    // Both clients read the location off the row's nested item under these keys.
     expect(res.body.rows[0].item).toMatchObject({ department: "CNCS", building: "CNCS Building" });
+  });
+});
+
+describe("Phase 2 Audit Workflow Endpoints", () => {
+  const auditorToken = createToken({ id: "auditor-1", role: "AUDITOR" });
+  const propertyOfficerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
+  const staffToken = createToken({ id: "staff-1", role: "STAFF" });
+
+  describe("POST /audits/:id/close-walk", () => {
+    it("updates remaining PENDING items to NOT_LOCATED and sets status to SORTING", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+        id: "session-p2",
+        status: "IN_PROGRESS",
+        completedAt: null,
+      } as never);
+      vi.mocked(prisma.auditItemResultRow.count)
+        .mockResolvedValueOnce(5 as never)
+        .mockResolvedValueOnce(2 as never)
+        .mockResolvedValueOnce(1 as never);
+
+      const res = await request(app)
+        .post("/api/v1/audits/session-p2/close-walk")
+        .set("Authorization", `Bearer ${auditorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("SORTING");
+      expect(res.body.counts).toEqual({ found: 5, notLocated: 2, locationMismatch: 1 });
+      expect(prisma.auditItemResultRow.updateMany).toHaveBeenCalledWith({
+        where: { auditSessionId: "session-p2", result: "PENDING" },
+        data: { result: "NOT_LOCATED" },
+      });
+      expect(prisma.auditSession.update).toHaveBeenCalledWith({
+        where: { id: "session-p2" },
+        data: { status: "SORTING" },
+      });
+    });
+  });
+
+  describe("POST /audits/:id/sort-item", () => {
+    it("sorts a NOT_LOCATED item into NOT_ACCESSIBLE, CHECK_AGAIN, or MISSING", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+        id: "session-p2",
+        status: "SORTING",
+      } as never);
+      vi.mocked(prisma.auditItemResultRow.findUnique).mockResolvedValueOnce({
+        id: "row-1",
+        auditSessionId: "session-p2",
+        itemId: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+      } as never);
+      vi.mocked(prisma.auditItemResultRow.update).mockResolvedValueOnce({
+        id: "row-1",
+        result: "CHECK_AGAIN",
+        sortReason: "Office locked",
+        checkAgainDays: 5,
+      } as never);
+
+      const res = await request(app)
+        .post("/api/v1/audits/session-p2/sort-item")
+        .set("Authorization", `Bearer ${auditorToken}`)
+        .send({
+          itemId: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+          result: "CHECK_AGAIN",
+          sortReason: "Office locked",
+          checkAgainDays: 5,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.result).toBe("CHECK_AGAIN");
+      expect(res.body.sortReason).toBe("Office locked");
+    });
+  });
+
+  describe("POST /audits/:id/finalize", () => {
+    it("generates reportNumber, stores frozenReport, and marks COMPLETED", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+        id: "session-p2",
+        status: "SORTING",
+        completedAt: null,
+        snapshotTotalCount: 2,
+        excludedAuditorCount: 0,
+        runBy: { id: "auditor-1", fullName: "Auditor User", email: "auditor@cncs.aau.edu.et" },
+      } as never);
+      vi.mocked(prisma.auditSession.findFirst).mockResolvedValueOnce(null);
+      vi.mocked(prisma.auditItemResultRow.findMany).mockResolvedValueOnce([
+        {
+          itemId: "item-1",
+          result: "FOUND",
+          scannedAt: new Date(),
+          item: { tagId: "TAG-1", name: "Laptop", category: { name: "IT" }, floor: "1", room: "101" },
+        },
+        {
+          itemId: "item-2",
+          result: "MISSING",
+          sortReason: "Searched everywhere",
+          scannedAt: null,
+          item: { tagId: "TAG-2", name: "Desktop", category: { name: "IT" }, floor: "1", room: "102" },
+        },
+      ] as never);
+      vi.mocked(prisma.user.findMany).mockResolvedValueOnce([{ id: "po-1" }] as never);
+
+      const res = await request(app)
+        .post("/api/v1/audits/session-p2/finalize")
+        .set("Authorization", `Bearer ${auditorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("COMPLETED");
+      expect(res.body.reportNumber).toMatch(/^AUD-\d{4}-0001$/);
+      expect(res.body.frozenReport).toBeDefined();
+      expect(res.body.counts).toEqual({
+        found: 1,
+        notAccessible: 0,
+        checkAgain: 0,
+        missing: 1,
+        locationMismatch: 0,
+        notLocated: 0,
+      });
+      // Notified Property Officer because missing > 0
+      expect(prisma.notification.createMany).toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /audits/:id/acknowledge", () => {
+    it("rejects non-property-officer roles with 403", async () => {
+      const res = await request(app)
+        .post("/api/v1/audits/session-p2/acknowledge")
+        .set("Authorization", `Bearer ${staffToken}`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it("allows Property Officer to acknowledge a COMPLETED audit", async () => {
+      vi.mocked(prisma.auditSession.findUnique).mockResolvedValueOnce({
+        id: "session-p2",
+        status: "COMPLETED",
+        completedAt: new Date(),
+        runById: "auditor-1",
+        runBy: { id: "auditor-1", fullName: "Auditor User" },
+      } as never);
+      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+        fullName: "Officer Jane",
+      } as never);
+      vi.mocked(prisma.auditSession.update).mockResolvedValueOnce({
+        id: "session-p2",
+        status: "ACKNOWLEDGED",
+        acknowledgedAt: new Date(),
+        acknowledgedById: "officer-1",
+      } as never);
+
+      const res = await request(app)
+        .post("/api/v1/audits/session-p2/acknowledge")
+        .set("Authorization", `Bearer ${propertyOfficerToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("ACKNOWLEDGED");
+      expect(prisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: "auditor-1",
+          }),
+        }),
+      );
+    });
   });
 });

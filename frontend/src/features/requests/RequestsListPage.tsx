@@ -121,6 +121,11 @@ export function RequestsListPage() {
                   <RequestStatusBadge status={request.status} />
                 </div>
               </div>
+              {request.type === "TRANSFER" && (request.newLocationDepartment || request.newLocationBuilding) && (
+                <p className="text-xs font-medium text-brand-700">
+                  Target: {[request.newLocationDepartment, request.newLocationBuilding].filter(Boolean).join(" · ")}
+                </p>
+              )}
               <p className="line-clamp-2 text-sm text-slate-600">{request.reason}</p>
               <p className="text-xs text-slate-400">
                 {request.requestedBy.fullName} · {formatRelativeTime(request.createdAt)}

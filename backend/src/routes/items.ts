@@ -223,7 +223,7 @@ itemsRouter.get(
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
       const skip = (page - 1) * limit;
 
-      const { search, categoryId, orgUnitId, mine } = req.query;
+      const { search, categoryId, orgUnitId, mine, scope } = req.query;
 
       const filters: Prisma.ItemWhereInput = {};
       const conditions: Prisma.ItemWhereInput[] = [];
@@ -285,10 +285,74 @@ itemsRouter.get(
        *
        * Applied as an `AND` term so it composes with the search `OR` above rather
        * than replacing it.
+       *
+       * Scope parameter overrides (for Department Heads and Property Officers):
+       * - "mine": items the user personally holds
+       * - "department": items in the user's department (DEPARTMENT_HEAD only)
+       * - "other": items in other departments (DEPARTMENT_HEAD only)
+       * - "all": all campus items (PROPERTY_OFFICER/AUDITOR only)
+       * If not provided, falls back to role-based default scope.
        */
-      const scope = itemListScope(req.user);
-      if (scope) {
-        conditions.push(scope);
+      let roleScope: Prisma.ItemWhereInput | undefined;
+      const scopeParam = typeof scope === "string" ? scope : undefined;
+
+      if (scopeParam) {
+        // Explicit scope parameter provided - validate and apply
+        if (req.user?.role === "DEPARTMENT_HEAD") {
+          switch (scopeParam) {
+            case "mine":
+              roleScope = { OR: [{ ownerId: req.user!.id }, { holderType: "STAFF", holderId: req.user!.id }] };
+              break;
+            case "department":
+              if (req.user.orgUnitId) {
+                roleScope = {
+                  OR: [
+                    { orgUnitId: req.user.orgUnitId },
+                    { holderType: "DEPARTMENT", holderId: req.user.orgUnitId },
+                    { ownerId: req.user!.id },
+                  ],
+                };
+              } else {
+                roleScope = { ownerId: req.user!.id };
+              }
+              break;
+            case "other":
+              if (req.user.orgUnitId) {
+                roleScope = {
+                  NOT: {
+                    OR: [
+                      { orgUnitId: req.user.orgUnitId },
+                      { holderType: "DEPARTMENT", holderId: req.user.orgUnitId },
+                    ],
+                  },
+                };
+              }
+              break;
+            case "all":
+              roleScope = undefined; // No restriction - see all
+              break;
+            default:
+              // Invalid scope, fall back to role-based default
+              roleScope = itemListScope(req.user);
+          }
+        } else if (req.user?.role === "PROPERTY_OFFICER" || req.user?.role === "AUDITOR") {
+          // Property Officers and Auditors can use "all" scope explicitly
+          if (scopeParam === "all") {
+            roleScope = undefined;
+          } else {
+            roleScope = itemListScope(req.user);
+          }
+        } else {
+          // Other roles ignore scope parameter, use role-based default
+          roleScope = itemListScope(req.user);
+        }
+      } else {
+        // No explicit scope parameter - use role-based default
+        roleScope = itemListScope(req.user);
+      }
+
+      if (roleScope) {
+        conditions.push(roleScope);
       }
 
       if (conditions.length > 0) {

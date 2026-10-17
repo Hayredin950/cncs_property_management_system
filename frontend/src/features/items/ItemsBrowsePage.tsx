@@ -34,8 +34,8 @@ export function ItemsBrowsePage() {
   const search = searchParams.get("search") ?? "";
   const categoryId = searchParams.get("categoryId") ?? "";
   const orgUnitId = searchParams.get("orgUnitId") ?? "";
-  const mine = searchParams.get("mine") === "true";
-  const hasFilters = Boolean(search || categoryId || orgUnitId);
+  const scope = searchParams.get("scope") ?? "";
+  const hasFilters = Boolean(search || categoryId || orgUnitId || scope);
 
   const categoriesQuery = useCategories();
   const departmentsQuery = useDepartments();
@@ -45,7 +45,7 @@ export function ItemsBrowsePage() {
     ...(search ? { search } : {}),
     ...(categoryId ? { categoryId } : {}),
     ...(orgUnitId ? { orgUnitId } : {}),
-    ...(mine ? { mine: true } : {}),
+    ...(scope ? { scope } : {}),
   });
 
   function updateParam(key: string, value: string) {
@@ -80,57 +80,93 @@ export function ItemsBrowsePage() {
     [departmentsQuery.data],
   );
 
+  // Determine scope options based on role
+  const getScopeOptions = () => {
+    if (user?.role === "DEPARTMENT_HEAD") {
+      return [
+        { value: "mine", label: "My items" },
+        { value: "department", label: "My department" },
+        { value: "other", label: "Other departments" },
+      ];
+    }
+    if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
+      return [
+        { value: "all", label: "All campus" },
+        { value: "mine", label: "My items" },
+      ];
+    }
+    // STAFF only sees "My items" (no dropdown needed, just pass mine=true)
+    return [];
+  };
+
+  const scopeOptions = getScopeOptions();
+  const currentScope = scopeOptions.find((o) => o.value === scope)?.value ?? (scope || "");
+  const showScopeDropdown = scopeOptions.length > 0;
+
+  // Determine heading and description based on scope
+  const getHeading = () => {
+    if (user?.role === "DEPARTMENT_HEAD") {
+      switch (scope) {
+        case "mine":
+          return "My items";
+        case "department":
+          return "My department";
+        case "other":
+          return "Other departments";
+        default:
+          return "My department";
+      }
+    }
+    if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
+      return scope === "mine" ? "My items" : "Browse items";
+    }
+    if (user?.role === "STAFF") {
+      return "My items";
+    }
+    return "Browse items";
+  };
+
+  const getDescription = () => {
+    if (user?.role === "DEPARTMENT_HEAD") {
+      switch (scope) {
+        case "mine":
+          return "The items currently in your custody. Search by name, tag ID, or category.";
+        case "department":
+          return "All items in your department. Search by name, tag ID, or category.";
+        case "other":
+          return "Items from other departments for transfer requests. Limited view: name, category, building, status.";
+        default:
+          return "All items in your department. Search by name, tag ID, or category.";
+      }
+    }
+    if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
+      return scope === "mine"
+        ? "The items currently in your custody. Search by name, tag ID, or category."
+        : "Search the active inventory by name, tag ID, category, or department.";
+    }
+    if (user?.role === "STAFF") {
+      return "The items currently in your custody. Search by name, tag ID, or category.";
+    }
+    return "Search the active inventory by name, tag ID, category, or department.";
+  };
+
   return (
     <div className="flex flex-col gap-6">
-      {/*
-        One URL, two honest readings.
-
-        `/items` is reachable by every role — the header links it as "All items"
-        and the QR scanner lands here — but the server scopes it, so a Staff
-        member browsing `/items` sees only their own holdings. The page used to
-        say "Browse items · search the active inventory" regardless, and its empty
-        state said "No items registered yet" — which told a Staff member that the
-        register was empty while the same URL with `?mine=true` (or the
-        department's own list) showed items. The data was never wrong; the copy
-        was, and it read as a bug in the data.
-
-        So the heading states the scope the server actually applied. Nothing about
-        the request changes — the server has always scoped it; only the words do.
-      */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">
-          {mine
-            ? "My items"
-            : isScoped && user?.role === "DEPARTMENT_HEAD"
-              ? "Department items"
-              : isScoped
-                ? "My items"
-                : "Browse items"}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {mine
-            ? "The items currently in your custody. Search by name, tag ID, or category."
-            : isScoped && user?.role === "DEPARTMENT_HEAD"
-              ? "All items in your department. Search by name, tag ID, or category."
-              : isScoped
-                ? "The items currently in your custody. Search by name, tag ID, or category."
-                : "Search the active inventory by name, tag ID, category, or department."}
-        </p>
+        <h1 className="text-2xl font-bold text-slate-900">{getHeading()}</h1>
+        <p className="mt-1 text-sm text-slate-500">{getDescription()}</p>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <SearchBar value={search} onChange={(value) => updateParam("search", value)} className="sm:flex-1" />
-        {/* All/Mine toggle for Department Head */}
-        {user?.role === "DEPARTMENT_HEAD" && (
+        {/* Unified scope dropdown */}
+        {showScopeDropdown && (
           <Select
             label="Scope"
-            options={[
-              { value: "all", label: "Department items" },
-              { value: "mine", label: "My items" },
-            ]}
-            value={mine ? "mine" : "all"}
-            onChange={(event) => updateParam("mine", event.target.value === "mine" ? "true" : "")}
-            className="sm:w-48"
+            options={scopeOptions}
+            value={currentScope}
+            onChange={(event) => updateParam("scope", event.target.value)}
+            className="sm:w-56"
           />
         )}
         <Select
@@ -209,7 +245,7 @@ export function ItemsBrowsePage() {
         <>
           <div
             className={[
-              "grid grid-cols-1 gap-4 transition-opacity sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+              "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
               itemsQuery.isFetching ? "opacity-60" : "",
             ].join(" ")}
           >

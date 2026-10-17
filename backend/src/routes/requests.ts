@@ -189,9 +189,23 @@ const REQUEST_DETAIL_SELECT = {
       floor: true,
       room: true,
       parentItemId: true,
+      holderType: true,
+      holderId: true,
     },
   },
   reviewedBy: { select: { id: true, fullName: true, email: true } },
+  stage1ApprovedBy: { select: { id: true, fullName: true, email: true } },
+  stage2ApprovedBy: { select: { id: true, fullName: true, email: true } },
+  withdrawnBy: { select: { id: true, fullName: true, email: true } },
+  fromHolderType: true,
+  fromHolderId: true,
+  toHolderType: true,
+  toHolderId: true,
+  stage1ApprovedAt: true,
+  stage2ApprovedAt: true,
+  withdrawnAt: true,
+  invalidatedAt: true,
+  invalidatedReason: true,
 } as const;
 
 /*

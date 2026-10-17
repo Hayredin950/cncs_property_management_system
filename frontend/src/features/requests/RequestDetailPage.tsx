@@ -105,12 +105,98 @@ export function RequestDetailPage() {
           <Detail label="Filed">
             <span title={formatDateTimeUTC(request.createdAt) ?? undefined}>{formatRelativeTime(request.createdAt)}</span>
           </Detail>
+
+          {/* Stage indicator for transfers */}
+          {request.type === "TRANSFER" && (
+            <>
+              {request.status === "PENDING_STAGE1" && (
+                <Detail label="Stage">
+                  <span className="text-brand-600 font-medium">Stage 1 - Releasing head approval</span>
+                </Detail>
+              )}
+              {request.status === "PENDING_STAGE2" && (
+                <Detail label="Stage">
+                  <span className="text-brand-600 font-medium">Stage 2 - Receiving head approval</span>
+                </Detail>
+              )}
+            </>
+          )}
+
+          {/* From/To holder */}
+          {(request.fromHolderType || request.toHolderType) && (
+            <Detail label="Custody change">
+              <div className="text-sm">
+                {request.fromHolderType && (
+                  <span className="text-slate-600">
+                    From: {request.fromHolderType === "USER" ? "Individual" : request.fromHolderType}
+                    {request.fromHolderId && ` (${request.fromHolderId.slice(0, 8)}...)`}
+                  </span>
+                )}
+                {request.fromHolderType && request.toHolderType && <span className="mx-2">→</span>}
+                {request.toHolderType && (
+                  <span className="text-slate-600">
+                    To: {request.toHolderType === "USER" ? "Individual" : request.toHolderType}
+                    {request.toHolderId && ` (${request.toHolderId.slice(0, 8)}...)`}
+                  </span>
+                )}
+              </div>
+            </Detail>
+          )}
+
+          {/* Approval timeline */}
+          {request.reviewedBy && (
+            <Detail label="Reviewed by">
+              {request.reviewedBy.fullName} ({request.reviewedBy.email})
+            </Detail>
+          )}
+          {request.stage1ApprovedBy && (
+            <Detail label="Stage 1 approved by">
+              {request.stage1ApprovedBy.fullName}
+              {request.stage1ApprovedAt && (
+                <span className="ml-2 text-xs text-slate-500">
+                  ({formatRelativeTime(request.stage1ApprovedAt)})
+                </span>
+              )}
+            </Detail>
+          )}
+          {request.stage2ApprovedBy && (
+            <Detail label="Stage 2 approved by">
+              {request.stage2ApprovedBy.fullName}
+              {request.stage2ApprovedAt && (
+                <span className="ml-2 text-xs text-slate-500">
+                  ({formatRelativeTime(request.stage2ApprovedAt)})
+                </span>
+              )}
+            </Detail>
+          )}
           {request.decidedAt && (
             <Detail label="Decided">
               <span title={formatDateTimeUTC(request.decidedAt) ?? undefined}>{formatRelativeTime(request.decidedAt)}</span>
             </Detail>
           )}
-          {request.reviewedBy && <Detail label="Reviewed by">{request.reviewedBy.fullName}</Detail>}
+
+          {/* Withdrawal info */}
+          {request.withdrawnBy && (
+            <Detail label="Withdrawn by">
+              {request.withdrawnBy.fullName}
+              {request.withdrawnAt && (
+                <span className="ml-2 text-xs text-slate-500">
+                  ({formatRelativeTime(request.withdrawnAt)})
+                </span>
+              )}
+            </Detail>
+          )}
+
+          {/* Invalidation info */}
+          {request.invalidatedAt && (
+            <Detail label="Invalidated">
+              <span className="text-danger-600">
+                {formatRelativeTime(request.invalidatedAt)}
+                {request.invalidatedReason && ` - ${request.invalidatedReason}`}
+              </span>
+            </Detail>
+          )}
+
           {(request.newLocationBuilding || request.newLocationFloor || request.newLocationRoom) && (
             <Detail label="Proposed location">
               {[request.newLocationBuilding, request.newLocationFloor, request.newLocationRoom].filter(Boolean).join(" · ")}

@@ -518,8 +518,22 @@ export const REQUEST_DETAIL_FIXTURE: RequestDetail = {
     floor: "Floor 2",
     room: "Room 204",
     parentItemId: null,
+    holderType: "USER",
+    holderId: "user-123",
   },
   reviewedBy: null,
+  stage1ApprovedBy: null,
+  stage2ApprovedBy: null,
+  withdrawnBy: null,
+  fromHolderType: null,
+  fromHolderId: null,
+  toHolderType: null,
+  toHolderId: null,
+  stage1ApprovedAt: null,
+  stage2ApprovedAt: null,
+  withdrawnAt: null,
+  invalidatedAt: null,
+  invalidatedReason: null,
 };
 
 /** `GET /system/status` — the build facts the System Admin's dashboard shows. */

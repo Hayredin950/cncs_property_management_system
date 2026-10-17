@@ -49,11 +49,31 @@ export interface RequestDetailItem extends RequestItemSummary {
   floor: string;
   room: string;
   parentItemId: string | null;
+  holderType: string | null;
+  holderId: string | null;
+}
+
+export interface RequestUserSummary {
+  id: string;
+  fullName: string;
+  email: string;
 }
 
 export interface RequestDetail extends Omit<RequestSummary, "item"> {
   item: RequestDetailItem;
   reviewedBy: RequestUserSummary | null;
+  stage1ApprovedBy: RequestUserSummary | null;
+  stage2ApprovedBy: RequestUserSummary | null;
+  withdrawnBy: RequestUserSummary | null;
+  fromHolderType: string | null;
+  fromHolderId: string | null;
+  toHolderType: string | null;
+  toHolderId: string | null;
+  stage1ApprovedAt: string | null;
+  stage2ApprovedAt: string | null;
+  withdrawnAt: string | null;
+  invalidatedAt: string | null;
+  invalidatedReason: string | null;
 }
 
 /**

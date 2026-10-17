@@ -526,6 +526,7 @@ itemsRouter.get(
         where: UUID_PATTERN.test(tagId) ? { id: tagId } : { tagId },
         include: {
           category: true,
+          buildingRef: true,
           accessories: true,
           owner: {
             select: { id: true, fullName: true, email: true },
@@ -546,8 +547,16 @@ itemsRouter.get(
        *
        * Answered as 404, not 403: a 403 would confirm that the tag exists and turn
        * this route into an oracle for guessing tag ids (ground rule 3).
+       *
+       * Exception: Department Heads may view items from other departments (for
+       * transfer identification per catalog spec §9.1), but the response will
+       * contain only restricted fields (name, category, building, status).
        */
-      if (!itemInScope(req.user, item as unknown as Parameters<typeof itemInScope>[1])) {
+      const isCrossDeptView = req.user?.role === "DEPARTMENT_HEAD" &&
+        item.orgUnitId !== req.user.orgUnitId &&
+        item.holderType !== "DEPARTMENT"; // Exclude department-held items from other depts
+
+      if (!itemInScope(req.user, item as unknown as Parameters<typeof itemInScope>[1]) && !isCrossDeptView) {
         res.status(404).json({ error: "Item not found" });
         return;
       }
@@ -569,6 +578,21 @@ itemsRouter.get(
        */
       if (item.status === "DISPOSED" && !isAuthenticatedViewer(req.user)) {
         res.status(410).json({ error: DISPOSED_PUBLIC_MESSAGE });
+        return;
+      }
+
+      // For cross-department views by Department Heads, return only restricted fields per §9.1
+      if (isCrossDeptView) {
+        const restrictedItem = {
+          id: item.id,
+          tagId: item.tagId,
+          name: item.name,
+          category: item.category,
+          buildingRef: item.buildingRef ? { id: item.buildingRef.id, name: item.buildingRef.name } : null,
+          status: item.status,
+          orgUnitId: item.orgUnitId,
+        };
+        res.status(200).json(restrictedItem);
         return;
       }
 

@@ -364,13 +364,27 @@ describe("GET /items/:tagId", () => {
     // A head from another unit is out of scope for this item too. The item sits in
     // `org-unit-bio`, so this head is from Chemistry — using the item's own unit
     // here would be asserting that head *can* read it.
+    // Department Heads CAN now view cross-department items (with restricted fields per §9.1)
     const otherHead = await request(app)
       .get("/items/CNCS-DEMO-0001")
       .set(
         "Authorization",
         `Bearer ${createToken({ id: "head-chem", role: "DEPARTMENT_HEAD", orgUnitId: "org-unit-chem" })}`,
       );
-    expect(otherHead.status).toBe(404);
+    expect(otherHead.status).toBe(200);
+    // Verify restricted fields only for cross-department view
+    expect(otherHead.body).toHaveProperty("id");
+    expect(otherHead.body).toHaveProperty("tagId");
+    expect(otherHead.body).toHaveProperty("name");
+    expect(otherHead.body).toHaveProperty("category");
+    expect(otherHead.body).toHaveProperty("buildingRef");
+    expect(otherHead.body).toHaveProperty("status");
+    expect(otherHead.body).toHaveProperty("orgUnitId");
+    // Should NOT have full detail fields
+    expect(otherHead.body).not.toHaveProperty("floor");
+    expect(otherHead.body).not.toHaveProperty("room");
+    expect(otherHead.body).not.toHaveProperty("ownerId");
+    expect(otherHead.body).not.toHaveProperty("purchaseCost");
   });
 
   it("still serves a row the caller holds, and every row to an officer", async () => {

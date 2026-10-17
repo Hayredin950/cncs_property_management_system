@@ -39,6 +39,7 @@ interface ItemCustody {
   holderType?: string | null;
   holderId?: string | null;
   departmentId?: string | null;
+  orgUnitId?: string | null;
 }
 
 const RESTRICTED_FIELDS = new Set([
@@ -90,12 +91,12 @@ function isCustodian(user: RequestingUser, item: ItemCustody): boolean {
 }
 
 /**
- * True when the viewer may see every field of this item.
- *
- * Written per-item rather than per-role alone because a DEPARTMENT_HEAD's access
- * depends on the item, not just on who they are — that is the scoping rule from
- * spec 2.3.3 ("an item's department is derived from its holder").
- */
+   * True when the viewer may see every field of this item.
+   *
+   * Written per-item rather than per-role alone because a DEPARTMENT_HEAD's access
+   * depends on the item, not just on who they are — that is the scoping rule from
+   * spec 2.3.3 ("an item's department is derived from its holder").
+   */
 export function seesFullItemDetail(
   user: RequestingUser | null | undefined,
   item: ItemCustody = {},
@@ -105,11 +106,12 @@ export function seesFullItemDetail(
   if (isCustodian(user, item)) return true;
 
   // A department head sees their department's holdings. The item's department
-  // comes from the holder; both the stored `departmentId` and a
-  // DEPARTMENT-held `holderId` are checked, because the holder fields are new
+  // comes from the holder; both the stored `orgUnitId` (current schema) and
+  // `departmentId` (legacy/alias) are checked, because the holder fields are new
   // and the column link is what older rows populate.
   if (user.role === "DEPARTMENT_HEAD" && user.departmentId) {
-    if (item.departmentId === user.departmentId) return true;
+    const itemDeptId = item.orgUnitId ?? item.departmentId;
+    if (itemDeptId === user.departmentId) return true;
     if (item.holderType === "DEPARTMENT" && item.holderId === user.departmentId) return true;
   }
 

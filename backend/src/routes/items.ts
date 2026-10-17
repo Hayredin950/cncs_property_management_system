@@ -1235,6 +1235,35 @@ itemsRouter.post(
           reason: parsed.data.reason === "OTHER" ? (parsed.data.otherReason ?? null) : parsed.data.reason,
         });
 
+        // §2: Notify both department heads when a claim is refused
+        if (item.orgUnitId) {
+          const unit = await tx.orgUnit.findUnique({
+            where: { id: item.orgUnitId },
+            select: { headId: true },
+          });
+          if (unit?.headId) {
+            await tx.notification.create({
+              data: {
+                userId: unit.headId,
+                message: `[CLAIM_REFUSED] Item ${id} claim refused: ${parsed.data.reason === "OTHER" ? parsed.data.otherReason : parsed.data.reason}`,
+              },
+            });
+          }
+        }
+        // Notify PROPERTY_OFFICER
+        const propertyOfficer = await tx.user.findFirst({
+          where: { role: "PROPERTY_OFFICER", accountStatus: "ACTIVE" },
+          select: { id: true },
+        });
+        if (propertyOfficer) {
+          await tx.notification.create({
+            data: {
+              userId: propertyOfficer.id,
+              message: `[CLAIM_REFUSED] Item ${id} claim refused from ${item.orgUnitId || "unknown"}: ${parsed.data.reason === "OTHER" ? parsed.data.otherReason : parsed.data.reason}`,
+            },
+          });
+        }
+
         return tx.item.findUnique({ where: { id }, include: { category: true } });
       }, { maxWait: 5000, timeout: 15000 });
 
@@ -1352,3 +1381,124 @@ itemsRouter.post(
 );
 
 
+
+/**
+ * POST /items/:id/verify-confirm — confirm a REVERTED_UNVERIFIED item (§5.3)
+ * Department head confirms item is accurately recorded
+ */
+itemsRouter.post(
+  "/:id/verify-confirm",
+  authenticate,
+  requireCapability("ITEM_EDIT_CUSTODY"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Item ID is required" });
+        return;
+      }
+      const item = await prisma.item.findUnique({
+        where: { id },
+        select: { status: true, orgUnitId: true },
+      });
+      if (!item) {
+        res.status(404).json({ error: "Item not found" });
+        return;
+      }
+      if (item.status !== "REVERTED_UNVERIFIED") {
+        res.status(409).json({ error: "Item is not in REVERTED_UNVERIFIED status" });
+        return;
+      }
+      if (item.orgUnitId !== req.user!.orgUnitId) {
+        res.status(403).json({ error: "You can only verify items in your department" });
+        return;
+      }
+      const updatedItem = await prisma.$transaction(async (tx) => {
+        await tx.item.update({
+          where: { id },
+          data: {
+            status: "ACTIVE",
+            lastVerifiedAt: new Date(),
+            lastVerifiedById: req.user!.id,
+          },
+        });
+        await recordCustodyEvent(tx, {
+          itemId: id,
+          from: { holderType: "DEPARTMENT", holderId: item.orgUnitId },
+          to: { holderType: "DEPARTMENT", holderId: item.orgUnitId },
+          eventType: "VERIFIED",
+          actingUserId: req.user!.id,
+          reason: "Handover verification confirmed",
+        });
+        return tx.item.findUnique({ where: { id }, include: { category: true } });
+      }, { maxWait: 5000, timeout: 15000 });
+      res.status(200).json(updatedItem);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /items/:id/verify-flag — flag a REVERTED_UNVERIFIED item (§5.3)
+ * Department head flags item as having issues (missing, wrong condition, wrong location)
+ */
+itemsRouter.post(
+  "/:id/verify-flag",
+  authenticate,
+  requireCapability("ITEM_EDIT_CUSTODY"),
+  validateBody(z.object({ reason: z.string().min(5).max(500) })),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Item ID is required" });
+        return;
+      }
+      const body = validatedBody<{ reason: string }>(req);
+      const item = await prisma.item.findUnique({
+        where: { id },
+        select: { status: true, orgUnitId: true },
+      });
+      if (!item) {
+        res.status(404).json({ error: "Item not found" });
+        return;
+      }
+      if (item.status !== "REVERTED_UNVERIFIED") {
+        res.status(409).json({ error: "Item is not in REVERTED_UNVERIFIED status" });
+        return;
+      }
+      if (item.orgUnitId !== req.user!.orgUnitId) {
+        res.status(403).json({ error: "You can only verify items in your department" });
+        return;
+      }
+      await prisma.$transaction(async (tx) => {
+        await tx.itemEditLog.create({
+          data: {
+            itemId: id,
+            editedById: req.user!.id,
+            fieldChanged: "verification",
+            oldValue: "REVERTED_UNVERIFIED",
+            newValue: "FLAGGED",
+            editedAt: new Date(),
+          },
+        });
+        const propertyOfficer = await tx.user.findFirst({
+          where: { role: "PROPERTY_OFFICER", accountStatus: "ACTIVE" },
+          select: { id: true },
+        });
+        if (propertyOfficer) {
+          await tx.notification.create({
+            data: {
+              userId: propertyOfficer.id,
+              message: `[HANDOVER_FLAG] Item ${id} flagged during verification: ${body.reason}`,
+            },
+          });
+        }
+      }, { maxWait: 5000, timeout: 15000 });
+      res.status(200).json({ message: "Item flagged for review" });
+    } catch (err) {
+      next(err);
+    }
+  }
+);

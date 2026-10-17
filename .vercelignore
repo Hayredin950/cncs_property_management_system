@@ -3,8 +3,8 @@ node_modules
 mobile/
 backend/node_modules
 frontend/node_modules
-**/dist
-**/.next
+frontend/dist
+frontend/.next
 **/coverage
 *.log
 .env

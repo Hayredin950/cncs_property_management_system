@@ -41,12 +41,14 @@ export type CustodyEventTypeValue =
   | "CREATED"
   | "TRANSFERRED"
   | "DISPOSED"
+  | "DISPOSAL_REVERSED"
   | "LOCATION_CHANGED"
   | "CLAIMED"
   | "CLAIMED_WITH_CORRECTION"
   | "CLAIM_REFUSED"
   | "CLAIM_EXPIRED"
   | "REVERTED"
+  | "VERIFIED"
   | "VOIDED";
 
 /** A holder as a pair. `COLLEGE` is the one type that has no id. */

@@ -1166,3 +1166,82 @@ usersRouter.delete(
     }
   }
 );
+
+/**
+ * POST /org-units/:id/activate-head — activate new department head (§5.2)
+ * Sets new head, marks department items as REVERTED_UNVERIFIED, reassigns pending approvals
+ */
+usersRouter.post(
+  "/org-units/:id/activate-head",
+  authenticate,
+  requireCapability("ACCOUNT_MANAGE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "OrgUnit ID is required" });
+        return;
+      }
+      const { newHeadId } = req.body as { newHeadId: string };
+      if (!newHeadId) {
+        res.status(400).json({ error: "newHeadId is required" });
+        return;
+      }
+      const newHead = await prisma.user.findUnique({
+        where: { id: newHeadId },
+        select: { id: true, role: true, accountStatus: true },
+      });
+      if (!newHead) {
+        res.status(404).json({ error: "New head not found" });
+        return;
+      }
+      if (newHead.role !== "DEPARTMENT_HEAD") {
+        res.status(400).json({ error: "New head must be a DEPARTMENT_HEAD" });
+        return;
+      }
+      if (newHead.accountStatus !== "ACTIVE") {
+        res.status(400).json({ error: "New head must be ACTIVE" });
+        return;
+      }
+      const result = await prisma.$transaction(async (tx) => {
+        // Set new head
+        await tx.orgUnit.update({
+          where: { id },
+          data: { headId: newHeadId },
+        });
+        // Mark department-held items as REVERTED_UNVERIFIED
+        await tx.item.updateMany({
+          where: {
+            orgUnitId: id,
+            holderType: "DEPARTMENT",
+            status: { not: "REVERTED_UNVERIFIED" },
+          },
+          data: {
+            status: "REVERTED_UNVERIFIED",
+          },
+        });
+        // Reassign pending approvals to new head
+        const oldHead = await tx.orgUnit.findUnique({
+          where: { id },
+          select: { headId: true },
+        });
+        if (oldHead?.headId) {
+          await tx.request.updateMany({
+            where: {
+              reviewedById: oldHead.headId,
+              status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"] },
+            },
+            data: {
+              reviewedById: newHeadId,
+              reviewNote: "[REASSIGNED] Head changed on handover",
+            },
+          });
+        }
+        return { success: true };
+      }, { maxWait: 5000, timeout: 15000 });
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);

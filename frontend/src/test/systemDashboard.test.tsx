@@ -128,7 +128,7 @@ describe("the System Admin's system tiles", () => {
     const main = await screen.findByRole("main");
     expect(await within(main).findByText("System status")).toBeInTheDocument();
     expect(await within(main).findByText("production")).toBeInTheDocument();
-    expect(within(main).getByText("4321")).toBeInTheDocument();
+    expect(within(main).getByText("1h 12m")).toBeInTheDocument();
 
     // The path itself is under test: `/admin/system/status` is not mounted, and
     // the old "Unknown"-on-404 fallback hid exactly that mistake.

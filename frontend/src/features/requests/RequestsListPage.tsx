@@ -13,10 +13,13 @@ import { formatRelativeTime } from "../../lib/formatters";
 import { NetworkError } from "../../types/api";
 import { REQUEST_STATUSES, REQUEST_STATUS_LABELS, type RequestStatus } from "../../types/enums";
 
-const STATUS_OPTIONS = REQUEST_STATUSES.map((status) => ({
-  value: status,
-  label: REQUEST_STATUS_LABELS[status],
-}));
+const STATUS_OPTIONS = [
+  { value: "ALL", label: "All statuses" },
+  ...REQUEST_STATUSES.map((status) => ({
+    value: status,
+    label: REQUEST_STATUS_LABELS[status],
+  })),
+];
 
 /**
  * `/requests` — Shell B/C (SRS F6/F7, frontend-design-system.md
@@ -38,17 +41,20 @@ export function RequestsListPage() {
   const canDecide = canDecideRequests(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const rawStatus = searchParams.get("status") ?? "PENDING";
-  const status = REQUEST_STATUSES.includes(rawStatus as RequestStatus)
-    ? (rawStatus as RequestStatus)
-    : "PENDING";
+  const rawStatus = searchParams.get("status") ?? "ALL";
+  const status =
+    rawStatus === "ALL"
+      ? undefined
+      : REQUEST_STATUSES.includes(rawStatus as RequestStatus)
+        ? (rawStatus as RequestStatus)
+        : undefined;
 
   const requestsQuery = useRequests({ ...(status ? { status } : {}), limit: 20 });
 
   function updateStatus(value: string) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      if (value) next.set("status", value);
+      if (value && value !== "ALL") next.set("status", value);
       else next.delete("status");
       return next;
     });
@@ -61,18 +67,32 @@ export function RequestsListPage() {
           <h1 className="text-2xl font-bold text-slate-900">Requests</h1>
           <p className="mt-1 text-sm text-slate-500">
             {canDecide
-              ? "Transfer and disposal requests awaiting review."
-              : "Transfers and disposals you've filed."}
+              ? "All transfer, disposal and loan requests."
+              : "Transfers, disposals and loans you've filed."}
           </p>
         </div>
-        <Select
-          label="Status"
-          options={STATUS_OPTIONS}
-          placeholder="All statuses"
-          value={status ?? ""}
-          onChange={(event) => updateStatus(event.target.value)}
-          className="sm:w-48"
-        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          {canDecide && (
+            <button
+              onClick={() => updateStatus("PENDING")}
+              className={`text-sm font-medium transition-colors ${
+                status === "PENDING"
+                  ? "text-brand-600"
+                  : "text-slate-600 hover:text-brand-600"
+              }`}
+            >
+              Pending review
+            </button>
+          )}
+          <Select
+            label="Status"
+            options={STATUS_OPTIONS}
+            placeholder="All statuses"
+            value={rawStatus ?? "ALL"}
+            onChange={(event) => updateStatus(event.target.value)}
+            className="sm:w-48"
+          />
+        </div>
       </div>
 
       {requestsQuery.isPending ? (

@@ -47,6 +47,47 @@ async function main() {
   );
   const byName = Object.fromEntries(categories.map((c) => [c.name, c]));
 
+  console.log("Seeding Buildings...");
+  const cncsBuilding = await prisma.building.upsert({
+    where: { code: "CNCS" },
+    update: {},
+    create: {
+      name: "CNCS Building",
+      code: "CNCS",
+      description: "Main CNCS Building",
+    },
+  });
+
+  const scienceBuilding = await prisma.building.upsert({
+    where: { code: "SCIENCE" },
+    update: {},
+    create: {
+      name: "Science Complex",
+      code: "SCIENCE",
+      description: "Science Complex Building",
+    },
+  });
+
+  const chemBuilding = await prisma.building.upsert({
+    where: { code: "CHEM" },
+    update: {},
+    create: {
+      name: "Chemistry Building",
+      code: "CHEM",
+      description: "Chemistry Building",
+    },
+  });
+
+  const physBuilding = await prisma.building.upsert({
+    where: { code: "PHYS" },
+    update: {},
+    create: {
+      name: "Physics Building",
+      code: "PHYS",
+      description: "Physics Building",
+    },
+  });
+
   console.log("Seeding OrgUnits (College + Departments)...");
   // College
   const college = await prisma.orgUnit.upsert({
@@ -289,7 +330,7 @@ async function main() {
       name: "Dell Latitude Laptop",
       categoryId: byName["Electronics"].id,
       orgUnitId: csDept.id,
-      building: "CNCS Building",
+      buildingId: cncsBuilding.id,
       floor: "3",
       room: "312",
       ownerId: csStaff1.id,
@@ -304,7 +345,7 @@ async function main() {
       name: "Office Desk",
       categoryId: byName["Furniture"].id,
       orgUnitId: csDept.id,
-      building: "CNCS Building",
+      buildingId: cncsBuilding.id,
       floor: "1",
       room: "101",
       ownerId: csHead.id,
@@ -318,7 +359,7 @@ async function main() {
       name: "Microscope",
       categoryId: byName["Lab Equipment"].id,
       orgUnitId: bioDept.id,
-      building: "Science Complex",
+      buildingId: scienceBuilding.id,
       floor: "2",
       room: "204",
       ownerId: bioStaff1.id,
@@ -334,7 +375,7 @@ async function main() {
       name: "Dell 65W Charger",
       categoryId: byName["Electronics"].id,
       orgUnitId: chemDept.id,
-      building: "Chemistry Building",
+      buildingId: chemBuilding.id,
       floor: "1",
       room: "101",
       ownerId: chemStaff1.id,
@@ -350,7 +391,7 @@ async function main() {
       name: "Physics Lab Equipment",
       categoryId: byName["Lab Equipment"].id,
       orgUnitId: physDept.id,
-      building: "Physics Building",
+      buildingId: physBuilding.id,
       floor: "1",
       room: "101",
       ownerId: physDept.id, // Department-held

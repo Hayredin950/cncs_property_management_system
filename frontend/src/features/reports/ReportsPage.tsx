@@ -1,6 +1,6 @@
 import { Download, FileBarChart, FileText, MonitorCheck, ScanLine, Package } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Input } from "../../components/Input";
@@ -8,6 +8,7 @@ import { Select } from "../../components/Select";
 import { downloadDisposalsReport, downloadInventoryReport, downloadAuditReport, downloadAuditEvidencePack, saveReport } from "../../api/reports";
 import { useCategories } from "../../hooks/useCategories";
 import { useDepartments } from "../../hooks/useDepartments";
+import { useAuditsList } from "../../hooks/useAudits";
 import { toast } from "../../lib/toast";
 import { ITEM_STATUSES, ITEM_STATUS_LABELS } from "../../types/enums";
 import type { ItemStatus } from "../../types/enums";
@@ -18,34 +19,14 @@ import type {
   ReportFormat,
 } from "../../types/report";
 
-/**
- * `/reports` (F10.1, F10.3) — the three exports, each in CSV or PDF with exactly
- * the filters its endpoint supports:
- *
- * - **Inventory**: department, category, status, date range (registered).
- * - **Disposals**: department, date range (decided).
- * - **Audit**: the session id — one row per recorded scan/classification.
- *
- * Two rules this page exists to honour:
- *
- * 1. **Downloads go through `apiClient.blob()`** (see `api/reports.ts`), because
- *    the endpoints are behind `authenticate` — a plain `<a href>` would save a
- *    401 body under a `.csv` name.
- * 2. **Dates are UTC and `dateTo` includes the whole UTC day.** The inputs are
- *    labelled UTC for that reason; the server rejects a start-after-end range, so
- *    this page checks it first and says why rather than surfacing a raw 400.
- *
- * PDF is offered beside CSV on every card. The two buttons share the same filters
- * and differ only in `format`, so there is one code path and nothing to keep in
- * step.
- */
 export function ReportsPage() {
-  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const categoriesQuery = useCategories();
   const departmentsQuery = useDepartments();
+  const auditsQuery = useAuditsList({ page: 1 });
 
-  // One piece of state for whichever button is currently fetching — at most one
-  // report downloads at a time, and the key drives that button's spinner.
+  const activeTab = searchParams.get("tab") || "inventory";
+
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +43,74 @@ export function ReportsPage() {
 
   const departmentOptions = (departmentsQuery.data ?? []).map((d) => ({ value: d.name, label: d.name }));
   const categoryOptions = (categoriesQuery.data ?? []).map((c) => ({ value: c.id, label: c.name }));
+  const auditOptions = (auditsQuery.data?.audits ?? []).map((a) => ({
+    value: a.id,
+    label: `${a.scopeValue || a.scopeType} (${a.id.slice(0, 8)}...)`,
+  }));
+
+  const datePresets = [
+    { value: "", label: "Custom" },
+    { value: "today", label: "Today" },
+    { value: "this-week", label: "This week" },
+    { value: "this-month", label: "This month" },
+    { value: "last-30-days", label: "Last 30 days" },
+    { value: "this-year", label: "This year" },
+  ];
+
+  function setTab(tab: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", tab);
+      return next;
+    });
+  }
+
+  function applyDatePreset(preset: string, target: "inventory" | "disposals" | "evidence") {
+    const now = new Date();
+    let dateFrom = "";
+    let dateTo = "";
+
+    if (preset === "today") {
+      const fromStr = now.toISOString().split("T")[0];
+      if (fromStr) dateFrom = fromStr;
+      const toStr = now.toISOString().split("T")[0];
+      if (toStr) dateTo = toStr;
+    } else if (preset === "this-week") {
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+      const from = new Date(now.setDate(diff));
+      const fromStr = from.toISOString().split("T")[0];
+      if (fromStr) dateFrom = fromStr;
+      const to = new Date(from);
+      to.setDate(to.getDate() + 6);
+      const toStr = to.toISOString().split("T")[0];
+      if (toStr) dateTo = toStr;
+    } else if (preset === "this-month") {
+      const fromStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+      if (fromStr) dateFrom = fromStr;
+      const toStr = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+      if (toStr) dateTo = toStr;
+    } else if (preset === "last-30-days") {
+      const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const fromStr = from.toISOString().split("T")[0];
+      if (fromStr) dateFrom = fromStr;
+      const toStr = now.toISOString().split("T")[0];
+      if (toStr) dateTo = toStr;
+    } else if (preset === "this-year") {
+      const fromStr = new Date(now.getFullYear(), 0, 1).toISOString().split("T")[0];
+      if (fromStr) dateFrom = fromStr;
+      const toStr = new Date(now.getFullYear(), 11, 31).toISOString().split("T")[0];
+      if (toStr) dateTo = toStr;
+    }
+
+    if (target === "inventory") {
+      setInventory({ ...inventory, dateFrom, dateTo });
+    } else if (target === "disposals") {
+      setDisposals({ ...disposals, dateFrom, dateTo });
+    } else if (target === "evidence") {
+      setEvidencePack({ ...evidencePack, dateFrom, dateTo });
+    }
+  }
 
   async function run(key: string, fetcher: () => Promise<ReportDownload>) {
     setError(null);
@@ -78,7 +127,6 @@ export function ReportsPage() {
     }
   }
 
-  /** Mirrors the server's `superRefine` so a bad range never reaches the API. */
   function rangeError(from: string, to: string): string | null {
     if (from && to && from > to) return "The start date must be on or before the end date.";
     return null;
@@ -143,44 +191,92 @@ export function ReportsPage() {
         </p>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-slate-200">
+        <button
+          onClick={() => setTab("inventory")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "inventory"
+              ? "border-brand-600 text-brand-600"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          Inventory
+        </button>
+        <button
+          onClick={() => setTab("disposals")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "disposals"
+              ? "border-brand-600 text-brand-600"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          Disposals
+        </button>
+        <button
+          onClick={() => setTab("audit")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "audit"
+              ? "border-brand-600 text-brand-600"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          Audit session
+        </button>
+        <button
+          onClick={() => setTab("evidence")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "evidence"
+              ? "border-brand-600 text-brand-600"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          Evidence pack
+        </button>
+      </div>
+
       {error && (
         <p role="alert" className="rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-700">
           {error}
         </p>
       )}
 
-      {/* Each export is its own named region: two of them filter by "Department",
-          so without a region name a screen-reader user hears the same combo-box
-          label twice with no way to tell which report it belongs to. */}
-      <Card role="region" aria-label="Inventory" className="flex flex-col gap-4">
-        <SectionHeading icon={<MonitorCheck className="h-4 w-4" aria-hidden="true" />} title="Inventory" />
-        <p className="text-sm text-slate-600">
-          One row per item — location, owner, value and condition. Disposed items are included (F7.2).
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Select
-            label="Department"
-            value={inventory.department}
-            onChange={(event) => setInventory({ ...inventory, department: event.target.value })}
-            options={departmentOptions}
-            placeholder="All departments"
-            hint="Departments come from items already registered."
-          />
-          <Select
-            label="Category"
-            value={inventory.categoryId}
-            onChange={(event) => setInventory({ ...inventory, categoryId: event.target.value })}
-            options={categoryOptions}
-            placeholder="All categories"
-          />
-          <Select
-            label="Status"
-            value={inventory.status}
-            onChange={(event) => setInventory({ ...inventory, status: event.target.value as "" | ItemStatus })}
-            options={ITEM_STATUSES.map((status) => ({ value: status, label: ITEM_STATUS_LABELS[status] }))}
-            placeholder="In service and disposed"
-          />
-          <div className="grid grid-cols-2 gap-4">
+      {activeTab === "inventory" && (
+        <Card role="region" aria-label="Inventory" className="flex flex-col gap-4">
+          <SectionHeading icon={<MonitorCheck className="h-4 w-4" aria-hidden="true" />} title="Inventory" />
+          <p className="text-sm text-slate-600">
+            One row per item — location, owner, value and condition. Disposed items are included (F7.2).
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select
+              label="Department"
+              value={inventory.department}
+              onChange={(event) => setInventory({ ...inventory, department: event.target.value })}
+              options={departmentOptions}
+              placeholder="All departments"
+              hint="Departments come from items already registered."
+            />
+            <Select
+              label="Category"
+              value={inventory.categoryId}
+              onChange={(event) => setInventory({ ...inventory, categoryId: event.target.value })}
+              options={categoryOptions}
+              placeholder="All categories"
+            />
+            <Select
+              label="Status"
+              value={inventory.status}
+              onChange={(event) => setInventory({ ...inventory, status: event.target.value as "" | ItemStatus })}
+              options={ITEM_STATUSES.map((status) => ({ value: status, label: ITEM_STATUS_LABELS[status] }))}
+              placeholder="In service and disposed"
+            />
+            <Select
+              label="Date preset"
+              value=""
+              onChange={(event) => applyDatePreset(event.target.value, "inventory")}
+              options={datePresets}
+              placeholder="Quick select"
+            />
             <Input
               label="Registered from"
               type="date"
@@ -196,168 +292,194 @@ export function ReportsPage() {
               hint="UTC"
             />
           </div>
-        </div>
-        <div className="flex flex-wrap justify-end gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            leftIcon={<FileText className="h-4 w-4" />}
-            loading={pendingKey === "inventory-pdf"}
-            onClick={() => handleInventory("pdf")}
-          >
-            Download inventory PDF
-          </Button>
-          <Button
-            type="button"
-            leftIcon={<Download className="h-4 w-4" />}
-            loading={pendingKey === "inventory-csv"}
-            onClick={() => handleInventory("csv")}
-          >
-            Download inventory CSV
-          </Button>
-        </div>
-      </Card>
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              leftIcon={<FileText className="h-4 w-4" />}
+              loading={pendingKey === "inventory-pdf"}
+              onClick={() => handleInventory("pdf")}
+            >
+              Download inventory PDF
+            </Button>
+            <Button
+              type="button"
+              leftIcon={<Download className="h-4 w-4" />}
+              loading={pendingKey === "inventory-csv"}
+              onClick={() => handleInventory("csv")}
+            >
+              Download inventory CSV
+            </Button>
+          </div>
+        </Card>
+      )}
 
-      <Card role="region" aria-label="Disposals" className="flex flex-col gap-4">
-        <SectionHeading icon={<FileBarChart className="h-4 w-4" aria-hidden="true" />} title="Disposals" />
-        <p className="text-sm text-slate-600">
-          One row per approved disposal — who asked, who approved it, and why. Filtered by the decision date.
-        </p>
-        <div className="grid gap-4 sm:grid-cols-3">
+      {activeTab === "disposals" && (
+        <Card role="region" aria-label="Disposals" className="flex flex-col gap-4">
+          <SectionHeading icon={<FileBarChart className="h-4 w-4" aria-hidden="true" />} title="Disposals" />
+          <p className="text-sm text-slate-600">
+            One row per approved disposal — who asked, who approved it, and why. Filtered by the decision date.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Select
+              label="Department"
+              value={disposals.department}
+              onChange={(event) => setDisposals({ ...disposals, department: event.target.value })}
+              options={departmentOptions}
+              placeholder="All departments"
+            />
+            <Select
+              label="Date preset"
+              value=""
+              onChange={(event) => applyDatePreset(event.target.value, "disposals")}
+              options={datePresets}
+              placeholder="Quick select"
+            />
+            <div />
+            <Input
+              label="Decided from"
+              type="date"
+              value={disposals.dateFrom}
+              onChange={(event) => setDisposals({ ...disposals, dateFrom: event.target.value })}
+              hint="UTC"
+            />
+            <Input
+              label="Decided to"
+              type="date"
+              value={disposals.dateTo}
+              onChange={(event) => setDisposals({ ...disposals, dateTo: event.target.value })}
+              hint="UTC"
+            />
+            <div />
+          </div>
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              leftIcon={<FileText className="h-4 w-4" />}
+              loading={pendingKey === "disposals-pdf"}
+              onClick={() => handleDisposals("pdf")}
+            >
+              Download disposals PDF
+            </Button>
+            <Button
+              type="button"
+              leftIcon={<Download className="h-4 w-4" />}
+              loading={pendingKey === "disposals-csv"}
+              onClick={() => handleDisposals("csv")}
+            >
+              Download disposals CSV
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {activeTab === "audit" && (
+        <Card role="region" aria-label="Audit session" className="flex flex-col gap-4">
+          <SectionHeading icon={<ScanLine className="h-4 w-4" aria-hidden="true" />} title="Audit session" />
+          <p className="text-sm text-slate-600">
+            One row per scan — the item, the result, and when it was recorded (F9.3).
+          </p>
           <Select
-            label="Department"
-            value={disposals.department}
-            onChange={(event) => setDisposals({ ...disposals, department: event.target.value })}
-            options={departmentOptions}
-            placeholder="All departments"
+            label="Session"
+            value={auditId}
+            onChange={(event) => setAuditId(event.target.value)}
+            options={auditOptions}
+            placeholder="Select an audit session"
+            hint="Only completed sessions can be exported."
           />
-          <Input
-            label="Decided from"
-            type="date"
-            value={disposals.dateFrom}
-            onChange={(event) => setDisposals({ ...disposals, dateFrom: event.target.value })}
-            hint="UTC"
-          />
-          <Input
-            label="Decided to"
-            type="date"
-            value={disposals.dateTo}
-            onChange={(event) => setDisposals({ ...disposals, dateTo: event.target.value })}
-            hint="UTC"
-          />
-        </div>
-        <div className="flex flex-wrap justify-end gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            leftIcon={<FileText className="h-4 w-4" />}
-            loading={pendingKey === "disposals-pdf"}
-            onClick={() => handleDisposals("pdf")}
-          >
-            Download disposals PDF
-          </Button>
-          <Button
-            type="button"
-            leftIcon={<Download className="h-4 w-4" />}
-            loading={pendingKey === "disposals-csv"}
-            onClick={() => handleDisposals("csv")}
-          >
-            Download disposals CSV
-          </Button>
-        </div>
-      </Card>
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              leftIcon={<FileText className="h-4 w-4" />}
+              loading={pendingKey === "audit-pdf"}
+              disabled={!auditId}
+              onClick={() => {
+                if (!auditId) return;
+                void run(`audit-pdf`, () => downloadAuditReport(auditId, "pdf"));
+              }}
+            >
+              Download audit PDF
+            </Button>
+            <Button
+              type="button"
+              leftIcon={<Download className="h-4 w-4" />}
+              loading={pendingKey === "audit-csv"}
+              disabled={!auditId}
+              onClick={() => {
+                if (!auditId) return;
+                void run(`audit-csv`, () => downloadAuditReport(auditId, "csv"));
+              }}
+            >
+              Download audit CSV
+            </Button>
+          </div>
+        </Card>
+      )}
 
-      <Card role="region" aria-label="Audit session" className="flex flex-col gap-4">
-        <SectionHeading icon={<ScanLine className="h-4 w-4" aria-hidden="true" />} title="Audit session" />
-        <p className="text-sm text-slate-600">
-          One row per recorded scan or classification for a session. Paste a session id, or open a session from the
-          audit flow.
-        </p>
-        <Input
-          label="Audit session ID"
-          value={auditId}
-          onChange={(event) => setAuditId(event.target.value)}
-          placeholder="Paste the session id"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="outline" onClick={() => navigate("/audit/new")}>
-            Start an audit
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            leftIcon={<FileText className="h-4 w-4" />}
-            loading={pendingKey === "audit-pdf"}
-            disabled={!auditId.trim()}
-            onClick={() => void run("audit-pdf", () => downloadAuditReport(auditId.trim(), "pdf"))}
-          >
-            Download audit PDF
-          </Button>
-          <Button
-            type="button"
-            leftIcon={<Download className="h-4 w-4" />}
-            loading={pendingKey === "audit-csv"}
-            disabled={!auditId.trim()}
-            onClick={() => void run("audit-csv", () => downloadAuditReport(auditId.trim(), "csv"))}
-          >
-            Download audit CSV
-          </Button>
-        </div>
-      </Card>
-
-      <Card role="region" aria-label="Audit evidence pack" className="flex flex-col gap-4">
-        <SectionHeading icon={<Package className="h-4 w-4" aria-hidden="true" />} title="Audit evidence pack" />
-        <p className="text-sm text-slate-600">
-          Consolidated export of multiple completed audit sessions over a date range. Aggregates sessions for control-test
-          extracts and multi-session reporting.
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Input
-            label="Date from"
-            type="date"
-            value={evidencePack.dateFrom}
-            onChange={(event) => setEvidencePack({ ...evidencePack, dateFrom: event.target.value })}
-            hint="UTC"
-          />
-          <Input
-            label="Date to"
-            type="date"
-            value={evidencePack.dateTo}
-            onChange={(event) => setEvidencePack({ ...evidencePack, dateTo: event.target.value })}
-            hint="UTC"
-          />
-        </div>
-        <div className="flex flex-wrap justify-end gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            leftIcon={<FileText className="h-4 w-4" />}
-            loading={pendingKey === "evidence-pack-pdf"}
-            onClick={() => handleEvidencePack("pdf")}
-          >
-            Download evidence pack PDF
-          </Button>
-          <Button
-            type="button"
-            leftIcon={<Download className="h-4 w-4" />}
-            loading={pendingKey === "evidence-pack-csv"}
-            onClick={() => handleEvidencePack("csv")}
-          >
-            Download evidence pack CSV
-          </Button>
-        </div>
-      </Card>
+      {activeTab === "evidence" && (
+        <Card role="region" aria-label="Evidence pack" className="flex flex-col gap-4">
+          <SectionHeading icon={<Package className="h-4 w-4" aria-hidden="true" />} title="Evidence pack" />
+          <p className="text-sm text-slate-600">
+            Evidence photos for items marked MISSING in the selected date range.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select
+              label="Date preset"
+              value=""
+              onChange={(event) => applyDatePreset(event.target.value, "evidence")}
+              options={datePresets}
+              placeholder="Quick select"
+            />
+            <div />
+            <Input
+              label="From"
+              type="date"
+              value={evidencePack.dateFrom}
+              onChange={(event) => setEvidencePack({ ...evidencePack, dateFrom: event.target.value })}
+              hint="UTC"
+            />
+            <Input
+              label="To"
+              type="date"
+              value={evidencePack.dateTo}
+              onChange={(event) => setEvidencePack({ ...evidencePack, dateTo: event.target.value })}
+              hint="UTC"
+            />
+          </div>
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              leftIcon={<FileText className="h-4 w-4" />}
+              loading={pendingKey === "evidence-pack-pdf"}
+              onClick={() => handleEvidencePack("pdf")}
+            >
+              Download evidence pack PDF
+            </Button>
+            <Button
+              type="button"
+              leftIcon={<Download className="h-4 w-4" />}
+              loading={pendingKey === "evidence-pack-csv"}
+              onClick={() => handleEvidencePack("csv")}
+            >
+              Download evidence pack CSV
+            </Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
 
 function SectionHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
-    <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-      {icon}
-      {title}
-    </h2>
+    <div className="flex items-center gap-2">
+      <div className="flex h-8 w-8 items-center justify-center rounded-md bg-brand-100 text-brand-600">
+        {icon}
+      </div>
+      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+    </div>
   );
 }

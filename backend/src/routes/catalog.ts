@@ -25,13 +25,20 @@ catalogRouter.get(
           name: true,
           tagId: true,
           category: { select: { id: true, name: true } },
-          building: { select: { id: true, name: true } },
+          buildingRef: { select: { id: true, name: true } },
           status: true,
         },
         orderBy: { name: "asc" },
       });
 
-      res.status(200).json(items);
+      // Map buildingRef to building for frontend compatibility
+      const mappedItems = items.map(item => ({
+        ...item,
+        building: item.buildingRef,
+        buildingRef: undefined,
+      }));
+
+      res.status(200).json(mappedItems);
     } catch (err) {
       next(err);
     }
@@ -76,14 +83,21 @@ catalogRouter.get(
           name: true,
           tagId: true,
           category: { select: { id: true, name: true } },
-          building: { select: { id: true, name: true } },
+          buildingRef: { select: { id: true, name: true } },
           status: true,
           orgUnitId: true,
         },
         orderBy: { name: "asc" },
       });
 
-      res.status(200).json(items);
+      // Map buildingRef to building for frontend compatibility
+      const mappedItems = items.map(item => ({
+        ...item,
+        building: item.buildingRef,
+        buildingRef: undefined,
+      }));
+
+      res.status(200).json(mappedItems);
     } catch (err) {
       next(err);
     }

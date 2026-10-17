@@ -233,7 +233,7 @@ const REQUEST_DETAIL_SELECT = {
  * - SYSTEM_ADMIN: sees nothing (no REQUEST_READ_ALL)
  * - Also includes staged approvals (PENDING_STAGE1, PENDING_STAGE2) where user is the approver
  */
-function pendingForUser(user: { id: string; role: UserRole; departmentId?: string }): Prisma.RequestWhereInput {
+function pendingForUser(user: { id: string; role: UserRole; orgUnitId?: string | null }): Prisma.RequestWhereInput {
   // Base scope: who can see requests at all
   if (user.role === "SYSTEM_ADMIN") return { id: { in: [] } };
   
@@ -244,7 +244,7 @@ function pendingForUser(user: { id: string; role: UserRole; departmentId?: strin
   
   // DEPARTMENT_HEAD sees requests for their department
   if (user.role === "DEPARTMENT_HEAD") {
-    if (!user.departmentId) {
+    if (!user.orgUnitId) {
       // If no department is set, they see only their own requests
       return { requestedById: user.id };
     }
@@ -252,8 +252,8 @@ function pendingForUser(user: { id: string; role: UserRole; departmentId?: strin
       OR: [
         // Own requests
         { requestedById: user.id },
-        // Department requests (item's orgUnitId matches user's departmentId)
-        { item: { orgUnitId: user.departmentId } },
+        // Department requests (item's orgUnitId matches user's orgUnitId)
+        { item: { orgUnitId: user.orgUnitId } },
       ],
     };
   }
@@ -265,6 +265,33 @@ function pendingForUser(user: { id: string; role: UserRole; departmentId?: strin
   
   // Fallback: own requests only
   return { requestedById: user.id };
+}
+
+/**
+ * Unified scope for request lists. Mirrors pendingForUser so the dashboard
+ * count, the sidebar badge, the request list, and the notifications surface
+ * all agree on what "pending for this user" means.
+ *
+ * DEPARTMENT_HEAD sees their own requests plus requests for items in their
+ * department (scoped by orgUnitId). SYSTEM_ADMIN sees nothing.
+ */
+function scopeToViewer(user: { id: string; role: UserRole; orgUnitId?: string | null }): Prisma.RequestWhereInput {
+  if (user.role === "SYSTEM_ADMIN") return { id: { in: [] } };
+  
+  // DEPARTMENT_HEAD sees own requests + department requests
+  if (user.role === "DEPARTMENT_HEAD") {
+    if (!user.orgUnitId) {
+      return { requestedById: user.id };
+    }
+    return {
+      OR: [
+        { requestedById: user.id },
+        { item: { orgUnitId: user.orgUnitId } },
+      ],
+    };
+  }
+  
+  return hasCapability(user.role, "REQUEST_READ_ALL") ? {} : { requestedById: user.id };
 }
 
 /**
@@ -280,13 +307,9 @@ function pendingForUser(user: { id: string; role: UserRole; departmentId?: strin
  * answer is an empty queue expressed as a filter that matches nothing, not a
  * missing clause that would fall back to every row.
  */
-function scopeToViewer(user: { id: string; role: UserRole }): Prisma.RequestWhereInput {
-  if (user.role === "SYSTEM_ADMIN") return { id: { in: [] } };
-  return hasCapability(user.role, "REQUEST_READ_ALL") ? {} : { requestedById: user.id };
-}
 
 /** Every handler below has already run `authenticate`, so this is a wiring guard. */
-function requireUser(req: AuthenticatedRequest): { id: string; role: UserRole } {
+function requireUser(req: AuthenticatedRequest): { id: string; role: UserRole; orgUnitId?: string | null } {
   if (!req.user) {
     throw httpError(401, "Not authenticated");
   }

@@ -39,7 +39,6 @@ export async function fetchInvitableUnits(): Promise<InvitableUnit[]> {
 }
 
 export async function fetchDepartmentRoster(id: string): Promise<DepartmentRoster> {
-  const response = await apiClient.get<{ roster: DepartmentRoster }>(`/departments/${id}/roster`);
-  return response.roster;
+  return apiClient.get<DepartmentRoster>(`/departments/${id}/roster`);
 }
 

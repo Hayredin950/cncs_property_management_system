@@ -35,8 +35,8 @@ exportRouter.get(
       const rows = items.map((item) => [
         item.tagId || "",
         item.name,
-        (item.category as any)?.name || "",
-        (item.building as any)?.name || "",
+        item.category?.name || "",
+        item.building?.name || "",
         item.floor || "",
         item.room || "",
         item.condition,

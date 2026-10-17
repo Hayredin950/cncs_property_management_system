@@ -54,6 +54,10 @@ export function DashboardPage() {
 
   const pendingQuery = usePendingCount();
   const requestsQuery = useRequests({ limit: 5 });
+  const needsReviewQuery = useRequests({ status: "PENDING", limit: 5 });
+
+  // Property Officers see pending requests they can decide; others see their own recent requests
+  const activeQuery = canDecide ? needsReviewQuery : requestsQuery;
 
   return (
     <div className="flex flex-col gap-6">
@@ -69,7 +73,7 @@ export function DashboardPage() {
               value={pendingQuery.data?.pendingCount ?? "\u2014"}
               icon={<ClipboardList className="h-5 w-5" />}
               tone="warning"
-              to="/requests"
+              to="/requests?status=PENDING"
               className="w-52"
             />
           ) : null
@@ -142,44 +146,44 @@ export function DashboardPage() {
                 {canDecide ? "Needs your review" : "Your recent requests"}
               </h2>
               <Link
-                to="/requests"
+                to="/requests?status=PENDING"
                 className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
               >
                 View all →
               </Link>
             </div>
 
-            {requestsQuery.isPending ? (
+            {activeQuery.isPending ? (
               <div role="status" aria-label="Loading requests">
                 <SkeletonText lines={3} />
               </div>
-            ) : requestsQuery.isError ? (
-              requestsQuery.error instanceof NetworkError ? (
+            ) : activeQuery.isError ? (
+              activeQuery.error instanceof NetworkError ? (
                 <OfflineState />
               ) : (
                 <ErrorState
                   heading="Couldn't load requests"
-                  body={requestsQuery.error instanceof Error ? requestsQuery.error.message : undefined}
+                  body={activeQuery.error instanceof Error ? activeQuery.error.message : undefined}
                   action={
-                    <Button size="sm" onClick={() => requestsQuery.refetch()}>
+                    <Button size="sm" onClick={() => activeQuery.refetch()}>
                       Try again
                     </Button>
                   }
                 />
               )
-            ) : requestsQuery.data.requests.length === 0 ? (
+            ) : activeQuery.data.requests.length === 0 ? (
               <EmptyState
                 icon={<ClipboardList className="h-8 w-8" />}
-                heading={canDecide ? "No requests yet" : "You haven't filed any requests yet"}
+                heading={canDecide ? "No pending requests" : "You haven't filed any requests yet"}
                 body={
                   canDecide
-                    ? "Transfer and disposal requests will appear here for review."
+                    ? "Pending requests will appear here for review."
                     : "Requests you file will appear here with their review status."
                 }
               />
             ) : (
               <ul className="flex flex-col divide-y divide-slate-200">
-                {requestsQuery.data.requests.map((request) => (
+                {activeQuery.data.requests.map((request) => (
                   <li
                     key={request.id}
                     className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0"
@@ -188,12 +192,13 @@ export function DashboardPage() {
                       to={`/requests/${request.id}`}
                       className="min-w-0 flex-1 hover:text-brand-700 transition-colors"
                     >
-                      <p className="truncate font-medium text-slate-900">{request.item.name}</p>
-                      <p className="tag-id text-xs text-slate-500">{request.item.tagId}</p>
-                      <p className="text-xs text-slate-400">Request ID: {request.id.slice(0, 8)}...</p>
+                      <div className="flex items-center gap-2">
+                        <RequestTypeBadge type={request.type} />
+                        <p className="font-medium text-slate-900">{request.item.name}</p>
+                        <p className="tag-id text-xs text-slate-500">{request.item.tagId}</p>
+                      </div>
                     </Link>
                     <div className="flex flex-wrap items-center gap-2">
-                      <RequestTypeBadge type={request.type} />
                       <RequestStatusBadge status={request.status} />
                       <span className="text-xs text-slate-400">
                         {formatRelativeTime(request.createdAt)}

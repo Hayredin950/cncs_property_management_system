@@ -111,7 +111,6 @@ export function RequestsListPage() {
           <Select
             label="Status"
             options={STATUS_OPTIONS}
-            placeholder="All statuses"
             value={rawStatus ?? "ALL"}
             onChange={(event) => updateStatus(event.target.value)}
             className="sm:w-48"

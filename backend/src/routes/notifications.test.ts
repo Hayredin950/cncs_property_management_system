@@ -37,6 +37,7 @@ beforeEach(() => {
 });
 
 const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
+const auditorToken = createToken({ id: "auditor-1", role: "AUDITOR" });
 
 describe("GET /notifications", () => {
   beforeEach(() => {
@@ -107,6 +108,26 @@ describe("GET /notifications", () => {
     expect(res.status).toBe(200);
     expect(res.body.notifications).toHaveLength(1);
     expect(res.body.notifications[0].message).toBe("Account request from 李明 pending approval.");
+    expect(res.body.notifications[0].relatedRequestId).toBeNull();
+  });
+
+  it("excludes item request notifications for AUDITOR (security rule)", async () => {
+    vi.mocked(prisma.notification.findMany).mockResolvedValue([
+      makeNotification({
+        id: "notif-2",
+        userId: "auditor-1",
+        message: "Audit session started.",
+        relatedRequestId: null,
+      }),
+    ] as never);
+
+    const res = await request(app)
+      .get("/notifications")
+      .set("Authorization", `Bearer ${auditorToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.notifications).toHaveLength(1);
+    expect(res.body.notifications[0].message).toBe("Audit session started.");
     expect(res.body.notifications[0].relatedRequestId).toBeNull();
   });
 

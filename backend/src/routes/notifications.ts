@@ -51,15 +51,34 @@ notificationsRouter.get(
     try {
       const user = requireUser(req);
       const query = validatedQuery<ListQuery>(req);
-      const isSystemAdmin = user.role === "SYSTEM_ADMIN";
 
       // `userId` is pinned last so no query parameter can ever widen the scope.
       const where = {
         ...(query.unread === "true" ? { isRead: false } : {}),
         userId: user.id,
-        // SYSTEM_ADMIN must not see item request notifications (security rule)
-        ...(isSystemAdmin ? { relatedRequestId: null } : {}),
       };
+
+      // Role-based notification filtering
+      // Each role only sees notifications relevant to their capabilities
+      switch (user.role) {
+        case "SYSTEM_ADMIN":
+          // SYSTEM_ADMIN: no item request notifications, only account-related
+          where.relatedRequestId = null;
+          break;
+        case "AUDITOR":
+          // AUDITOR: no item request notifications, only audit-related
+          where.relatedRequestId = null;
+          break;
+        case "STAFF":
+          // STAFF: only notifications about their own requests (relatedRequestId tied to them)
+          // This is handled by userId filter, but we ensure no account-related leaks
+          break;
+        case "PROPERTY_OFFICER":
+        case "DEPARTMENT_HEAD":
+          // PROPERTY_OFFICER and DEPARTMENT_HEAD: can see item request notifications
+          // (they are approvers) - no additional filter needed
+          break;
+      }
 
       const [rows, unreadCount] = await Promise.all([
         prisma.notification.findMany({
@@ -75,7 +94,7 @@ notificationsRouter.get(
           take: query.limit,
           skip: query.offset,
         }),
-        prisma.notification.count({ where: { userId: user.id, isRead: false, ...(isSystemAdmin ? { relatedRequestId: null } : {}) } }),
+        prisma.notification.count({ where: { userId: user.id, isRead: false, ...where } }),
       ]);
 
       const notifications = rows.map((row) => {

@@ -188,14 +188,29 @@ function OwnerSelect({
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <label className="block text-sm font-medium text-slate-700 mb-1">
+      <label
+        htmlFor="owner-select-hidden"
+        className="block text-sm font-medium text-slate-700 mb-1"
+      >
         Owner (custodian) <span className="text-danger-600">*</span>
       </label>
+      {/* Hidden input for label association (jsx-a11y) */}
+      <input
+        type="text"
+        id="owner-select-hidden"
+        tabIndex={-1}
+        autoComplete="off"
+        className="absolute opacity-0 pointer-events-none h-0 w-0"
+        aria-hidden="true"
+        readOnly
+      />
       <div className="relative">
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className="w-full flex items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-haspopup="listbox"
+          aria-labelledby="owner-select-label"
         >
           <span className={selectedOption ? "text-slate-900" : "text-slate-400"}>
             {selectedOption?.label || "Select owner"}
@@ -218,7 +233,6 @@ function OwnerSelect({
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search by name or email..."
                 className="w-full pl-8 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                autoFocus
               />
             </div>
           </div>

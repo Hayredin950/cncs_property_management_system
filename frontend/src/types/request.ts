@@ -147,6 +147,7 @@ export interface RequestListQuery {
   search?: string;
   dateFrom?: string;
   dateTo?: string;
+  window?: "this-week" | "this-month" | "last-30-days" | "custom" | "none";
   limit?: number;
   offset?: number;
 }

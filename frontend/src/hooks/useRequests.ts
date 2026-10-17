@@ -18,3 +18,12 @@ export function usePendingCount() {
     staleTime: 30_000,
   });
 }
+
+/** "Needs your review" list for dashboard — uses same logic as pending-count (pendingForUser). */
+export function usePendingRequests(limit = 5) {
+  return useQuery({
+    queryKey: ["requests", "pending-review", limit],
+    queryFn: ({ signal }) => fetchRequests({ status: "PENDING", limit, window: "none" }, signal),
+    staleTime: 30_000,
+  });
+}

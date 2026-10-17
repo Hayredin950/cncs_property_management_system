@@ -10,6 +10,7 @@ import { prisma } from "../src/lib/prisma.js";
 import argon2 from "argon2";
 import { generateTagQR } from "../src/utils/qrGenerator.js";
 import { renderRequestSubmitted } from "../src/services/notifications.js";
+import { notifyReviewersOfNewRequest } from "../src/services/notifications.js";
 
 
 const SEED_USERS = {
@@ -508,6 +509,228 @@ async function main() {
     },
   });
 
+  // --- Enhanced seed data for Department Head testing ---
+  // Add a 3rd CS staff member
+  const csStaff3 = await prisma.user.upsert({
+    where: { email: "staff.cs3@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "CS Staff 3",
+      email: "staff.cs3@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("StaffCS123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: csDept.id,
+      accountStatus: "ACTIVE",
+      staffId: "STAFF-CS-003",
+    },
+  });
+
+  // Add more items held by CS Department Head
+  const headItems = [
+    {
+      tagId: "CNCS-SEED-0001",
+      name: "MacBook Pro 16\"",
+      categoryId: byName["Electronics"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "3",
+      room: "305",
+      ownerId: csHead.id,
+      purchaseCost: 120000,
+      condition: Condition.NEW,
+      brand: "Apple",
+      model: "MacBook Pro M3",
+      photoUrl: "/photos/macbook.jpg",
+    },
+    {
+      tagId: "CNCS-SEED-0002",
+      name: "Ergonomic Chair",
+      categoryId: byName["Furniture"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "3",
+      room: "305",
+      ownerId: csHead.id,
+      purchaseCost: 15000,
+      condition: Condition.GOOD,
+      brand: "Herman Miller",
+      model: "Aeron",
+      photoUrl: "/photos/chair.jpg",
+    },
+    {
+      tagId: "CNCS-SEED-0003",
+      name: "External Monitor 27\"",
+      categoryId: byName["Electronics"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "3",
+      room: "305",
+      ownerId: csHead.id,
+      purchaseCost: 25000,
+      condition: Condition.NEW,
+      brand: "Dell",
+      model: "U2723QE",
+      photoUrl: "/photos/monitor.jpg",
+    },
+  ];
+
+  for (const { tagId, ...data } of headItems) {
+    const item = await prisma.item.upsert({
+      where: { tagId },
+      update: { photoUrl: data.photoUrl },
+      create: { ...data, tagId },
+    });
+    seededItems.set(item.tagId, item);
+    await generateTagQR(item.tagId);
+  }
+
+  // Add Biology items for cross-department catalog
+  const bioItems = [
+    {
+      tagId: "CNCS-SEED-0004",
+      name: "Centrifuge",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: bioDept.id,
+      buildingId: scienceBuilding.id,
+      floor: "2",
+      room: "210",
+      ownerId: bioStaff1.id,
+      purchaseCost: 80000,
+      condition: Condition.GOOD,
+      brand: "Eppendorf",
+      model: "5425",
+      photoUrl: "/photos/centrifuge.jpg",
+    },
+    {
+      tagId: "CNCS-SEED-0005",
+      name: "Incubator",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: bioDept.id,
+      buildingId: scienceBuilding.id,
+      floor: "2",
+      room: "210",
+      ownerId: bioStaff2.id,
+      purchaseCost: 95000,
+      condition: Condition.FAIR,
+      brand: "Thermo Fisher",
+      model: "Heracell 150i",
+      photoUrl: "/photos/incubator.jpg",
+    },
+  ];
+
+  for (const { tagId, ...data } of bioItems) {
+    const item = await prisma.item.upsert({
+      where: { tagId },
+      update: { photoUrl: data.photoUrl },
+      create: { ...data, tagId },
+    });
+    seededItems.set(item.tagId, item);
+    await generateTagQR(item.tagId);
+  }
+
+  // Add Chemistry items for cross-department catalog
+  const chemItems = [
+    {
+      tagId: "CNCS-SEED-0006",
+      name: "Spectrophotometer",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: chemDept.id,
+      buildingId: chemBuilding.id,
+      floor: "1",
+      room: "105",
+      ownerId: chemStaff1.id,
+      purchaseCost: 150000,
+      condition: Condition.NEW,
+      brand: "Agilent",
+      model: "Cary 60",
+      photoUrl: "/photos/spectro.jpg",
+    },
+    {
+      tagId: "CNCS-SEED-0007",
+      name: "Fume Hood",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: chemDept.id,
+      buildingId: chemBuilding.id,
+      floor: "1",
+      room: "105",
+      ownerId: chemStaff1.id,
+      purchaseCost: 200000,
+      condition: Condition.GOOD,
+      brand: "Thermo Fisher",
+      model: "1300 Series",
+      photoUrl: "/photos/fumehood.jpg",
+    },
+  ];
+
+  for (const { tagId, ...data } of chemItems) {
+    const item = await prisma.item.upsert({
+      where: { tagId },
+      update: { photoUrl: data.photoUrl },
+      create: { ...data, tagId },
+    });
+    seededItems.set(item.tagId, item);
+    await generateTagQR(item.tagId);
+  }
+
+  // Create a PENDING_STAGE1 transfer request where CS Head is the receiving approver
+  // This is a transfer FROM Biology TO CS department
+  const bioLaptop = seededItems.get("CNCS-SEED-0004"); // Centrifuge from Biology
+  if (bioLaptop) {
+    const crossDeptRequest = await prisma.request.upsert({
+      where: { id: "seed-req-cross-dept" },
+      update: {
+        status: RequestStatus.PENDING_STAGE1,
+        reviewedById: null,
+        decidedAt: null,
+        rejectionReason: null,
+      },
+      create: {
+        id: "seed-req-cross-dept",
+        type: RequestType.TRANSFER,
+        status: RequestStatus.PENDING_STAGE1,
+        itemId: bioLaptop.id,
+        requestedById: bioStaff1.id,
+        reason: "Centrifuge moving to CS department for collaborative research project.",
+        newLocationBuilding: "CNCS Building",
+        newLocationFloor: "3",
+        newLocationRoom: "310",
+        newOwnerId: csHead.id,
+        stage1ApprovedById: bioHead.id,
+        stage1ApprovedAt: new Date(),
+      },
+    });
+
+    // Notify CS Department Head (stage 2 approver)
+    const crossDeptMessage = renderRequestSubmitted({
+      requesterName: bioStaff1.fullName,
+      requestType: "TRANSFER",
+      itemTagId: bioLaptop.tagId,
+      itemName: bioLaptop.name,
+    });
+    await prisma.notification.upsert({
+      where: { id: "seed-notif-cross-dept" },
+      update: { message: crossDeptMessage, isRead: false },
+      create: {
+        id: "seed-notif-cross-dept",
+        userId: csHead.id,
+        message: crossDeptMessage,
+        relatedRequestId: crossDeptRequest.id,
+      },
+    });
+
+    // Also notify the Property Officer
+    await prisma.notification.upsert({
+      where: { id: "seed-notif-cross-dept-officer" },
+      update: { message: crossDeptMessage, isRead: false },
+      create: {
+        id: "seed-notif-cross-dept-officer",
+        userId: officer.id,
+        message: crossDeptMessage,
+        relatedRequestId: crossDeptRequest.id,
+      },
+    });
+  }
+
   // Add a few pending account requests per department
   const pendingCS = await prisma.user.upsert({
     where: { email: "pending.cs@cncs.aau.edu.et" },
@@ -555,11 +778,12 @@ async function main() {
   console.log(`  ${categories.length} categories`);
   console.log(`  1 College, 4 Departments (CS, Biology, Chemistry, Physics)`);
   console.log(`  3 Department Heads (CS, Biology, Chemistry), Physics has NO head`);
-  console.log(`  2 CS Staff, 2 Biology Staff, 1 Chemistry Staff`);
-  console.log(`  5 Items across departments`);
+  console.log(`  3 CS Staff, 2 Biology Staff, 1 Chemistry Staff`);
+  console.log(`  8 Items across departments (3 held by CS Head, 2 Biology, 2 Chemistry, 1 Physics)`);
   console.log(`  3 Pending account requests (CS, Biology, Physics)`);
   console.log(`  1 PENDING TRANSFER request (${SEED_REQUEST_ID}) on ${LAPTOP_TAG_ID}, filed by CS Staff 1`);
-  console.log(`  2 unread notifications (officer + CS Department Head)`);
+  console.log(`  1 PENDING_STAGE1 cross-dept transfer (Centrifuge from Biology to CS)`);
+  console.log(`  4 unread notifications (officer x2, CS Department Head x2)`);
 }
 
 main()

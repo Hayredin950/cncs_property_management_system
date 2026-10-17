@@ -127,7 +127,7 @@ const listQuerySchema = z.object({
   search: z.string().trim().optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
-  window: z.enum(["this-week", "this-month", "last-30-days", "custom"]).default("this-week"),
+  window: z.enum(["this-week", "this-month", "last-30-days", "custom", "none"]).optional().default("this-week"),
   fromDate: z.coerce.date().optional(),
   toDate: z.coerce.date().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -594,6 +594,10 @@ requestsRouter.get(
       } else if (query.window === "last-30-days") {
         fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         toDate = new Date(now);
+      } else if (query.window === "none") {
+        // No date window filter - used for "needs your review" to match pending-count logic
+        fromDate = undefined;
+        toDate = undefined;
       }
 
       // Built as its own filter and attached once: assigning into `where.createdAt`

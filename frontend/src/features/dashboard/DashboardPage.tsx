@@ -9,7 +9,7 @@ import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { SkeletonText } from "../../components/Skeleton";
 import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBadges";
 import { StatCard } from "../../components/StatCard";
-import { usePendingCount, useRequests } from "../../hooks/useRequests";
+import { usePendingCount, useRequests, usePendingRequests } from "../../hooks/useRequests";
 import { formatRelativeTime } from "../../lib/formatters";
 import {
   canDecideRequests,
@@ -53,8 +53,8 @@ export function DashboardPage() {
   const isAuditor = canRunAudits(user?.role);
 
   const pendingQuery = usePendingCount();
-  // For "Needs your review", use the same logic as pending-count: no date window, just PENDING status
-  const needsReviewQuery = useRequests({ status: "PENDING", limit: 5 });
+  // For "Needs your review", use the same logic as pending-count: pendingForUser (no date window)
+  const needsReviewQuery = usePendingRequests(5);
   const requestsQuery = useRequests({ limit: 5 });
 
   // Property Officers see pending requests they can decide; others see their own recent requests

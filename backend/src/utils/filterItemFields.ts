@@ -145,3 +145,4 @@ export function sanitizeItem(
 
   return publicSafeFields;
 }
+// Force rebuild

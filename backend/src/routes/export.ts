@@ -25,7 +25,7 @@ exportRouter.get(
         },
         include: {
           category: true,
-          building: true,
+          buildingRef: true,
         },
         orderBy: { name: "asc" },
       });
@@ -36,7 +36,7 @@ exportRouter.get(
         item.tagId || "",
         item.name,
         item.category?.name || "",
-        item.building?.name || "",
+        item.buildingRef?.name || "",
         item.floor || "",
         item.room || "",
         item.condition,

@@ -68,7 +68,6 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Scan a Tag", to: "/scan", icon: ScanLine, roles: ["PROPERTY_OFFICER"], phase: 1, emphasized: true },
   { label: "Browse Items", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER"], phase: 1 },
   { label: "Department Items", to: "/items", icon: Package, roles: ["DEPARTMENT_HEAD"], phase: 1 },
-  { label: "Browse Other Departments", to: "/catalog/department", icon: Package, roles: ["DEPARTMENT_HEAD"], phase: 3 },
   { label: "Catalog", to: "/catalog", icon: Package, roles: ["STAFF"], phase: 3 },
   { label: "My Items", to: "/items?mine=true", icon: Package, roles: ["STAFF"], phase: 1 },
   { label: "Requests", to: "/requests?status=PENDING", icon: ClipboardList, roles: ["PROPERTY_OFFICER"], phase: 2, badge: "pending-count" },

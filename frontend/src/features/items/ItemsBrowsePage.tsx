@@ -120,6 +120,19 @@ export function ItemsBrowsePage() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <SearchBar value={search} onChange={(value) => updateParam("search", value)} className="sm:flex-1" />
+        {/* All/Mine toggle for Department Head */}
+        {user?.role === "DEPARTMENT_HEAD" && (
+          <Select
+            label="Scope"
+            options={[
+              { value: "all", label: "All department items" },
+              { value: "mine", label: "My items" },
+            ]}
+            value={mine ? "mine" : "all"}
+            onChange={(event) => updateParam("mine", event.target.value === "mine" ? "true" : "")}
+            className="sm:w-48"
+          />
+        )}
         <Select
           label="Category"
           options={categoryOptions}

@@ -67,6 +67,9 @@ export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 export const AUDIT_ITEM_RESULTS = ["FOUND", "MISSING", "LOCATION_MISMATCH"] as const;
 export type AuditItemResult = (typeof AUDIT_ITEM_RESULTS)[number];
 
+export const AUDIT_SESSION_STATUSES = ["IN_PROGRESS", "SORTING", "COMPLETED", "ACKNOWLEDGED"] as const;
+export type AuditSessionStatus = (typeof AUDIT_SESSION_STATUSES)[number];
+
 export const NOTIFICATION_CODES = [
   "REQUEST_SUBMITTED",
   "REQUEST_APPROVED",

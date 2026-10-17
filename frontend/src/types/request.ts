@@ -32,6 +32,7 @@ export interface RequestSummary {
   newLocationBuilding: string | null;
   newLocationFloor: string | null;
   newLocationRoom: string | null;
+  newLocationDepartment: string | null;
   newOwnerId: string | null;
   requestedById: string;
   reviewedById: string | null;

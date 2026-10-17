@@ -244,6 +244,7 @@ export const REQUEST_FIXTURE: RequestSummary = {
   newLocationBuilding: "Building 3",
   newLocationFloor: "Floor 1",
   newLocationRoom: "Room 105",
+  newLocationDepartment: null,
   newOwnerId: null,
   requestedById: STAFF_USER.id,
   reviewedById: null,
@@ -265,6 +266,7 @@ export const REQUESTS_LIST: RequestsListResponse = {
  */
 export const AUDIT_SESSION: AuditSession = {
   id: "audit-1",
+  status: "IN_PROGRESS",
   scopeType: "DEPARTMENT",
   scopeValue: "Computer Science",
   runById: OFFICER_USER.id,
@@ -388,21 +390,24 @@ export const DEPARTMENT_ROSTER: DepartmentRoster = {
 export const AUDIT_READBACK = (
   id: string,
   overrides: Partial<AuditSessionReadback> = {},
-): AuditSessionReadback => ({
-  id,
-  scopeType: AUDIT_SESSION.scopeType,
-  scopeValue: AUDIT_SESSION.scopeValue,
-  runById: AUDIT_SESSION.runById,
-  startedAt: AUDIT_SESSION.startedAt,
-  completedAt: null,
-  completed: false,
-  counts: { found: 0, missing: 0, locationMismatch: 0 },
-  found: [],
-  missing: [],
-  locationMismatch: [],
-  rows: [],
-  ...overrides,
-});
+): AuditSessionReadback => {
+  const defaults: AuditSessionReadback = {
+    id,
+    status: "IN_PROGRESS",
+    scopeType: AUDIT_SESSION.scopeType,
+    scopeValue: AUDIT_SESSION.scopeValue,
+    runById: AUDIT_SESSION.runById,
+    startedAt: AUDIT_SESSION.startedAt,
+    completedAt: null,
+    completed: false,
+    counts: { found: 0, missing: 0, locationMismatch: 0 },
+    found: [],
+    missing: [],
+    locationMismatch: [],
+    rows: [],
+  };
+  return { ...defaults, ...overrides };
+};
 
 /**
  * The read-back of a session that already has rows: one scan this walk made, plus

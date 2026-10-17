@@ -1,4 +1,4 @@
-import type { AuditItemResult } from "./enums";
+import type { AuditItemResult, AuditSessionStatus } from "./enums";
 import type { Item } from "./item";
 
 /**
@@ -25,6 +25,7 @@ export interface AuditUserSummary {
  */
 export interface AuditSession {
   id: string;
+  status: AuditSessionStatus;
   scopeType: string;
   scopeValue: string | null;
   runById: string;
@@ -148,6 +149,7 @@ export interface AuditListResponse {
  */
 export interface AuditSessionReadback {
   id: string;
+  status: AuditSessionStatus;
   scopeType: string;
   scopeValue: string | null;
   runById: string;

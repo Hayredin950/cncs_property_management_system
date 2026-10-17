@@ -92,9 +92,11 @@ export function CatalogPage() {
                   <div>
                     <span className="font-medium">Category:</span> {item.category.name}
                   </div>
-                  <div>
-                    <span className="font-medium">Building:</span> {item.locationBuilding}
-                  </div>
+                  {item.building && (
+                    <div>
+                      <span className="font-medium">Building:</span> {item.building.name}
+                    </div>
+                  )}
                 </div>
               </Card>
             </Link>

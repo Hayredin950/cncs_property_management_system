@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, FileText, HelpCircle, MapPinOff } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { fetchAuditSession } from "../../api/audits";
 import { describeDownloadFailure, saveReport, downloadAuditReport } from "../../api/reports";
@@ -13,7 +14,7 @@ import { cn } from "../../lib/cn";
 import { loadCompletionSummary, loadWalkthrough } from "../../lib/auditWalkthrough";
 import { formatDateTimeUTC } from "../../lib/formatters";
 import { toast } from "../../lib/toast";
-import type { AuditCompletionResponse, AuditResultRow } from "../../types/audit";
+import type { AuditCompletionResponse } from "../../types/audit";
 import type { ReportFormat } from "../../types/report";
 
 /**
@@ -33,7 +34,7 @@ import type { ReportFormat } from "../../types/report";
  * a tick above and a dot below.
  */
 interface ResultGroup {
-  result: AuditResultRow["result"];
+  result: "FOUND" | "ADJUSTED" | "MISSING" | "LOCATION_MISMATCH";
   label: string;
   icon: ReactNode;
   /** Tint at `-50`, left accent at `-600`, text at `-700`. */

@@ -54,7 +54,7 @@ export function DashboardPage() {
 
   const pendingQuery = usePendingCount();
   // For "Needs your review", use the same logic as pending-count: no date window, just PENDING status
-  const needsReviewQuery = useRequests({ status: "PENDING", limit: 5, window: undefined });
+  const needsReviewQuery = useRequests({ status: "PENDING", limit: 5 });
   const requestsQuery = useRequests({ limit: 5 });
 
   // Property Officers see pending requests they can decide; others see their own recent requests

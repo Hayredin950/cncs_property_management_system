@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, ClipboardCopy, KeyRound, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
+import { Check, ClipboardCopy, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -528,17 +528,6 @@ export function AdminUsersPage() {
                         icon={<Pencil className="h-4 w-4" aria-hidden="true" />}
                         label={`Edit ${account.fullName}`}
                         onClick={() => openEdit(account)}
-                      />
-                      <IconButton
-                        size="sm"
-                        variant="outline"
-                        icon={<KeyRound className="h-4 w-4" aria-hidden="true" />}
-                        label={`Change password for ${account.fullName}`}
-                        onClick={() => {
-                          setPasswordFor(account);
-                          setNewPassword("");
-                          setPasswordError(null);
-                        }}
                       />
                       <IconButton
                         size="sm"

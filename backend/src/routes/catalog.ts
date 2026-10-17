@@ -4,6 +4,7 @@ import {
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
 import { prisma } from "../lib/prisma.js";
+import type { Prisma } from "../generated/prisma/client.js";
 
 export const catalogRouter: Router = Router();
 
@@ -60,11 +61,10 @@ catalogRouter.get(
         return;
       }
 
-      const whereClause: any = {
+      // Exclude user's own department items (they see those in the main items view)
+      const whereClause: Prisma.ItemWhereInput = {
         status: { notIn: ["DISPOSED", "VOIDED"] },
       };
-
-      // Exclude user's own department items (they see those in the main items view)
       if (user.orgUnitId) {
         whereClause.orgUnitId = { not: user.orgUnitId };
       }

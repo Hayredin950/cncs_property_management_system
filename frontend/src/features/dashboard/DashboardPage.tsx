@@ -20,7 +20,6 @@ import {
 } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
 import { RecentlyRegisteredItems } from "./widgets/RecentlyRegisteredItems";
-import { OverdueLoans } from "./widgets/OverdueLoans";
 import { HeldItems } from "./widgets/HeldItems";
 import { DepartmentRoster } from "./widgets/DepartmentRoster";
 import { CurrentAuditProgress } from "./widgets/CurrentAuditProgress";
@@ -28,7 +27,6 @@ import { OpenFindings } from "./widgets/OpenFindings";
 import { AuditHistoryQuickList } from "./widgets/AuditHistoryQuickList";
 import { SystemStatus } from "./widgets/SystemStatus";
 import { RecentSystemEvents } from "./widgets/RecentSystemEvents";
-import { useOverdueLoans } from "../../hooks/useLoans";
 
 /**
  * `/dashboard` \u2014 Shell B/C, Staff/Admin (F1.3), frontend-design-system.md \u00a710.4.
@@ -45,30 +43,6 @@ import { useOverdueLoans } from "../../hooks/useLoans";
  * stat with fuzzy meaning, this shows the one number the backend answers
  * precisely. Phase 3 adds the rest.
  */
-
-/**
- * Property Officer widget grid that adjusts layout based on which widgets are visible.
- * OverdueLoans hides when count is zero, so we conditionally render grid columns.
- */
-function PropertyOfficerWidgets() {
-  const { data: overdueData, isPending: overduePending, isError: overdueError } = useOverdueLoans();
-  const showOverdue = !overduePending && !overdueError && overdueData && overdueData.count > 0;
-
-  if (showOverdue) {
-    return (
-      <div className="grid gap-4 sm:grid-cols-2">
-        <RecentlyRegisteredItems />
-        <OverdueLoans />
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-4 sm:grid-cols-1">
-      <RecentlyRegisteredItems />
-    </div>
-  );
-}
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -131,11 +105,6 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* PROPERTY_OFFICER specific widgets */}
-      {user?.role === "PROPERTY_OFFICER" && (
-        <PropertyOfficerWidgets />
-      )}
-
       {/* DEPARTMENT_HEAD specific widgets */}
       {user?.role === "DEPARTMENT_HEAD" && (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -166,70 +135,78 @@ export function DashboardPage() {
       )}
 
       {canViewOwn && (
-        <Card className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-slate-900">
-              {canDecide ? "Needs your review" : "Your recent requests"}
-            </h2>
-            <Link
-              to="/requests"
-              className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
-            >
-              View all →
-            </Link>
-          </div>
-
-          {requestsQuery.isPending ? (
-            <div role="status" aria-label="Loading requests">
-              <SkeletonText lines={3} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-slate-900">
+                {canDecide ? "Needs your review" : "Your recent requests"}
+              </h2>
+              <Link
+                to="/requests"
+                className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
+              >
+                View all →
+              </Link>
             </div>
-          ) : requestsQuery.isError ? (
-            requestsQuery.error instanceof NetworkError ? (
-              <OfflineState />
-            ) : (
-              <ErrorState
-                heading="Couldn't load requests"
-                body={requestsQuery.error instanceof Error ? requestsQuery.error.message : undefined}
-                action={
-                  <Button size="sm" onClick={() => requestsQuery.refetch()}>
-                    Try again
-                  </Button>
+
+            {requestsQuery.isPending ? (
+              <div role="status" aria-label="Loading requests">
+                <SkeletonText lines={3} />
+              </div>
+            ) : requestsQuery.isError ? (
+              requestsQuery.error instanceof NetworkError ? (
+                <OfflineState />
+              ) : (
+                <ErrorState
+                  heading="Couldn't load requests"
+                  body={requestsQuery.error instanceof Error ? requestsQuery.error.message : undefined}
+                  action={
+                    <Button size="sm" onClick={() => requestsQuery.refetch()}>
+                      Try again
+                    </Button>
+                  }
+                />
+              )
+            ) : requestsQuery.data.requests.length === 0 ? (
+              <EmptyState
+                icon={<ClipboardList className="h-8 w-8" />}
+                heading={canDecide ? "No requests yet" : "You haven't filed any requests yet"}
+                body={
+                  canDecide
+                    ? "Transfer and disposal requests will appear here for review."
+                    : "Requests you file will appear here with their review status."
                 }
               />
-            )
-          ) : requestsQuery.data.requests.length === 0 ? (
-            <EmptyState
-              icon={<ClipboardList className="h-8 w-8" />}
-              heading={canDecide ? "No requests yet" : "You haven't filed any requests yet"}
-              body={
-                canDecide
-                  ? "Transfer and disposal requests will appear here for review."
-                  : "Requests you file will appear here with their review status."
-              }
-            />
-          ) : (
-            <ul className="flex flex-col divide-y divide-slate-200">
-              {requestsQuery.data.requests.map((request) => (
-                <li
-                  key={request.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-slate-900">{request.item.name}</p>
-                    <p className="tag-id text-xs text-slate-500">{request.item.tagId}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <RequestTypeBadge type={request.type} />
-                    <RequestStatusBadge status={request.status} />
-                    <span className="text-xs text-slate-400">
-                      {formatRelativeTime(request.createdAt)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+            ) : (
+              <ul className="flex flex-col divide-y divide-slate-200">
+                {requestsQuery.data.requests.map((request) => (
+                  <li
+                    key={request.id}
+                    className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0"
+                  >
+                    <Link
+                      to={`/requests/${request.id}`}
+                      className="min-w-0 flex-1 hover:text-brand-700 transition-colors"
+                    >
+                      <p className="truncate font-medium text-slate-900">{request.item.name}</p>
+                      <p className="tag-id text-xs text-slate-500">{request.item.tagId}</p>
+                      <p className="text-xs text-slate-400">Request ID: {request.id.slice(0, 8)}...</p>
+                    </Link>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <RequestTypeBadge type={request.type} />
+                      <RequestStatusBadge status={request.status} />
+                      <span className="text-xs text-slate-400">
+                        {formatRelativeTime(request.createdAt)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {user?.role === "PROPERTY_OFFICER" && <RecentlyRegisteredItems />}
+        </div>
       )}
     </div>
   );

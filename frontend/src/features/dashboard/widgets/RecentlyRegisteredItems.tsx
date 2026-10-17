@@ -45,10 +45,13 @@ export function RecentlyRegisteredItems() {
               key={item.id}
               className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0"
             >
-              <div className="min-w-0">
+              <Link
+                to={`/items/${item.id}`}
+                className="min-w-0 flex-1 hover:text-brand-700 transition-colors"
+              >
                 <p className="truncate font-medium text-slate-900">{item.name}</p>
                 <p className="tag-id text-xs text-slate-500">{item.tagId}</p>
-              </div>
+              </Link>
               <span className="text-xs text-slate-400">
                 {formatRelativeTime(item.registeredAt)}
               </span>

@@ -111,10 +111,34 @@ export function useAuditSession(id: string) {
  * a Staff member the server already scopes the list, so the flag changes nothing
  * there and the client does not pretend otherwise.
  */
-export function useAuditsList({ mine = false, page = 1 }: { mine?: boolean; page?: number } = {}) {
+export function useAuditsList({ 
+  mine = false, 
+  page = 1, 
+  status, 
+  search, 
+  sortBy, 
+  sortOrder 
+}: { 
+  mine?: boolean; 
+  page?: number; 
+  status?: string; 
+  search?: string; 
+  sortBy?: string; 
+  sortOrder?: string 
+} = {}) {
   return useQuery({
-    queryKey: ["audits", mine, page],
-    queryFn: ({ signal }) => fetchAudits({ mine, page }, signal),
+    queryKey: ["audits", mine, page, status, search, sortBy, sortOrder],
+    queryFn: ({ signal }) => fetchAudits(
+      {
+        mine,
+        page,
+        ...(status !== undefined ? { status } : {}),
+        ...(search !== undefined ? { search } : {}),
+        ...(sortBy !== undefined ? { sortBy } : {}),
+        ...(sortOrder !== undefined ? { sortOrder } : {}),
+      },
+      signal
+    ),
     retry: false,
   });
 }

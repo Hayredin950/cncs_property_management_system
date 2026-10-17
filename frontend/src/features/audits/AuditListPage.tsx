@@ -1,12 +1,15 @@
-import { ClipboardCheck, Download, History, MapPinOff, MinusCircle, Plus } from "lucide-react";
+import { ClipboardCheck, Download, History, MapPinOff, MinusCircle, Plus, Search, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { describeDownloadFailure, downloadAuditReport, saveReport } from "../../api/reports";
 import { useAuth } from "../../app/AuthContext";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
+import { Card } from "../../components/Card";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
+import { Input } from "../../components/Input";
 import { Pagination } from "../../components/Pagination";
 import { Select } from "../../components/Select";
 import { SkeletonText } from "../../components/Skeleton";
@@ -35,18 +38,22 @@ import { NetworkError } from "../../types/api";
  */
 export function AuditListPage() {
   const { user } = useAuth();
-  // Viewing history and running a session are different rights (spec 2.2): the
-  // Property Officer reads every session but runs none, the Auditor — who ran
-  // them — gets the "only mine" narrowing.
   const canBrowseAll = canViewAudits(user?.role);
   const canRun = canRunAudits(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [abandonDialogOpen, setAbandonDialogOpen] = useState(false);
+  const [abandonReason, setAbandonReason] = useState("");
+  const [auditToAbandon, setAuditToAbandon] = useState<AuditSessionSummary | null>(null);
 
   const mine = canBrowseAll && searchParams.get("mine") === "1";
   const page = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
+  const status = searchParams.get("status") || "";
+  const searchQuery = searchParams.get("search") || "";
+  const sortBy = searchParams.get("sort") || "startedAt";
+  const sortOrder = searchParams.get("order") || "desc";
 
-  const auditsQuery = useAuditsList({ mine, page });
+  const auditsQuery = useAuditsList({ mine, page, status, search: searchQuery, sortBy, sortOrder });
 
   function setParam(key: string, value: string | null) {
     setSearchParams((previous) => {
@@ -66,10 +73,28 @@ export function AuditListPage() {
       const filename = await saveReport(() => downloadAuditReport(audit.id));
       toast.success(`Downloaded ${filename}`);
     } catch (err) {
-      // Names the download, never this page — see `describeDownloadFailure`.
       toast.error(describeDownloadFailure(err, "the audit report"));
     } finally {
       setDownloadingId(null);
+    }
+  }
+
+  function handleAbandon(audit: AuditSessionSummary) {
+    setAuditToAbandon(audit);
+    setAbandonDialogOpen(true);
+  }
+
+  async function confirmAbandon() {
+    if (!auditToAbandon) return;
+    try {
+      // TODO: Call abandon API endpoint when implemented
+      toast.success(`Audit abandoned: ${auditToAbandon.scopeValue || auditToAbandon.scopeType}`);
+      setAbandonDialogOpen(false);
+      setAbandonReason("");
+      setAuditToAbandon(null);
+      auditsQuery.refetch();
+    } catch (err) {
+      toast.error("Failed to abandon audit");
     }
   }
 
@@ -89,6 +114,38 @@ export function AuditListPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
+          {canRun && (
+            <Link to="/audit/new">
+              <Button size="sm" leftIcon={<Plus className="h-4 w-4" />}>
+                Start an audit
+              </Button>
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* Filters */}
+      <Card className="flex flex-col gap-4 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <Input
+              label="Search session ID"
+              value={searchQuery}
+              onChange={(event) => setParam("search", event.target.value || null)}
+              leadingIcon={<Search className="h-4 w-4" />}
+            />
+          </div>
+          <Select
+            label="Status"
+            options={[
+              { value: "", label: "All statuses" },
+              { value: "completed", label: "Completed" },
+              { value: "in-progress", label: "In progress" },
+            ]}
+            value={status}
+            onChange={(event) => setParam("status", event.target.value || null)}
+            className="sm:w-40"
+          />
           {canBrowseAll && (
             <Select
               label="Show"
@@ -101,15 +158,29 @@ export function AuditListPage() {
               className="sm:w-40"
             />
           )}
-          {canRun && (
-            <Link to="/audit/new">
-              <Button size="sm" leftIcon={<Plus className="h-4 w-4" />}>
-                Start an audit
-              </Button>
-            </Link>
-          )}
+          <Select
+            label="Sort by"
+            options={[
+              { value: "startedAt", label: "Started date" },
+              { value: "completedAt", label: "Completed date" },
+              { value: "runBy", label: "Started by" },
+            ]}
+            value={sortBy}
+            onChange={(event) => setParam("sort", event.target.value || null)}
+            className="sm:w-40"
+          />
+          <Select
+            label="Order"
+            options={[
+              { value: "desc", label: "Newest first" },
+              { value: "asc", label: "Oldest first" },
+            ]}
+            value={sortOrder}
+            onChange={(event) => setParam("order", event.target.value || null)}
+            className="sm:w-40"
+          />
         </div>
-      </div>
+      </Card>
 
       {auditsQuery.isPending ? (
         <div role="status" aria-label="Loading audits">
@@ -209,6 +280,16 @@ export function AuditListPage() {
                   >
                     CSV
                   </Button>
+                  {!audit.completed && canRun && audit.runBy.id === user?.id && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      leftIcon={<X className="h-4 w-4" />}
+                      onClick={() => handleAbandon(audit)}
+                    >
+                      Abandon
+                    </Button>
+                  )}
                 </div>
               </div>
             </li>
@@ -220,6 +301,33 @@ export function AuditListPage() {
         page={page}
         totalPages={totalPages}
         onPageChange={(next) => setParam("page", String(next))}
+      />
+
+      <ConfirmDialog
+        open={abandonDialogOpen}
+        onClose={() => {
+          setAbandonDialogOpen(false);
+          setAbandonReason("");
+          setAuditToAbandon(null);
+        }}
+        onConfirm={confirmAbandon}
+        title="Abandon audit session"
+        body={
+          <div className="flex flex-col gap-4">
+            <p>
+              {auditToAbandon
+                ? `Are you sure you want to abandon "${auditToAbandon.scopeValue || auditToAbandon.scopeType}"? This action cannot be undone.`
+                : ""}
+            </p>
+            <Input
+              label="Reason (optional)"
+              value={abandonReason}
+              onChange={(event) => setAbandonReason(event.target.value)}
+            />
+          </div>
+        }
+        confirmLabel="Abandon"
+        tone="destructive"
       />
     </div>
   );

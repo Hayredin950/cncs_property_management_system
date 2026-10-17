@@ -29,7 +29,14 @@ export const AUDITS_PAGE_SIZE = 20;
  * it, which is why it can't widen anyone's view.
  */
 export function fetchAudits(
-  options: { mine?: boolean; page?: number } = {},
+  options: { 
+    mine?: boolean; 
+    page?: number; 
+    status?: string; 
+    search?: string; 
+    sortBy?: string; 
+    sortOrder?: string 
+  } = {},
   signal?: AbortSignal,
 ): Promise<AuditListResponse> {
   const page = Math.max(1, options.page ?? 1);
@@ -39,6 +46,10 @@ export function fetchAudits(
       limit: AUDITS_PAGE_SIZE,
       offset: (page - 1) * AUDITS_PAGE_SIZE,
       ...(options.mine ? { mine: "true" } : {}),
+      ...(options.status ? { status: options.status } : {}),
+      ...(options.search ? { search: options.search } : {}),
+      ...(options.sortBy ? { sortBy: options.sortBy } : {}),
+      ...(options.sortOrder ? { sortOrder: options.sortOrder } : {}),
     },
     signal,
   );

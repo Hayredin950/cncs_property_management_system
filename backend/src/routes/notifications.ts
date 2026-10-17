@@ -53,7 +53,11 @@ notificationsRouter.get(
       const query = validatedQuery<ListQuery>(req);
 
       // `userId` is pinned last so no query parameter can ever widen the scope.
-      const where = {
+      const where: {
+        userId: string;
+        isRead?: boolean;
+        relatedRequestId?: null;
+      } = {
         ...(query.unread === "true" ? { isRead: false } : {}),
         userId: user.id,
       };
@@ -94,7 +98,7 @@ notificationsRouter.get(
           take: query.limit,
           skip: query.offset,
         }),
-        prisma.notification.count({ where: { userId: user.id, isRead: false, ...where } }),
+        prisma.notification.count({ where: { ...where, isRead: false } }),
       ]);
 
       const notifications = rows.map((row) => {

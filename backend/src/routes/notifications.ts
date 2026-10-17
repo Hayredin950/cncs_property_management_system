@@ -30,7 +30,7 @@ const listQuerySchema = z.object({
 type ListQuery = z.infer<typeof listQuerySchema>;
 
 /** Every handler below has already run `authenticate`, so this is a wiring guard. */
-function requireUser(req: AuthenticatedRequest): { id: string } {
+function requireUser(req: AuthenticatedRequest): { id: string; role: string } {
   if (!req.user) {
     throw httpError(401, "Not authenticated");
   }

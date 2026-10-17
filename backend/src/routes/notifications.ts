@@ -110,12 +110,14 @@ notificationsRouter.get(
  * Pattern: removes item tag IDs (CNCS-XXXXX), item names, and requester names.
  */
 function sanitizeForSystemAdmin(message: string): string {
-  // Remove item tag IDs in various formats: CNCS-DEMO-0001, CNCS-C3CBF509, etc.
-  let sanitized = message.replace(/CNCS-[A-Z0-9]+/g, "[ITEM TAG ID]");
+  // Remove item tag IDs in various formats: CNCS-DEMO-0001, CNCS-C3CBF509, CNCS-C3CBF509-0001, etc.
+  let sanitized = message.replace(/CNCS-[A-Z0-9-]+/g, "[ITEM TAG ID]");
+  // Clean up any leftover numeric suffixes like -0001
+  sanitized = sanitized.replace(/\[ITEM TAG ID\]-\d+/g, "[ITEM TAG ID]");
   // Remove item names in parentheses - everything between parentheses after item tag ID
   sanitized = sanitized.replace(/\(.*?\)/g, "[ITEM NAME]");
-  // Remove reviewer names after "by" (with or without period)
-  sanitized = sanitized.replace(/by\s+[A-Z][a-zA-Z]+\.?\s*/g, "by [REVIEWER] ");
+  // Remove reviewer names after "by" (single or multi-word names)
+  sanitized = sanitized.replace(/by\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\.?\s*/g, "by [REVIEWER] ");
   // Remove requester names before "requested"
   sanitized = sanitized.replace(/[A-Z][a-zA-Z]+\s+[A-Z][a-zA-Z]+\s+requested/g, "[REQUESTER] requested");
   return sanitized;

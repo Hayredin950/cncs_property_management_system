@@ -2,15 +2,6 @@ import { Card } from "../../components/Card";
 import { SkeletonText } from "../../components/Skeleton";
 import { useSystemStatus } from "../../hooks/useSystem";
 
-function formatUptime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
-}
-
 export function SystemStatusPage() {
   const { data, isPending, isError } = useSystemStatus();
 
@@ -24,7 +15,7 @@ export function SystemStatusPage() {
       {isPending ? (
         <Card>
           <div role="status" aria-label="Loading system status">
-            <SkeletonText lines={5} />
+            <SkeletonText lines={3} />
           </div>
         </Card>
       ) : isError ? (
@@ -41,16 +32,6 @@ export function SystemStatusPage() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-600">Version:</span>
               <span className="font-medium text-slate-900">{data?.version ?? "Unknown"}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">Last deploy:</span>
-              <span className="font-medium text-slate-900">{data?.lastDeploy ?? "Unknown"}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">Uptime:</span>
-              <span className="font-medium text-slate-900">
-                {typeof data?.uptime === "number" ? formatUptime(data.uptime) : "Unknown"}
-              </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-600">Database:</span>

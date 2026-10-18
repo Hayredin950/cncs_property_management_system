@@ -34,7 +34,7 @@ export function ItemsBrowsePage() {
   const search = searchParams.get("search") ?? "";
   const categoryId = searchParams.get("categoryId") ?? "";
   const orgUnitId = searchParams.get("orgUnitId") ?? "";
-  const scope = searchParams.get("scope") ?? "";
+  const scope = searchParams.get("scope") ?? "all"; // Default to "all"
   const hasFilters = Boolean(search || categoryId || orgUnitId || scope);
 
   // Auto-set department filter based on scope for Department Heads and Staff
@@ -98,10 +98,10 @@ export function ItemsBrowsePage() {
   const getScopeOptions = () => {
     if (user?.role === "DEPARTMENT_HEAD") {
       return [
+        { value: "all", label: "All departments" },
         { value: "mine", label: "My items" },
         { value: "department", label: "My department" },
         { value: "other", label: "Other departments" },
-        { value: "all", label: "All departments" },
       ];
     }
     if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
@@ -131,7 +131,7 @@ export function ItemsBrowsePage() {
         case "all":
           return "All departments";
         default:
-          return "My department";
+          return "All departments";
       }
     }
     if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
@@ -155,7 +155,7 @@ export function ItemsBrowsePage() {
         case "all":
           return "All items across all departments. Search by name, tag ID, category, or department.";
         default:
-          return "All items in your department. Search by name, tag ID, or category.";
+          return "All items across all departments. Search by name, tag ID, category, or department.";
       }
     }
     if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
@@ -208,7 +208,7 @@ export function ItemsBrowsePage() {
           value={orgUnitId}
           onChange={(event) => updateParam("orgUnitId", event.target.value)}
           className="sm:w-56"
-          disabled={user?.role === "DEPARTMENT_HEAD" || user?.role === "STAFF"}
+          disabled={scope === "mine" || scope === "department"}
         />
         {hasFilters && (
           <Button variant="ghost" size="md" leftIcon={<X className="h-4 w-4" />} onClick={clearFilters}>

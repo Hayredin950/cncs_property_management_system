@@ -509,6 +509,67 @@ async function main() {
     },
   });
 
+  // Add a DISPOSAL request for the CS Department Head to review
+  const disposalItem = seededItems.get("CNCS-DEMO-0002"); // Office Desk held by CS Head
+  if (disposalItem) {
+    const disposalRequest = await prisma.request.upsert({
+      where: { id: "seed-req-disposal" },
+      update: {
+        status: RequestStatus.PENDING,
+        reviewedById: null,
+        decidedAt: null,
+        rejectionReason: null,
+      },
+      create: {
+        id: "seed-req-disposal",
+        type: RequestType.DISPOSAL,
+        status: RequestStatus.PENDING,
+        itemId: disposalItem.id,
+        requestedById: csHead.id,
+        reason: "Office desk is damaged beyond repair and needs to be disposed.",
+      },
+    });
+
+    const disposalMessage = renderRequestSubmitted({
+      requesterName: csHead.fullName,
+      requestType: "DISPOSAL",
+      itemTagId: disposalItem.tagId,
+      itemName: disposalItem.name,
+    });
+    await prisma.notification.upsert({
+      where: { id: "seed-notif-disposal" },
+      update: { message: disposalMessage, isRead: false },
+      create: {
+        id: "seed-notif-disposal",
+        userId: officer.id,
+        message: disposalMessage,
+        relatedRequestId: disposalRequest.id,
+      },
+    });
+    await prisma.notification.upsert({
+      where: { id: "seed-notif-disposal-head" },
+      update: { message: disposalMessage, isRead: false },
+      create: {
+        id: "seed-notif-disposal-head",
+        userId: csHead.id,
+        message: disposalMessage,
+        relatedRequestId: disposalRequest.id,
+      },
+    });
+  }
+
+  // Also notify CS Department Head so they see "needs your review"
+  await prisma.notification.upsert({
+    where: { id: "seed-notif-dept-head" },
+    update: { message: submittedMessage, isRead: false },
+    create: {
+      id: "seed-notif-dept-head",
+      userId: csHead.id,
+      message: submittedMessage,
+      relatedRequestId: transferRequest.id,
+    },
+  });
+
   // --- Enhanced seed data for Department Head testing ---
   // Add a 3rd CS staff member
   const csStaff3 = await prisma.user.upsert({
@@ -572,6 +633,36 @@ async function main() {
       model: "U2723QE",
       photoUrl: "/photos/monitor.jpg",
     },
+    {
+      tagId: "CNCS-SEED-0008",
+      name: "Projector Epson",
+      categoryId: byName["Electronics"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "2",
+      room: "201",
+      ownerId: csHead.id,
+      purchaseCost: 45000,
+      condition: Condition.GOOD,
+      brand: "Epson",
+      model: "EB-U05",
+      photoUrl: "/photos/projector.jpg",
+    },
+    {
+      tagId: "CNCS-SEED-0009",
+      name: "Conference Table",
+      categoryId: byName["Furniture"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "1",
+      room: "105",
+      ownerId: csHead.id,
+      purchaseCost: 25000,
+      condition: Condition.NEW,
+      brand: "IKEA",
+      model: "BEKANT",
+      photoUrl: "/photos/table.jpg",
+    },
   ];
 
   for (const { tagId, ...data } of headItems) {
@@ -583,6 +674,21 @@ async function main() {
     seededItems.set(item.tagId, item);
     await generateTagQR(item.tagId);
   }
+
+  // Add a pending account request for CS department
+  const pendingCSAccount = await prisma.user.upsert({
+    where: { email: "newstaff.cs@cncs.aau.edu.et" },
+    update: {},
+    create: {
+      fullName: "New CS Staff Applicant",
+      email: "newstaff.cs@cncs.aau.edu.et",
+      passwordHash: await argon2.hash("Pending123!", { type: argon2.argon2id }),
+      role: Role.STAFF,
+      orgUnitId: csDept.id,
+      accountStatus: "PENDING_APPROVAL",
+      staffId: "PENDING-CS-002",
+    },
+  });
 
   // Add Biology items for cross-department catalog
   const bioItems = [

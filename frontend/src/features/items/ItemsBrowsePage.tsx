@@ -116,9 +116,10 @@ export function ItemsBrowsePage() {
         { value: "mine", label: "My items" },
       ];
     }
-    // STAFF sees "My items" and "My department" scopes
+    // STAFF sees "My items", "My department", and "All departments" scopes
     if (user?.role === "STAFF") {
       return [
+        { value: "all", label: "All departments" },
         { value: "mine", label: "My items" },
         { value: "department", label: "My department" },
       ];

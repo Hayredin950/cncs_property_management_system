@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchInvitableUnits } from "../api/departments";
-import { fetchApprovals, fetchUsers } from "../api/users";
+import { fetchApprovals, fetchUsers, fetchApprovalsCount } from "../api/users";
 
 /**
  * `GET /users` — Admin only. The admin screen is the only caller; `enabled`
@@ -27,6 +27,19 @@ export function useApprovals(enabled = true) {
   return useQuery({
     queryKey: ["users", "approvals"],
     queryFn: ({ signal }) => fetchApprovals(signal),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+/**
+ * `GET /users/approvals/count` — the count of accounts waiting for approval.
+ * Used for the Accounts nav badge.
+ */
+export function useApprovalsCount(enabled = true) {
+  return useQuery({
+    queryKey: ["users", "approvals", "count"],
+    queryFn: ({ signal }) => fetchApprovalsCount(signal),
     enabled,
     staleTime: 15_000,
   });

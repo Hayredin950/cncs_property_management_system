@@ -29,6 +29,14 @@ export function fetchApprovals(signal?: AbortSignal): Promise<UserSummary[]> {
 }
 
 /**
+ * `GET /users/approvals/count` — count of accounts waiting for approval.
+ * Used for the Accounts nav badge.
+ */
+export function fetchApprovalsCount(signal?: AbortSignal): Promise<{ count: number }> {
+  return apiClient.get<{ count: number }>("/users/approvals/count", undefined, signal);
+}
+
+/**
  * `POST /users/:id/approve` — let the account sign in.
  *
  * `role` is the real role, assigned at approval time: the request itself always asks

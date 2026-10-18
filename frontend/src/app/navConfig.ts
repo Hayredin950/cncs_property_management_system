@@ -33,10 +33,11 @@ export interface NavItem {
    *
    *   - `pending-count` — the review queue's size, shown to an admin only, since
    *     the queue is theirs.
+   *   - `approvals-count` — the account approval queue size, shown to SYSTEM_ADMIN and DEPARTMENT_HEAD.
    *   - `unread-notifications` — the signed-in user's own unread inbox, shown to
    *     whoever is signed in, because everyone has one.
    */
-  badge?: "pending-count" | "unread-notifications";
+  badge?: "pending-count" | "approvals-count" | "unread-notifications";
 }
 
 /** Phase 3: the last of the plan's destinations — audit and reports — is now in the nav. */
@@ -80,7 +81,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
   // The queue and the account list are one screen, so they are one row: the
   // "Waiting for approval" panel sits above "Create an account" on `/admin/users`.
-  { label: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN", "DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
+  { label: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN", "DEPARTMENT_HEAD"], phase: 2, badge: "approvals-count" },
   { label: "System Status", to: "/admin/system", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN"], phase: 3 },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
 ];

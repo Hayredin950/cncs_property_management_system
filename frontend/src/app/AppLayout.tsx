@@ -9,6 +9,7 @@ import { Modal } from "../components/Modal";
 import { RoleBadge } from "../components/StatusBadges";
 import { useUnreadNotificationCount } from "../hooks/useNotifications";
 import { usePendingCount } from "../hooks/useRequests";
+import { useApprovalsCount } from "../hooks/useUsers";
 import { cn } from "../lib/cn";
 import { canDecideRequests } from "../lib/permissions";
 import { getSidebarCollapsed, setSidebarCollapsed } from "../lib/storage";
@@ -136,6 +137,8 @@ export function AppLayout() {
     clearing the inbox invalidates `["notifications"]` and this follows.
   */
   const unreadNotifications = useUnreadNotificationCount();
+  const approvalsQuery = useApprovalsCount(canDecideRequests(user?.role) || user?.role === "DEPARTMENT_HEAD");
+  const approvalsCount = approvalsQuery.data?.count ?? 0;
 
   // Update browser tab title with badge when there are pending requests or unread notifications
   useEffect(() => {
@@ -143,9 +146,10 @@ export function AppLayout() {
     const badges: string[] = [];
     if (pendingCount > 0) badges.push(`${pendingCount} pending`);
     if (unreadNotifications > 0) badges.push(`${unreadNotifications} unread`);
+    if (approvalsCount > 0) badges.push(`${approvalsCount} approvals`);
     const title = badges.length > 0 ? `(${badges.join(", ")}) ${baseTitle}` : baseTitle;
     document.title = title;
-  }, [pendingCount, unreadNotifications]);
+  }, [pendingCount, unreadNotifications, approvalsCount]);
 
   // RequireAuth already guarantees a user here; this just narrows the type.
   if (!user) return null;
@@ -167,6 +171,9 @@ export function AppLayout() {
   function badgeFor(item: NavItem): { count: number; label: string } | null {
     if (item.badge === "pending-count" && canDecideRequests(user?.role) && pendingCount > 0) {
       return { count: pendingCount, label: `${pendingCount} pending requests` };
+    }
+    if (item.badge === "approvals-count" && approvalsCount > 0) {
+      return { count: approvalsCount, label: `${approvalsCount} pending approvals` };
     }
     if (item.badge === "unread-notifications" && unreadNotifications > 0) {
       return { count: unreadNotifications, label: `${unreadNotifications} unread notifications` };

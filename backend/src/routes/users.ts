@@ -198,6 +198,50 @@ usersRouter.get(
 );
 
 /**
+ * GET /users/approvals/count — count of accounts waiting for approval.
+ * Used for the Accounts nav badge.
+ */
+usersRouter.get(
+  "/approvals/count",
+  authenticate,
+  requireAnyCapability("ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const user = req.user!;
+      let where: Prisma.UserWhereInput = { accountStatus: "PENDING_APPROVAL" };
+
+      // SYSTEM_ADMIN sees everything: escalated, headless-unit, and stale requests
+      if (user.role === "SYSTEM_ADMIN") {
+        // No additional filter - sees all PENDING_APPROVAL
+      } else if (user.role === "DEPARTMENT_HEAD") {
+        // DEPARTMENT_HEAD only sees staff requests in their unit scope
+        if (!user.orgUnitId) {
+          res.status(403).json({ error: "You are not assigned to a department" });
+          return;
+        }
+        const unitScope = await getUnitScope(user.orgUnitId);
+        where = {
+          ...where,
+          role: "STAFF",
+          orgUnitId: { in: unitScope },
+          // Exclude escalated requests
+          reviewNote: { not: { contains: "[ESCALATED]" } },
+        };
+      } else {
+        // Other roles with ACCOUNT_APPROVE_ANY (should not happen)
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+
+      const count = await prisma.user.count({ where });
+      res.status(200).json({ count });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
  * `POST /users/:id/approve` — let the account sign in.
  *
  * The role is optional and defaults to the one the request already carries (`STAFF`,

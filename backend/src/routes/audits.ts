@@ -318,6 +318,7 @@ function scopeItemFilter(
 
 const listQuerySchema = z.object({
   mine: z.enum(["true", "false"]).optional(),
+  status: z.enum(["completed", "in-progress", "all"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -414,6 +415,9 @@ auditsRouter.get(
         // findings) sees the college's audit history; `mine=true` narrows to
         // their own sessions and nothing widens it back.
         ...(query.mine === "true" ? { runById: user.id } : {}),
+        // Status filter: completed, in-progress, or all
+        ...(query.status === "completed" ? { completedAt: { not: null } } : {}),
+        ...(query.status === "in-progress" ? { completedAt: null } : {}),
       };
 
       const [sessions, total] = await Promise.all([

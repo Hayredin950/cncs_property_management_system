@@ -21,6 +21,7 @@ import { RequestDetailPage } from "../features/requests/RequestDetailPage";
 import { RequestFormPage } from "../features/requests/RequestFormPage";
 import { RequestsListPage } from "../features/requests/RequestsListPage";
 import { ItemDetailPage } from "../features/public/ItemDetailPage";
+import { DepartmentDetailPage } from "../features/departments/DepartmentDetailPage";
 import { LandingPage } from "../features/public/LandingPage";
 import { MapPage } from "../features/public/MapPage";
 import { NotFoundPage } from "../features/public/NotFoundPage";
@@ -132,7 +133,12 @@ export const appRoutes: RouteObject[] = [
           { path: "/change-password", element: <ChangePasswordPage /> },
           { path: "/notifications", element: <NotificationsPage /> },
           // §9.1: Staff restricted catalog browse
-          { path: "/catalog", element: <CatalogPage /> },
+{ path: "/catalog", element: <CatalogPage /> },
+          // Department detail page (DEPARTMENT_HEAD only)
+          {
+            element: <RequireAuth roles={["DEPARTMENT_HEAD"]}><Outlet /></RequireAuth>,
+            children: [{ path: "/departments/:id", element: <DepartmentDetailPage /> }],
+          },
 
           // Asset screens. The SYSTEM_ADMIN is an account role and sees no
           // asset data (spec 2.1.1), so it is the one role these guards keep

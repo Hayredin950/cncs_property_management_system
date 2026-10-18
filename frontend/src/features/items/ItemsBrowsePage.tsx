@@ -34,7 +34,8 @@ export function ItemsBrowsePage() {
   const search = searchParams.get("search") ?? "";
   const categoryId = searchParams.get("categoryId") ?? "";
   const orgUnitId = searchParams.get("orgUnitId") ?? "";
-  const scope = searchParams.get("scope") ?? "all"; // Default to "all"
+  const mine = searchParams.get("mine") === "true";
+  const scope = searchParams.get("scope") ?? (mine ? "mine" : "all");
   const hasFilters = Boolean(search || categoryId || orgUnitId || scope);
 
   // Auto-set department filter based on scope for Department Heads and Staff
@@ -64,6 +65,7 @@ export function ItemsBrowsePage() {
     ...(categoryId ? { categoryId } : {}),
     ...(effectiveOrgUnitId ? { orgUnitId: effectiveOrgUnitId } : {}),
     ...(scope ? { scope } : {}),
+    ...(mine ? { mine: true } : {}),
   });
 
   function updateParam(key: string, value: string) {

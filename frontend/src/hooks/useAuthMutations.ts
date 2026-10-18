@@ -1,5 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { claimItem, refuseClaim } from "../api/items";
+import {
+  claimItem,
+  refuseClaim,
+  claimItemWithCorrection,
+  verifyConfirmItem,
+  verifyFlagItem,
+  reverseDisposal,
+} from "../api/items";
 import { createCategory, deleteCategory, updateCategory } from "../api/categories";
 import {
   approveUser,
@@ -12,8 +19,11 @@ import {
   type InviteUserPayload,
   type UpdateUserPayload,
 } from "../api/users";
+import { initiateLoanReturn, confirmLoanReturn, disputeLoanReturn } from "../api/requests";
+import { checkExpiries } from "../api/expiry";
 import { toast } from "../lib/toast";
 import { ROLE_LABELS, type Role } from "../types/enums";
+import type { Item } from "../types/item";
 
 /**
  * `POST /users/invite` — the privileged invite (T6).
@@ -200,3 +210,120 @@ export function useRefuseClaim() {
     onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't refuse the claim"),
   });
 }
+
+/** `POST /items/:id/claim-with-correction` — claim with condition correction. */
+export function useClaimItemWithCorrection() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, actualCondition, note }: { id: string; actualCondition: string; note: string }) =>
+      claimItemWithCorrection(id, actualCondition, note),
+    onSuccess: (item) => {
+      toast.success(`${item.name} claimed with condition correction.`);
+      void queryClient.invalidateQueries({ queryKey: ["item"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't claim the item with correction"),
+  });
+}
+
+/** `POST /items/:id/verify-confirm` — confirm a REVERTED_UNVERIFIED item (handover). */
+export function useVerifyConfirmItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => verifyConfirmItem(id),
+    onSuccess: (item) => {
+      toast.success(`${item.name} verified and confirmed.`);
+      void queryClient.invalidateQueries({ queryKey: ["item"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't confirm verification"),
+  });
+}
+
+/** `POST /items/:id/verify-flag` — flag a REVERTED_UNVERIFIED item (handover). */
+export function useVerifyFlagItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => verifyFlagItem(id, reason),
+    onSuccess: () => {
+      toast.success("Item flagged for review — Property Officer notified.");
+      void queryClient.invalidateQueries({ queryKey: ["item"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't flag the item"),
+  });
+}
+
+/** `POST /items/:id/reverse-disposal` — reverse a disposal (Property Officer only). */
+export function useReverseDisposal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => reverseDisposal(id, reason),
+    onSuccess: () => {
+      toast.success("Disposal reversed — item returned to college pool.");
+      void queryClient.invalidateQueries({ queryKey: ["item"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't reverse disposal"),
+  });
+}
+
+/** `POST /requests/:id/return-initiate` — Borrower initiates loan return. */
+export function useInitiateLoanReturn() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => initiateLoanReturn(id),
+    onSuccess: () => {
+      toast.success("Return initiated — waiting for lender confirmation.");
+      void queryClient.invalidateQueries({ queryKey: ["requests"] });
+      void queryClient.invalidateQueries({ queryKey: ["request"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't initiate return"),
+  });
+}
+
+/** `POST /requests/:id/return-confirm` — Lender/Property Officer confirms loan return. */
+export function useConfirmLoanReturn() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, condition, notes }: { id: string; condition: string; notes?: string | null }) =>
+      confirmLoanReturn(id, condition, notes),
+    onSuccess: () => {
+      toast.success("Loan return confirmed — item returned to college pool.");
+      void queryClient.invalidateQueries({ queryKey: ["requests"] });
+      void queryClient.invalidateQueries({ queryKey: ["request"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't confirm return"),
+  });
+}
+
+/** `POST /requests/:id/return-dispute` — Lender/Property Officer disputes loan return. */
+export function useDisputeLoanReturn() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => disputeLoanReturn(id, reason),
+    onSuccess: () => {
+      toast.success("Return disputed — loan remains active, Property Officer notified.");
+      void queryClient.invalidateQueries({ queryKey: ["requests"] });
+      void queryClient.invalidateQueries({ queryKey: ["request"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't dispute return"),
+  });
+}
+
+/** `POST /api/v1/expiry/check` — Run all expiry checks (SYSTEM_ADMIN only). */
+export function useCheckExpiries() {
+  return useMutation({
+    mutationFn: () => checkExpiries(),
+    onSuccess: (result) => {
+      toast.success(
+        `Expiry check complete: ${result.expiredClaims} claims, ${result.expiredApprovals} approvals, ` +
+          `${result.expiredReturnConfirmations} returns, ${result.expiredHandoverVerifications} handovers escalated.`,
+      );
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't run expiry check"),
+  });
+}
+
+export type { Item };

@@ -939,14 +939,14 @@ itemsRouter.put(
 
 /**
  * POST /api/v1/items/:id/reverse-disposal
- * Property Officer only - reverses a disposal, item returns to IN_STORE.
- * Workflow-completeness-spec.md §4.3
+ * Property Officer only - reverses a disposal (workflow-completeness-spec.md §4.3).
+ * Returns item to IN_STORE (ACTIVE with COLLEGE holder), does not restore previous custody.
  */
 itemsRouter.post(
   "/:id/reverse-disposal",
   authenticate,
-  requireCapability("ITEM_EDIT_CUSTODY"),
-  validateBody(z.object({ reason: z.string().min(1, "Reason is required") })),
+  requireCapability("DISPOSAL_REVERSE"),
+  validateBody(z.object({ reason: z.string().min(3, "Reason is required").max(500) })),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

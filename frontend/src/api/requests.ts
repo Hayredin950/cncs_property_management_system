@@ -58,3 +58,27 @@ export function withdrawRequest(id: string, reason?: string): Promise<RequestByI
     reason,
   });
 }
+
+/**
+ * `POST /requests/:id/return-initiate` — Borrower initiates return of a loan.
+ * Requires loan request in APPROVED status.
+ */
+export function initiateLoanReturn(id: string): Promise<RequestByIdResponse> {
+  return apiClient.post<RequestByIdResponse>(`/requests/${encodeURIComponent(id)}/return-initiate`);
+}
+
+/**
+ * `POST /requests/:id/return-confirm` — Lender/Property Officer confirms loan return with condition check.
+ * Body: condition (required), notes (optional).
+ */
+export function confirmLoanReturn(id: string, condition: string, notes?: string | null): Promise<{ requestId: string; itemId: string }> {
+  return apiClient.post<{ requestId: string; itemId: string }>(`/requests/${encodeURIComponent(id)}/return-confirm`, { condition, notes });
+}
+
+/**
+ * `POST /requests/:id/return-dispute` — Lender/Property Officer disputes a borrower-initiated return.
+ * Body: reason (3-500 chars required).
+ */
+export function disputeLoanReturn(id: string, reason: string): Promise<RequestByIdResponse> {
+  return apiClient.post<RequestByIdResponse>(`/requests/${encodeURIComponent(id)}/return-dispute`, { reason });
+}

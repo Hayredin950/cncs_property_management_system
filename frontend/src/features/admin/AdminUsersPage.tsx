@@ -29,6 +29,7 @@ import { useApprovals, useInvitableUnits, useUsers } from "../../hooks/useUsers"
 import { formatDateUTC } from "../../lib/formatters";
 import { ApiError } from "../../types/api";
 import type { InviteAccountResponse, UserSummary } from "../../types/user";
+import { canManageAccounts, canInviteAccounts } from "../../lib/permissions";
 
 /**
  * The invite form (T6).
@@ -65,8 +66,11 @@ const INVITE_ROLE_OPTIONS = INVITABLE_ROLES.map((role) => ({
 }));
 
 /**
- * `/admin/users` — **Admin only** (RequireAuth gates the route; every endpoint it
+ * `/admin/users` — Account administration (RequireAuth gates the route; every endpoint it
  * calls re-checks the role server-side).
+ *
+ * - SYSTEM_ADMIN: full access (approvals, invites, accounts management)
+ * - DEPARTMENT_HEAD: approvals tab only (for their department's staff requests)
  *
  * F1.3 used to be create-only, because the backend had no list, update or delete
  * endpoint (gap G2). It now has all of them, so this screen is what an
@@ -93,14 +97,21 @@ const INVITE_ROLE_OPTIONS = INVITABLE_ROLES.map((role) => ({
  */
 export function AdminUsersPage() {
   const { user: currentUser } = useAuth();
-  const usersQuery = useUsers();
-  const approvalsQuery = useApprovals();
-  const unitsQuery = useInvitableUnits();
+  const isSystemAdmin = currentUser?.role === "SYSTEM_ADMIN";
+  const isDeptHead = currentUser?.role === "DEPARTMENT_HEAD";
+  const showInviteTab = isSystemAdmin;
+  const showAccountsTab = isSystemAdmin;
+
+  const usersQuery = useUsers(isSystemAdmin || isDeptHead);
+  const approvalsQuery = useApprovals(isSystemAdmin || isDeptHead);
+  const unitsQuery = useInvitableUnits(isSystemAdmin);
   const inviteMutation = useInviteUser();
   const updateMutation = useUpdateUser();
 
-  // Tab state
-  const [activeTab, setActiveTab] = useState<"approvals" | "invite" | "accounts">("approvals");
+  // Tab state - default to approvals for dept heads
+  const [activeTab, setActiveTab] = useState<"approvals" | "invite" | "accounts">(
+    isDeptHead ? "approvals" : "approvals"
+  );
 
   // Search and filter state for Existing Accounts tab
   const [searchQuery, setSearchQuery] = useState("");
@@ -293,7 +304,9 @@ export function AdminUsersPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Accounts</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Every account in the system, and what it owns. Only administrators can see this page.
+          {isSystemAdmin
+            ? "Every account in the system, and what it owns. Only administrators can see this page."
+            : "Approve staff account requests for your department."}
         </p>
       </div>
 
@@ -309,26 +322,30 @@ export function AdminUsersPage() {
         >
           Waiting for Approval {pending.length > 0 && `(${pending.length})`}
         </button>
-        <button
-          onClick={() => setActiveTab("invite")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "invite"
-              ? "border-slate-900 text-slate-900"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          Invite an Account
-        </button>
-        <button
-          onClick={() => setActiveTab("accounts")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "accounts"
-              ? "border-slate-900 text-slate-900"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          Existing Accounts {accounts.length > 0 && `(${accounts.length})`}
-        </button>
+        {showInviteTab && (
+          <button
+            onClick={() => setActiveTab("invite")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "invite"
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Invite an Account
+          </button>
+        )}
+        {showAccountsTab && (
+          <button
+            onClick={() => setActiveTab("accounts")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "accounts"
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Existing Accounts {accounts.length > 0 && `(${accounts.length})`}
+          </button>
+        )}
       </div>
 
       {/* Tab 1: Waiting for Approval */}
@@ -408,7 +425,7 @@ export function AdminUsersPage() {
       )}
 
       {/* Tab 2: Invite an Account */}
-      {activeTab === "invite" && (
+      {showInviteTab && activeTab === "invite" && (
         <section>
           <Card>
             <form onSubmit={handleSubmit(onInvite)} noValidate className="flex flex-col gap-4">
@@ -538,7 +555,7 @@ export function AdminUsersPage() {
       )}
 
       {/* Tab 3: Existing Accounts */}
-      {activeTab === "accounts" && (
+      {showAccountsTab && activeTab === "accounts" && (
         <section>
           {/* Search and Filter Controls */}
           <div className="mb-4 flex flex-wrap gap-3">

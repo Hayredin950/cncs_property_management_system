@@ -210,18 +210,116 @@ export async function checkExpiredHandoverVerifications(): Promise<number> {
  */
 export async function checkAllExpiries(): Promise<{
   expiredClaims: number;
+  expiredApprovals: number;
   expiredReturnConfirmations: number;
   expiredHandoverVerifications: number;
 }> {
-  const [expiredClaims, expiredReturnConfirmations, expiredHandoverVerifications] = await Promise.all([
+  const [expiredClaims, expiredApprovals, expiredReturnConfirmations, expiredHandoverVerifications] = await Promise.all([
     checkExpiredClaims(),
+    checkExpiredApprovals(),
     checkExpiredReturnConfirmations(),
     checkExpiredHandoverVerifications(),
   ]);
 
   return {
     expiredClaims,
+    expiredApprovals,
     expiredReturnConfirmations,
     expiredHandoverVerifications,
   };
+}
+
+/**
+ * Check and handle expired approvals (requests in PENDING, PENDING_STAGE1, PENDING_STAGE2
+ * that have been pending for more than APPROVAL_ESCALATION_DAYS)
+ * Escalates to the next approval level or Property Officer
+ */
+export async function checkExpiredApprovals(): Promise<number> {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - APPROVAL_ESCALATION_DAYS * 24 * 60 * 60 * 1000);
+
+  const staleRequests = await prisma.request.findMany({
+    where: {
+      status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"] },
+      createdAt: { lt: cutoff },
+    },
+    select: {
+      id: true,
+      type: true,
+      status: true,
+      reviewedById: true,
+      item: { select: { tagId: true, name: true, orgUnitId: true } },
+    },
+  });
+
+  if (staleRequests.length === 0) {
+    return 0;
+  }
+
+  let count = 0;
+  for (const request of staleRequests) {
+    const reviewerId = request.reviewedById;
+    if (!reviewerId) continue;
+
+    const reviewer = await prisma.user.findUnique({
+      where: { id: reviewerId },
+      select: { id: true, role: true, orgUnitId: true },
+    });
+    if (!reviewer) continue;
+
+    await prisma.$transaction(async (tx) => {
+      let escalationTarget: string | null = null;
+
+      if (request.type === "TRANSFER") {
+        if (request.status === "PENDING" || request.status === "PENDING_STAGE1") {
+          // Escalate to Stage 2 - find receiving head
+          if (request.item.orgUnitId) {
+            const receivingUnit = await tx.orgUnit.findUnique({
+              where: { id: request.item.orgUnitId },
+              select: { headId: true },
+            });
+            if (receivingUnit?.headId) {
+              escalationTarget = receivingUnit.headId;
+            }
+          }
+        } else if (request.status === "PENDING_STAGE2") {
+          // Escalate to Property Officer
+          const propertyOfficer = await tx.user.findFirst({
+            where: { role: "PROPERTY_OFFICER", accountStatus: "ACTIVE" },
+            select: { id: true },
+          });
+          escalationTarget = propertyOfficer?.id ?? null;
+        }
+      } else {
+        // Disposal or Loan - escalate to Property Officer
+        const propertyOfficer = await tx.user.findFirst({
+          where: { role: "PROPERTY_OFFICER", accountStatus: "ACTIVE" },
+          select: { id: true },
+        });
+        escalationTarget = propertyOfficer?.id ?? null;
+      }
+
+      if (!escalationTarget) return;
+
+      await tx.request.update({
+        where: { id: request.id },
+        data: {
+          reviewedById: escalationTarget,
+          reviewNote: (await tx.request.findUnique({ where: { id: request.id }, select: { reviewNote: true } }))?.reviewNote ?? ""
+            + `\n[ESCALATED] Auto-escalated after ${APPROVAL_ESCALATION_DAYS} days`,
+        },
+      });
+
+      await tx.notification.create({
+        data: {
+          userId: escalationTarget,
+          message: `[ESCALATED] Request ${request.id} for item ${request.item.tagId} (${request.item.name}) has been escalated to you after ${APPROVAL_ESCALATION_DAYS} days without a decision.`,
+        },
+      });
+    });
+
+    count++;
+  }
+
+  return count;
 }

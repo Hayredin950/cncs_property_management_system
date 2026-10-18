@@ -155,11 +155,45 @@ export function claimItem(id: string): Promise<Item> {
 }
 
 /**
+ * `POST /items/:id/claim-with-correction` — claim with condition correction.
+ * Body: actualCondition (NEW|GOOD|FAIR|DAMAGED|BEYOND_REPAIR), note (3-500 chars).
+ */
+export function claimItemWithCorrection(id: string, actualCondition: string, note: string): Promise<Item> {
+  return apiClient.post<Item>(`/items/${encodeURIComponent(id)}/claim-with-correction`, { actualCondition, note });
+}
+
+/**
  * `POST /items/:id/refuse-claim` — refuse a PENDING_CLAIM item, reverting it to
  * the college pool. Requires a reason (3–500 characters).
  */
 export function refuseClaim(id: string, reason: string): Promise<Item> {
   return apiClient.post<Item>(`/items/${encodeURIComponent(id)}/refuse-claim`, { reason });
+}
+
+/**
+ * `POST /items/:id/verify-confirm` — confirm a REVERTED_UNVERIFIED item (handover).
+ * Department head confirms item is accurately recorded.
+ */
+export function verifyConfirmItem(id: string): Promise<Item> {
+  return apiClient.post<Item>(`/items/${encodeURIComponent(id)}/verify-confirm`);
+}
+
+/**
+ * `POST /items/:id/verify-flag` — flag a REVERTED_UNVERIFIED item (handover).
+ * Department head flags item as having issues (missing, wrong condition, wrong location).
+ * Requires a reason (5-500 chars).
+ */
+export function verifyFlagItem(id: string, reason: string): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>(`/items/${encodeURIComponent(id)}/verify-flag`, { reason });
+}
+
+/**
+ * `POST /items/:id/reverse-disposal` — reverse a disposal (Property Officer only).
+ * Returns item to IN_STORE (ACTIVE with COLLEGE holder).
+ * Requires a reason (3-500 chars).
+ */
+export function reverseDisposal(id: string, reason: string): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>(`/items/${encodeURIComponent(id)}/reverse-disposal`, { reason });
 }
 
 /** Re-export so form screens can resolve category names without a second import path. */

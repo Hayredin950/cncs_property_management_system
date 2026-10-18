@@ -789,6 +789,10 @@ const withdrawSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+const returnDisputeSchema = z.object({
+  reason: z.string().trim().min(3, "Dispute reason is required").max(500),
+});
+
 /**
  * POST /api/v1/requests/:id/withdraw
  * Requester only, while status is PENDING, PENDING_STAGE1, or PENDING_STAGE2.
@@ -922,30 +926,92 @@ requestsRouter.post(
 );
 
 /**
- * POST /api/v1/requests/:id/return
- * Borrower / releasing head / property officer — mark a loan as returned.
- * Updates item status to ACTIVE, records return condition and notes.
+ * POST /api/v1/requests/:id/return-dispute
+ * Lender/Property Officer - disputes a borrower-initiated return.
+ * Workflow-completeness-spec.md §3.6
  */
 requestsRouter.post(
-  "/:id/return",
+  "/:id/return-dispute",
   authenticate,
-  validateBody(returnLoanSchema),
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  validateBody(returnDisputeSchema),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const id = req.params.id as string;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
         res.status(400).json({ error: "Request ID is required" });
         return;
       }
-      const body = validatedBody<{ condition: string; notes?: string | null }>(req);
-      const result = await returnLoan(prisma, {
-        requestId: id,
-        returnerId: req.user!.id,
-        condition: body.condition,
-        notes: body.notes ?? null,
-        decidedAt: new Date(),
+      const body = validatedBody<{ reason: string }>(req);
+
+      const request = await prisma.request.findUnique({
+        where: { id },
+        include: { item: true },
       });
-      res.status(200).json({ requestId: result.requestId, itemId: result.itemId });
+
+      if (!request) {
+        throw httpError(404, ERROR_REQUEST_NOT_FOUND);
+      }
+
+      if (request.type !== "LOAN") {
+        throw httpError(400, "Only loan requests can be disputed");
+      }
+
+      if (request.status !== "RETURN_PENDING_CONFIRMATION") {
+        throw httpError(400, "Return is not pending confirmation");
+      }
+
+      const returner = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { id: true, fullName: true, email: true, role: true },
+      });
+      if (!returner) {
+        throw httpError(401, "Not authenticated");
+      }
+
+      const isBorrower = request.requestedById === req.user!.id;
+      const isReleasingHead = request.item.holderType === "STAFF" && request.item.holderId === req.user!.id;
+      const isPropertyOfficer = returner.role === "PROPERTY_OFFICER";
+      if (!isBorrower && !isReleasingHead && !isPropertyOfficer) {
+        throw httpError(403, "Only the borrower, releasing head, or property officer can dispute this return");
+      }
+
+      // Update request status back to APPROVED (loan still active) and log dispute
+      const updated = await prisma.$transaction(async (tx) => {
+        const updatedRequest = await tx.request.update({
+          where: { id },
+          data: {
+            status: "APPROVED",
+            // Store dispute reason in rejectionReason or a new field
+            rejectionReason: `RETURN_DISPUTED: ${body.reason}`,
+          },
+        });
+
+        // Log custody event for the dispute
+        await tx.custodyEvent.create({
+          data: {
+            itemId: request.itemId,
+            eventType: "TRANSFERRED", // Item stays with borrower
+            fromHolderType: "STAFF",
+            fromHolderId: request.requestedById,
+            toHolderType: "STAFF",
+            toHolderId: request.requestedById,
+            actingUserId: req.user!.id,
+            reason: `Return disputed: ${body.reason}`,
+          },
+        });
+
+        // Notify the borrower
+        await tx.notification.create({
+          data: {
+            userId: request.requestedById,
+            message: `Your return initiation for item ${request.item.tagId} (${request.item.name}) was disputed: ${body.reason}`,
+          },
+        });
+
+        return updatedRequest;
+      });
+
+      res.status(200).json(updated);
     } catch (err) {
       next(err);
     }

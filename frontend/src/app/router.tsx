@@ -204,7 +204,7 @@ export const appRoutes: RouteObject[] = [
           // as any unknown path (frontend-plan.md §6, §9.1).
           {
             element: (
-              <RequireAuth roles={["SYSTEM_ADMIN"]}>
+              <RequireAuth roles={["SYSTEM_ADMIN", "DEPARTMENT_HEAD"]}>
                 <Outlet />
               </RequireAuth>
             ),

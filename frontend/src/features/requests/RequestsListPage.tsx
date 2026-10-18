@@ -32,6 +32,13 @@ const TYPE_OPTIONS = [
   })),
 ];
 
+const WINDOW_OPTIONS = [
+  { value: "none", label: "All time" },
+  { value: "this-week", label: "This week" },
+  { value: "this-month", label: "This month" },
+  { value: "last-30-days", label: "Last 30 days" },
+];
+
 /**
  * `/requests` — Shell B/C (SRS F6/F7, frontend-design-system.md
  * §10.7). Staff see their own filings, the reviewing roles see the queue — the
@@ -68,6 +75,14 @@ export function RequestsListPage() {
   const rawDepartmentId = searchParams.get("departmentId");
   const departmentId = rawDepartmentId || undefined;
 
+  const rawWindow = searchParams.get("window") ?? "none";
+  const window =
+    rawWindow === "ALL" || rawWindow === "none"
+      ? undefined
+      : ["this-week", "this-month", "last-30-days", "custom"].includes(rawWindow)
+        ? (rawWindow as "this-week" | "this-month" | "last-30-days" | "custom")
+        : undefined;
+
   const searchQuery = searchParams.get("search") || "";
   const dateFrom = searchParams.get("dateFrom") || "";
   const dateTo = searchParams.get("dateTo") || "";
@@ -85,6 +100,7 @@ export function RequestsListPage() {
     ...(status ? { status } : {}),
     ...(type ? { type } : {}),
     ...(departmentId ? { departmentId } : {}),
+    ...(window ? { window } : {}),
     ...(searchQuery ? { search: searchQuery } : {}),
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
@@ -114,6 +130,15 @@ export function RequestsListPage() {
       const next = new URLSearchParams(prev);
       if (value) next.set("departmentId", value);
       else next.delete("departmentId");
+      return next;
+    });
+  }
+
+  function updateWindow(value: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value && value !== "none") next.set("window", value);
+      else next.delete("window");
       return next;
     });
   }
@@ -188,6 +213,13 @@ export function RequestsListPage() {
             options={departmentOptions}
             value={rawDepartmentId ?? ""}
             onChange={(event) => updateDepartment(event.target.value)}
+            className="sm:w-40"
+          />
+          <Select
+            label="Time range"
+            options={WINDOW_OPTIONS}
+            value={rawWindow ?? "none"}
+            onChange={(event) => updateWindow(event.target.value)}
             className="sm:w-40"
           />
         </div>

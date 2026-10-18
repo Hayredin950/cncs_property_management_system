@@ -38,14 +38,18 @@ export function ItemsBrowsePage() {
   const hasFilters = Boolean(search || categoryId || orgUnitId || scope);
 
   // Auto-set department filter based on scope for Department Heads and Staff
+  // Only auto-set when user hasn't manually selected a department
   const effectiveOrgUnitId = (() => {
     if (!user) return orgUnitId;
     if (user.role === "DEPARTMENT_HEAD" || user.role === "STAFF") {
+      // If user manually selected a department, respect that choice
+      if (orgUnitId) return orgUnitId;
+      // Otherwise auto-set based on scope
       if (scope === "mine" || scope === "department" || !scope) {
         return user.departmentId || orgUnitId;
       }
       if (scope === "other" || scope === "all") {
-        return ""; // No department filter for other/all scopes
+        return ""; // No department filter for other/all scopes (unless manually set)
       }
     }
     return orgUnitId;

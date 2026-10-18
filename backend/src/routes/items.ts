@@ -342,6 +342,32 @@ itemsRouter.get(
           } else {
             roleScope = itemListScope(req.user);
           }
+        } else if (req.user?.role === "STAFF") {
+          // STAFF can use "all", "mine", "department" scopes
+          switch (scopeParam) {
+            case "mine":
+              roleScope = { OR: [{ ownerId: req.user!.id }, { holderType: "STAFF", holderId: req.user!.id }] };
+              break;
+            case "department":
+              if (req.user.orgUnitId) {
+                roleScope = {
+                  OR: [
+                    { orgUnitId: req.user.orgUnitId },
+                    { holderType: "DEPARTMENT", holderId: req.user.orgUnitId },
+                    { ownerId: req.user!.id },
+                  ],
+                };
+              } else {
+                roleScope = { ownerId: req.user!.id };
+              }
+              break;
+            case "all":
+              roleScope = undefined; // No restriction - see all
+              break;
+            default:
+              // Invalid scope, fall back to role-based default
+              roleScope = itemListScope(req.user);
+          }
         } else {
           // Other roles ignore scope parameter, use role-based default
           roleScope = itemListScope(req.user);

@@ -22,6 +22,20 @@ export interface DepartmentRoster {
   };
 }
 
+export interface DepartmentStaff {
+  department: {
+    id: string;
+    name: string;
+  };
+  staff: {
+    id: string;
+    fullName: string;
+    email: string;
+    role: string;
+    itemCount: number;
+  }[];
+}
+
 export interface InvitableUnit {
   id: string;
   name: string;
@@ -40,5 +54,9 @@ export async function fetchInvitableUnits(): Promise<InvitableUnit[]> {
 
 export async function fetchDepartmentRoster(id: string): Promise<DepartmentRoster> {
   return apiClient.get<DepartmentRoster>(`/departments/${id}/roster`);
+}
+
+export async function fetchDepartmentStaff(id: string): Promise<DepartmentStaff> {
+  return apiClient.get<DepartmentStaff>(`/departments/${id}/staff`);
 }
 

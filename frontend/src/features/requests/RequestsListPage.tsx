@@ -110,8 +110,13 @@ export function RequestsListPage() {
   function updateStatus(value: string) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      if (value && value !== "ALL") next.set("status", value);
-      else next.delete("status");
+      if (value && value !== "ALL") {
+        next.set("status", value);
+        // When a specific status is selected, show all time by default
+        next.delete("window");
+      } else {
+        next.delete("status");
+      }
       return next;
     });
   }
@@ -284,22 +289,22 @@ export function RequestsListPage() {
             <li key={request.id}>
               <Link
                 to={`/requests/${request.id}`}
-                className="flex flex-col gap-2 rounded-md border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
+                className="flex flex-row items-center gap-4 rounded-md border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
               >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
+                <div className="flex-1 min-w-0">
                   <p className="truncate font-semibold text-slate-900">{request.item.name}</p>
                   <p className="tag-id text-xs text-slate-500">{request.item.tagId}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <RequestTypeBadge type={request.type} />
                   <RequestStatusBadge status={request.status} />
                 </div>
-              </div>
-              <p className="line-clamp-2 text-sm text-slate-600">{request.reason}</p>
-              <p className="text-xs text-slate-400">
-                {request.requestedBy.fullName} · {formatRelativeTime(request.createdAt)}
-              </p>
+                <div className="text-right shrink-0 w-48">
+                  <p className="line-clamp-1 text-sm text-slate-600 truncate">{request.reason}</p>
+                  <p className="text-xs text-slate-400">
+                    {request.requestedBy.fullName} · {formatRelativeTime(request.createdAt)}
+                  </p>
+                </div>
               </Link>
             </li>
           ))}

@@ -1,4 +1,4 @@
-import { Users, Package, Search, Building2 } from "lucide-react";
+import { Users, Package, Search } from "lucide-react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "@/app/AuthContext";
@@ -10,7 +10,7 @@ import { ItemCard } from "@/components/ItemCard";
 import { ItemActions } from "@/components/ItemActions";
 import { Pagination } from "@/components/Pagination";
 import { SkeletonCard } from "@/components/Skeleton";
-import { fetchDepartmentRoster } from "@/api/departments";
+import { fetchDepartmentRoster, fetchDepartmentStaff } from "@/api/departments";
 import { useQuery } from "@tanstack/react-query";
 import { useItems } from "@/hooks/useItems";
 import { EmptyState } from "@/components/EmptyState";
@@ -55,6 +55,13 @@ export function DepartmentDetailPage() {
     scope: "department",
   });
 
+  // Staff query for department staff
+  const staffQuery = useQuery({
+    queryKey: ["department-staff", id],
+    queryFn: () => fetchDepartmentStaff(id),
+    enabled: !!id,
+  });
+
   if (!canAccess) {
     return (
       <div className="flex flex-col gap-6">
@@ -69,7 +76,7 @@ export function DepartmentDetailPage() {
   }
 
   const departmentName = rosterQuery.data?.department?.name ?? "Loading...";
-  const staffMembers: readonly { id: string; fullName: string; email: string; orgUnitId?: string; itemCount?: number }[] = []; // Backend doesn't return staff list, only count
+  const staffMembers = staffQuery.data?.staff ?? [];
 
   function updateParam(key: string, value: string) {
     if (activeTab === "items") {
@@ -169,7 +176,7 @@ export function DepartmentDetailPage() {
               : "border-transparent text-slate-500 hover:text-slate-700"
           }`}
         >
-          Staff ({rosterQuery.data?.staffCount ?? 0})
+          Staff ({staffMembers.length})
         </button>
       </div>
 
@@ -260,17 +267,17 @@ export function DepartmentDetailPage() {
 
       {activeTab === "staff" && (
         <div className="flex flex-col gap-4">
-          {rosterQuery.isPending ? (
+          {staffQuery.isPending ? (
             <div className="grid gap-4">
               {Array.from({ length: 3 }).map((_, index) => (
                 <Card key={index} className="h-20" />
               ))}
             </div>
-          ) : rosterQuery.isError ? (
+          ) : staffQuery.isError ? (
             <ErrorState
-              heading="Couldn't load department roster"
+              heading="Couldn't load department staff"
               action={
-                <Button size="sm" onClick={() => rosterQuery.refetch()}>
+                <Button size="sm" onClick={() => staffQuery.refetch()}>
                   Try again
                 </Button>
               }
@@ -297,10 +304,6 @@ export function DepartmentDetailPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <span className="flex items-center gap-1">
-                      <Building2 className="h-3 w-3" aria-hidden="true" />
-                      {staff.orgUnitId ? "Active" : "No department"}
-                    </span>
                     <span className="flex items-center gap-1">
                       <Package className="h-3 w-3" aria-hidden="true" />
                       {staff.itemCount ?? 0} items

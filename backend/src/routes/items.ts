@@ -464,11 +464,22 @@ itemsRouter.get(
 
       const summary = req.query.summary === "true";
 
+      // Build where clause based on role
+      // For Department Heads, include department-held items
+      // For Staff, include staff-held items
+      // Both roles also check ownerId
+      const orConditions: Prisma.ItemWhereInput[] = [
+        { ownerId: req.user.id },
+      ];
+
+      if (req.user.role === "STAFF") {
+        orConditions.push({ holderType: "STAFF", holderId: req.user.id });
+      } else if (req.user.role === "DEPARTMENT_HEAD" && req.user.orgUnitId) {
+        orConditions.push({ holderType: "DEPARTMENT", holderId: req.user.orgUnitId });
+      }
+
       const where: Prisma.ItemWhereInput = {
-        OR: [
-          { holderType: "STAFF", holderId: req.user.id },
-          { ownerId: req.user.id },
-        ],
+        OR: orConditions,
         status: "ACTIVE",
       };
 

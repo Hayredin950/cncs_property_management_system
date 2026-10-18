@@ -68,12 +68,20 @@ catalogRouter.get(
         return;
       }
 
-      // Exclude user's own department items (they see those in the main items view)
+// Exclude user's own department items AND department-held items from other departments
       const whereClause: Prisma.ItemWhereInput = {
         status: { notIn: ["DISPOSED", "VOIDED"] },
       };
       if (user.orgUnitId) {
-        whereClause.orgUnitId = { not: user.orgUnitId };
+        whereClause.AND = [
+          { orgUnitId: { not: user.orgUnitId } },
+          {
+            OR: [
+              { holderType: { not: "DEPARTMENT" } },
+              { holderId: user.orgUnitId },
+            ],
+          },
+        ];
       }
 
       const items = await prisma.item.findMany({

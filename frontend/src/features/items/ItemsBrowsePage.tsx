@@ -37,6 +37,20 @@ export function ItemsBrowsePage() {
   const scope = searchParams.get("scope") ?? "";
   const hasFilters = Boolean(search || categoryId || orgUnitId || scope);
 
+  // Auto-set department filter based on scope for Department Heads and Staff
+  const effectiveOrgUnitId = (() => {
+    if (!user) return orgUnitId;
+    if (user.role === "DEPARTMENT_HEAD" || user.role === "STAFF") {
+      if (scope === "mine" || scope === "department" || !scope) {
+        return user.departmentId || orgUnitId;
+      }
+      if (scope === "other" || scope === "all") {
+        return ""; // No department filter for other/all scopes
+      }
+    }
+    return orgUnitId;
+  })();
+
   const categoriesQuery = useCategories();
   const departmentsQuery = useDepartments();
   const itemsQuery = useItems({
@@ -44,7 +58,7 @@ export function ItemsBrowsePage() {
     limit: 20,
     ...(search ? { search } : {}),
     ...(categoryId ? { categoryId } : {}),
-    ...(orgUnitId ? { orgUnitId } : {}),
+    ...(effectiveOrgUnitId ? { orgUnitId: effectiveOrgUnitId } : {}),
     ...(scope ? { scope } : {}),
   });
 
@@ -87,6 +101,7 @@ export function ItemsBrowsePage() {
         { value: "mine", label: "My items" },
         { value: "department", label: "My department" },
         { value: "other", label: "Other departments" },
+        { value: "all", label: "All departments" },
       ];
     }
     if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
@@ -113,12 +128,14 @@ export function ItemsBrowsePage() {
           return "My department";
         case "other":
           return "Other departments";
+        case "all":
+          return "All departments";
         default:
           return "My department";
       }
     }
     if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
-      return scope === "mine" ? "My items" : "Browse items";
+      return scope === "mine" ? "My items" : "All departments";
     }
     if (user?.role === "STAFF") {
       return "My items";
@@ -135,6 +152,8 @@ export function ItemsBrowsePage() {
           return "All items in your department. Search by name, tag ID, or category.";
         case "other":
           return "Items from other departments for transfer requests. Limited view: name, category, building, status.";
+        case "all":
+          return "All items across all departments. Search by name, tag ID, category, or department.";
         default:
           return "All items in your department. Search by name, tag ID, or category.";
       }
@@ -180,6 +199,7 @@ export function ItemsBrowsePage() {
         {/*
           Department filter from GET /departments (OrgUnits)
           Uses orgUnitId for backend filtering
+          For DEPARTMENT_HEAD/STAFF: auto-set based on scope
         */}
         <Select
           label="Department"
@@ -188,6 +208,7 @@ export function ItemsBrowsePage() {
           value={orgUnitId}
           onChange={(event) => updateParam("orgUnitId", event.target.value)}
           className="sm:w-56"
+          disabled={user?.role === "DEPARTMENT_HEAD" || user?.role === "STAFF"}
         />
         {hasFilters && (
           <Button variant="ghost" size="md" leftIcon={<X className="h-4 w-4" />} onClick={clearFilters}>

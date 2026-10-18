@@ -67,14 +67,18 @@ itemHistoryRouter.get(
         return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
       }
 
-      // Scope check: Department Heads only see history for items in their department OR items they personally hold
+      // Scope check: Department Heads can view history for items they can view
+      // This includes: their department items, cross-department items (from catalog),
+      // and items they personally hold. They CANNOT see department-held items from other departments.
       const user = req.user;
       if (user?.role === "DEPARTMENT_HEAD") {
-        const isInDept = item.orgUnitId === user.orgUnitId ||
-          (item.holderType === "DEPARTMENT" && item.holderId === user.orgUnitId) ||
-          item.ownerId === user.id ||
-          (item.holderType === "STAFF" && item.holderId === user.id);
-        if (!isInDept) {
+        const isInDept = item.orgUnitId === user.orgUnitId;
+        const isOwnItem = item.ownerId === user.id || (item.holderType === "STAFF" && item.holderId === user.id);
+        const isDeptHeld = item.holderType === "DEPARTMENT" && item.holderId === user.orgUnitId;
+        const isCrossDept = item.orgUnitId !== user.orgUnitId && item.holderType !== "DEPARTMENT";
+        
+        const canView = isInDept || isOwnItem || isDeptHeld || isCrossDept;
+        if (!canView) {
           return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
         }
       }

@@ -880,14 +880,287 @@ async function main() {
     },
   });
 
+  // Add more items for staff testing (items owned by staff members)
+  const staffItems = [
+    // CS Staff 1 items
+    {
+      tagId: "CNCS-STAFF-0001",
+      name: "MacBook Air M2",
+      categoryId: byName["Electronics"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "3",
+      room: "305",
+      ownerId: csStaff1.id,
+      purchaseCost: 85000,
+      condition: Condition.NEW,
+      brand: "Apple",
+      model: "MacBook Air M2",
+      photoUrl: "/photos/macbook-air.jpg",
+    },
+    {
+      tagId: "CNCS-STAFF-0002",
+      name: "iPad Pro 12.9",
+      categoryId: byName["Electronics"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "3",
+      room: "305",
+      ownerId: csStaff1.id,
+      purchaseCost: 65000,
+      condition: Condition.GOOD,
+      brand: "Apple",
+      model: "iPad Pro 12.9",
+      photoUrl: "/photos/ipad-pro.jpg",
+    },
+    {
+      tagId: "CNCS-STAFF-0003",
+      name: "Standing Desk",
+      categoryId: byName["Furniture"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "3",
+      room: "305",
+      ownerId: csStaff1.id,
+      purchaseCost: 12000,
+      condition: Condition.NEW,
+      brand: "IKEA",
+      model: "BEKANT",
+      photoUrl: "/photos/standing-desk.jpg",
+    },
+    // CS Staff 2 items
+    {
+      tagId: "CNCS-STAFF-0004",
+      name: "ThinkPad X1 Carbon",
+      categoryId: byName["Electronics"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "2",
+      room: "205",
+      ownerId: csStaff2.id,
+      purchaseCost: 75000,
+      condition: Condition.GOOD,
+      brand: "Lenovo",
+      model: "ThinkPad X1 Carbon Gen 10",
+      photoUrl: "/photos/thinkpad.jpg",
+    },
+    {
+      tagId: "CNCS-STAFF-0005",
+      name: "Monitor 27\" Dell",
+      categoryId: byName["Electronics"].id,
+      orgUnitId: csDept.id,
+      buildingId: cncsBuilding.id,
+      floor: "2",
+      room: "205",
+      ownerId: csStaff2.id,
+      purchaseCost: 18000,
+      condition: Condition.NEW,
+      brand: "Dell",
+      model: "U2723QE",
+      photoUrl: "/photos/dell-monitor.jpg",
+    },
+    // Biology Staff 1 items
+    {
+      tagId: "CNCS-STAFF-0006",
+      name: "Pipette Set",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: bioDept.id,
+      buildingId: scienceBuilding.id,
+      floor: "2",
+      room: "210",
+      ownerId: bioStaff1.id,
+      purchaseCost: 25000,
+      condition: Condition.NEW,
+      brand: "Eppendorf",
+      model: "Research Plus",
+      photoUrl: "/photos/pipette.jpg",
+    },
+    {
+      tagId: "CNCS-STAFF-0007",
+      name: "Lab Coat Set",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: bioDept.id,
+      buildingId: scienceBuilding.id,
+      floor: "2",
+      room: "210",
+      ownerId: bioStaff1.id,
+      purchaseCost: 5000,
+      condition: Condition.GOOD,
+      brand: "Generic",
+      model: "Lab Coat M",
+      photoUrl: "/photos/lab-coat.jpg",
+    },
+    // Biology Staff 2 items
+    {
+      tagId: "CNCS-STAFF-0008",
+      name: "Microscope Camera",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: bioDept.id,
+      buildingId: scienceBuilding.id,
+      floor: "2",
+      room: "210",
+      ownerId: bioStaff2.id,
+      purchaseCost: 35000,
+      condition: Condition.NEW,
+      brand: "Olympus",
+      model: "DP74",
+      photoUrl: "/photos/micro-camera.jpg",
+    },
+    // Chemistry Staff 1 items
+    {
+      tagId: "CNCS-STAFF-0009",
+      name: "Lab Coat",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: chemDept.id,
+      buildingId: chemBuilding.id,
+      floor: "1",
+      room: "105",
+      ownerId: chemStaff1.id,
+      purchaseCost: 3000,
+      condition: Condition.GOOD,
+      brand: "Generic",
+      model: "Lab Coat L",
+      photoUrl: "/photos/lab-coat2.jpg",
+    },
+    {
+      tagId: "CNCS-STAFF-0010",
+      name: "Safety Goggles Set",
+      categoryId: byName["Lab Equipment"].id,
+      orgUnitId: chemDept.id,
+      buildingId: chemBuilding.id,
+      floor: "1",
+      room: "105",
+      ownerId: chemStaff1.id,
+      purchaseCost: 2000,
+      condition: Condition.NEW,
+      brand: "3M",
+      model: "Virtua",
+      photoUrl: "/photos/goggles.jpg",
+    },
+  ];
+
+  for (const { tagId, ...data } of staffItems) {
+    const item = await prisma.item.upsert({
+      where: { tagId },
+      update: { photoUrl: data.photoUrl },
+      create: { ...data, tagId },
+    });
+    seededItems.set(item.tagId, item);
+    await generateTagQR(item.tagId);
+  }
+
+  // Add transfer requests from staff members
+  const staffLaptop = seededItems.get("CNCS-STAFF-0001"); // MacBook Air M2 owned by CS Staff 1
+  if (staffLaptop) {
+    const staffTransferRequest = await prisma.request.upsert({
+      where: { id: "seed-req-staff-transfer-1" },
+      update: {
+        status: RequestStatus.PENDING,
+        reviewedById: null,
+        decidedAt: null,
+        rejectionReason: null,
+      },
+      create: {
+        id: "seed-req-staff-transfer-1",
+        type: RequestType.TRANSFER,
+        status: RequestStatus.PENDING,
+        itemId: staffLaptop.id,
+        requestedById: csStaff1.id,
+        reason: "Moving to new office in ground floor lab.",
+        newLocationBuilding: "CNCS Building",
+        newLocationFloor: "1",
+        newLocationRoom: "105",
+      },
+    });
+
+    const staffTransferMessage = renderRequestSubmitted({
+      requesterName: csStaff1.fullName,
+      requestType: "TRANSFER",
+      itemTagId: staffLaptop.tagId,
+      itemName: staffLaptop.name,
+    });
+    await prisma.notification.upsert({
+      where: { id: "seed-notif-staff-transfer-1" },
+      update: { message: staffTransferMessage, isRead: false },
+      create: {
+        id: "seed-notif-staff-transfer-1",
+        userId: csHead.id,
+        message: staffTransferMessage,
+        relatedRequestId: staffTransferRequest.id,
+      },
+    });
+    await prisma.notification.upsert({
+      where: { id: "seed-notif-staff-transfer-1-officer" },
+      update: { message: staffTransferMessage, isRead: false },
+      create: {
+        id: "seed-notif-staff-transfer-1-officer",
+        userId: officer.id,
+        message: staffTransferMessage,
+        relatedRequestId: staffTransferRequest.id,
+      },
+    });
+  }
+
+  // Add a disposal request from staff
+  const staffMonitor = seededItems.get("CNCS-STAFF-0005"); // Monitor owned by CS Staff 2
+  if (staffMonitor) {
+    const staffDisposalRequest = await prisma.request.upsert({
+      where: { id: "seed-req-staff-disposal-1" },
+      update: {
+        status: RequestStatus.PENDING,
+        reviewedById: null,
+        decidedAt: null,
+        rejectionReason: null,
+      },
+      create: {
+        id: "seed-req-staff-disposal-1",
+        type: RequestType.DISPOSAL,
+        status: RequestStatus.PENDING,
+        itemId: staffMonitor.id,
+        requestedById: csStaff2.id,
+        reason: "Monitor has dead pixels and needs replacement.",
+      },
+    });
+
+    const staffDisposalMessage = renderRequestSubmitted({
+      requesterName: csStaff2.fullName,
+      requestType: "DISPOSAL",
+      itemTagId: staffMonitor.tagId,
+      itemName: staffMonitor.name,
+    });
+    await prisma.notification.upsert({
+      where: { id: "seed-notif-staff-disposal-1" },
+      update: { message: staffDisposalMessage, isRead: false },
+      create: {
+        id: "seed-notif-staff-disposal-1",
+        userId: csHead.id,
+        message: staffDisposalMessage,
+        relatedRequestId: staffDisposalRequest.id,
+      },
+    });
+    await prisma.notification.upsert({
+      where: { id: "seed-notif-staff-disposal-1-officer" },
+      update: { message: staffDisposalMessage, isRead: false },
+      create: {
+        id: "seed-notif-staff-disposal-1-officer",
+        userId: officer.id,
+        message: staffDisposalMessage,
+        relatedRequestId: staffDisposalRequest.id,
+      },
+    });
+  }
+
   console.log("Seed complete:");
   console.log(`  ${categories.length} categories`);
   console.log(`  1 College, 4 Departments (CS, Biology, Chemistry, Physics)`);
   console.log(`  3 Department Heads (CS, Biology, Chemistry), Physics has NO head`);
   console.log(`  3 CS Staff, 2 Biology Staff, 1 Chemistry Staff`);
   console.log(`  8 Items across departments (3 held by CS Head, 2 Biology, 2 Chemistry, 1 Physics)`);
+  console.log(`  10 Staff items (3 CS Staff 1, 2 CS Staff 2, 2 Biology Staff 1, 1 Biology Staff 2, 2 Chemistry Staff 1)`);
   console.log(`  3 Pending account requests (CS, Biology, Physics)`);
   console.log(`  1 PENDING TRANSFER request (${SEED_REQUEST_ID}) on ${LAPTOP_TAG_ID}, filed by CS Staff 1`);
+  console.log(`  1 PENDING STAFF TRANSFER request (seed-req-staff-transfer-1) on CNCS-STAFF-0001, filed by CS Staff 1`);
+  console.log(`  1 PENDING STAFF DISPOSAL request (seed-req-staff-disposal-1) on CNCS-STAFF-0005, filed by CS Staff 2`);
   console.log(`  1 PENDING_STAGE1 cross-dept transfer (Centrifuge from Biology to CS)`);
   console.log(`  4 unread notifications (officer x2, CS Department Head x2)`);
 }

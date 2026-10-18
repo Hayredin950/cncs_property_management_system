@@ -116,7 +116,13 @@ export function ItemsBrowsePage() {
         { value: "mine", label: "My items" },
       ];
     }
-    // STAFF only sees "My items" (no dropdown needed, just pass mine=true)
+    // STAFF sees "My items" and "My department" scopes
+    if (user?.role === "STAFF") {
+      return [
+        { value: "mine", label: "My items" },
+        { value: "department", label: "My department" },
+      ];
+    }
     return [];
   };
 
@@ -144,7 +150,14 @@ export function ItemsBrowsePage() {
       return scope === "mine" ? "My items" : "All departments";
     }
     if (user?.role === "STAFF") {
-      return "My items";
+      switch (scope) {
+        case "mine":
+          return "My items";
+        case "department":
+          return "My department";
+        default:
+          return "My items";
+      }
     }
     return "Browse items";
   };
@@ -170,7 +183,14 @@ export function ItemsBrowsePage() {
         : "Search the active inventory by name, tag ID, category, or department.";
     }
     if (user?.role === "STAFF") {
-      return "The items currently in your custody. Search by name, tag ID, or category.";
+      switch (scope) {
+        case "mine":
+          return "The items currently in your custody. Search by name, tag ID, or category.";
+        case "department":
+          return "All items in your department. Search by name, tag ID, or category.";
+        default:
+          return "The items currently in your custody. Search by name, tag ID, or category.";
+      }
     }
     return "Search the active inventory by name, tag ID, category, or department.";
   };

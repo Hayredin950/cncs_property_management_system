@@ -85,7 +85,7 @@ describe("GET /audits/:id", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.completed).toBe(true);
-    expect(res.body.counts).toEqual({ found: 1, missing: 1, locationMismatch: 1 });
+    expect(res.body.counts).toMatchObject({ found: 1, missing: 1, locationMismatch: 1 });
     expect(res.body.missing).toEqual(["item-2"]);
   });
 

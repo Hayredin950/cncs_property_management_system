@@ -38,6 +38,7 @@ generator client {
 /// `STAFF` alone. See `src/services/permissions.ts` for what each role may do.
 enum Role {
   SYSTEM_ADMIN
+  ACCOUNT_ADMIN
   PROPERTY_OFFICER
   DEPARTMENT_HEAD
   STAFF
@@ -195,6 +196,7 @@ model OrgUnit {
   requestedAccountRequests  AccountRequest[] @relation("RequestedAccountRequests")
   confirmedAccountRequests  AccountRequest[] @relation("ConfirmedAccountRequests")
   adminActions       AdminActionLog[] @relation("AdminActionLogs")
+  designations       Designation[]
 
   @@index([type])
   @@index([parentId])
@@ -356,6 +358,11 @@ model User {
   adminActionTargets AdminActionLog[] @relation("AdminActionTargets")
   emailTokens      EmailToken[]   @relation("EmailTokens")
   escalatedByAccounts User[] @relation("EscalatedBy")
+  designations     Designation[]  @relation("UserDesignations")
+  grantedDesignations Designation[] @relation("GrantedDesignations")
+
+  /// Version counter for optimistic locking
+  version          Int            @default(0)
 
   /// The approval queue reads by status, oldest first.
   @@index([accountStatus])
@@ -398,7 +405,7 @@ model Item {
   condition      Condition
   brand          String?
   model          String?
-  serialNumber   String?
+  serialNumber   String?     @unique
   photoUrl       String?
   notes          String?
   status         ItemStatus  @default(ACTIVE)
@@ -513,6 +520,9 @@ model Request {
   invalidatedAt   DateTime?
   invalidatedReason String?
 
+  /// Optimistic locking version
+  version         Int           @default(0)
+
   createdAt DateTime  @default(now())
   decidedAt DateTime?
 }
@@ -586,4 +596,35 @@ model Notification {
   relatedRequestId String?
   isRead           Boolean  @default(false)
   createdAt        DateTime @default(now())
+}
+
+model Designation {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation("UserDesignations", fields: [userId], references: [id], onDelete: Cascade)
+  designation  String    // e.g. "DEPARTMENT_CUSTODIAN"
+  orgUnitId    String?
+  orgUnit      OrgUnit?  @relation(fields: [orgUnitId], references: [id])
+  grantedById  String
+  grantedBy    User      @relation("GrantedDesignations", fields: [grantedById], references: [id])
+  grantedAt    DateTime  @default(now())
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+
+  @@index([userId, designation, orgUnitId])
+}
+
+model EmailOutbox {
+  id         String    @id @default(uuid())
+  to         String
+  subject    String
+  body       String
+  status     String    @default("QUEUED") // QUEUED, SENT, DELIVERED, BOUNCED, FAILED
+  attempts   Int       @default(0)
+  providerId String?
+  error      String?
+  createdAt  DateTime  @default(now())
+  sentAt     DateTime?
+
+  @@index([status, createdAt])
 }

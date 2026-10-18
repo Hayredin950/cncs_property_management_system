@@ -19,6 +19,7 @@ import type { DepartmentOption } from "../../api/departments";
 const requestSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
   email: z.string().trim().email("Enter a valid email"),
+  staffId: z.string().trim().min(1, "Staff ID is required"),
   password: z.string().min(8, "At least 8 characters"),
   department: z.string().trim().min(1, "Department is required"),
 });
@@ -104,13 +105,16 @@ export function RequestAccountPage() {
       {submitted ? (
         <Card>
           <div className="flex flex-col items-start gap-3">
-            <CheckCircle2 className="h-8 w-8 text-brand-600" aria-hidden="true" />
+            <CheckCircle2 className="h-8 w-8 text-emerald-600" aria-hidden="true" />
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Request submitted</h2>
               <p className="mt-1 text-sm text-slate-600">
-                {submitted.message}. You will be able to sign in once a system administrator
-                approves the request for <strong>{submitted.request.email}</strong>.
+                A verification link has been sent to <strong>{submitted.request.email}</strong>.
+                Please check your inbox (and your spam/junk folder) and click the link to confirm your institutional email.
               </p>
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+                After you verify your email, your request will appear in your <strong>Department Head's</strong> approval queue.
+              </div>
             </div>
             <Link
               to="/login"
@@ -131,9 +135,19 @@ export function RequestAccountPage() {
               required
             />
             <Input
+              label="Staff ID"
+              autoComplete="off"
+              placeholder="e.g. AAU/1234/15"
+              hint="Your institutional Addis Ababa University staff ID."
+              error={errors.staffId?.message}
+              {...register("staffId")}
+              required
+            />
+            <Input
               label="Email"
               type="email"
               autoComplete="email"
+              hint="Must be your institutional email address (e.g. user@aau.edu.et)."
               error={errors.email?.message}
               {...register("email")}
               required
@@ -176,13 +190,12 @@ export function RequestAccountPage() {
         </Card>
       )}
 
-      <p className="flex items-start gap-2 rounded-sm border border-aau-gray-200 bg-aau-gray-100 px-3 py-2 text-xs text-aau-gray-600">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
+      <div className="flex items-start gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
         <span>
-          Submitting a request does not create a signed-in session. Access starts only after a
-          system administrator approves it.
+          <strong>Notice:</strong> Verification emails sent to @aau.edu.et addresses may occasionally arrive in your spam or junk folder. Please check there if you don't receive your email promptly.
         </span>
-      </p>
+      </div>
 
       <p className="text-center text-xs text-aau-gray-500">
         <Link to="/login" className="underline-offset-4 hover:underline">

@@ -1,13 +1,16 @@
-import { LogIn, Mail, MapPin } from "lucide-react";
+import { LayoutDashboard, LogIn, Mail, MapPin } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
 
 /**
  * `/` — Public informational page (Phase D, §9).
  * Anonymous visitors see a static informational page with no item data.
- * Sign-in is the only call-to-action.
+ * Authenticated visitors see a dashboard shortcut instead of a sign-in prompt.
  */
 export function LandingPage() {
+  const { user } = useAuth();
+
   return (
     <div className="flex flex-col gap-12">
       <section className="flex flex-col items-center gap-6 py-12 text-center sm:py-16">
@@ -18,11 +21,19 @@ export function LandingPage() {
           A property register for CNCS — tracking university-owned equipment and assets.
         </p>
 
-        <Link to="/login">
-          <Button size="lg" leftIcon={<LogIn className="h-5 w-5" />}>
-            Sign in
-          </Button>
-        </Link>
+        {user ? (
+          <Link to="/dashboard">
+            <Button size="lg" leftIcon={<LayoutDashboard className="h-5 w-5" />}>
+              Go to Dashboard
+            </Button>
+          </Link>
+        ) : (
+          <Link to="/login">
+            <Button size="lg" leftIcon={<LogIn className="h-5 w-5" />}>
+              Sign in
+            </Button>
+          </Link>
+        )}
       </section>
 
       <section className="grid gap-8 sm:grid-cols-3">
@@ -32,9 +43,13 @@ export function LandingPage() {
           description="Staff, department heads, property officers, and auditors with a CNCS account can access the system to track and manage university property."
         />
         <InfoCard
-          icon={<LogIn className="h-8 w-8" />}
-          title="How to get an account"
-          description="Contact your department head or the Property Office to request an account. All accounts require approval from a system administrator."
+          icon={user ? <LayoutDashboard className="h-8 w-8" /> : <LogIn className="h-8 w-8" />}
+          title={user ? "Your Workspace" : "How to get an account"}
+          description={
+            user
+              ? "You are currently signed in. Head over to your dashboard to view your assigned items, manage requests, or perform inventory tasks."
+              : "Contact your department head or the Property Office to request an account. All accounts require approval from your department head."
+          }
         />
         <InfoCard
           icon={<Mail className="h-8 w-8" />}

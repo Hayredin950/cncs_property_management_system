@@ -30,7 +30,8 @@ vi.mock("../lib/prisma.js", () => {
   return { prisma: client };
 });
 
-const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
+const adminToken = createToken({ id: "admin-1", role: "ACCOUNT_ADMIN" });
+const sysAdminToken = createToken({ id: "sysadmin-1", role: "SYSTEM_ADMIN" });
 const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
 
@@ -80,7 +81,7 @@ describe("POST /users/invite — who may invite", () => {
     expect(res.status).toBe(401);
   });
 
-  it("refuses a Property Officer — inviting is SYSTEM_ADMIN only", async () => {
+  it("refuses a Property Officer — inviting is ACCOUNT_ADMIN only", async () => {
     const res = await request(app)
       .post("/users/invite")
       .set("Authorization", `Bearer ${officerToken}`)
@@ -94,9 +95,34 @@ describe("POST /users/invite — who may invite", () => {
     const res = await request(app)
       .post("/users/invite")
       .set("Authorization", `Bearer ${staffToken}`)
-      .send({ ...VALID_INVITE, role: "SYSTEM_ADMIN" });
+      .send({ ...VALID_INVITE, role: "ACCOUNT_ADMIN" });
 
     expect(res.status).toBe(403);
+  });
+
+  it("refuses a System Admin inviting a Department Head", async () => {
+    const res = await request(app)
+      .post("/users/invite")
+      .set("Authorization", `Bearer ${sysAdminToken}`)
+      .send(VALID_INVITE);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("System Admin can only invite an Account Admin");
+  });
+
+  it("allows a System Admin seeding an Account Admin", async () => {
+    stubAdminAndNoAccount();
+    const res = await request(app)
+      .post("/users/invite")
+      .set("Authorization", `Bearer ${sysAdminToken}`)
+      .send({
+        email: "accountadmin@cncs.aau.edu.et",
+        role: "ACCOUNT_ADMIN",
+        authorizedBy: "Dean Office",
+        authorizationRef: "REF-001",
+      });
+
+    expect(res.status).toBe(201);
   });
 });
 

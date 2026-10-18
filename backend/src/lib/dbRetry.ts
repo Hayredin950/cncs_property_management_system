@@ -74,9 +74,25 @@ function codesIn(error: unknown): string[] {
   return codes;
 }
 
+function messagesIn(error: unknown): string[] {
+  const messages: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
+    const candidate = current as { message?: unknown; cause?: unknown };
+    if (typeof candidate.message === "string") messages.push(candidate.message);
+    current = candidate.cause;
+  }
+  return messages;
+}
+
 /** True when the error proves no statement reached the database. */
 export function isTransientConnectionError(error: unknown): boolean {
-  return codesIn(error).some((code) => TRANSIENT_CONNECTION_CODES.has(code));
+  if (codesIn(error).some((code) => TRANSIENT_CONNECTION_CODES.has(code))) {
+    return true;
+  }
+  return messagesIn(error).some((msg) =>
+    msg.includes("Connection terminated due to connection timeout")
+  );
 }
 
 export interface ConnectionRetryOptions {

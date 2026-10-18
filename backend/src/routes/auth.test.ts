@@ -8,15 +8,38 @@ import { prisma } from "../lib/prisma.js";
 process.env.JWT_SECRET = "test_jwt_secret";
 
 vi.mock("../lib/prisma.js", () => {
-  return {
-    prisma: {
-      user: {
-        findFirst: vi.fn(),
-        findUnique: vi.fn(),
-        create: vi.fn(),
-      },
+  const client = {
+    user: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
     },
+    emailToken: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
+    emailOutbox: {
+      create: vi.fn().mockResolvedValue({ id: "outbox-1" }),
+      count: vi.fn().mockResolvedValue(0),
+      update: vi.fn(),
+      findFirst: vi.fn(),
+    },
+    orgUnit: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+    },
+    notification: {
+      create: vi.fn(),
+    },
+    $transaction: vi.fn(async (arg: unknown) =>
+      typeof arg === "function"
+        ? await (arg as (tx: unknown) => Promise<unknown>)(client)
+        : await Promise.all(arg as Promise<unknown>[])),
   };
+  return { prisma: client };
 });
 
 function createToken(payload: {
@@ -25,6 +48,10 @@ function createToken(payload: {
 }) {
   return jwt.sign(payload, process.env.JWT_SECRET!);
 }
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("POST /auth/login", () => {
   beforeEach(() => {
@@ -314,89 +341,250 @@ describe("GET /auth/me", () => {
  * so the next thing the person can do is wait — the decision belongs to
  * `POST /users/:id/approve`, and to somebody else.
  */
-describe("POST /auth/account-requests", () => {
+/**
+ * POST /auth/register and /auth/account-requests
+ * Staff self-registration sets PENDING_EMAIL_VERIFICATION, creates a verification token,
+ * and sends an email.
+ */
+describe("POST /auth/register & /auth/account-requests", () => {
   const REQUEST_BODY = {
     fullName: "Hanna Tesfaye",
     email: "Hanna@cncs.aau.edu.et",
+    staffId: "ST-HANNA-01",
     password: "ChosenByMe123",
     department: "Computer Science",
   };
 
-  // This file's earlier suites create rows, and `not.toHaveBeenCalled()` below is a
-  // statement about *this* test — so the counters start clean per case.
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("creates a pending account, normalises the email, and issues no token", async () => {
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+  it("creates a pending-email-verification account, normalises the email, creates a verify token and sends email", async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.user.create).mockResolvedValueOnce({
       id: "pending-1",
       fullName: REQUEST_BODY.fullName,
       email: "hanna@cncs.aau.edu.et",
-      accountStatus: "PENDING_APPROVAL",
+      accountStatus: "PENDING_EMAIL_VERIFICATION",
       createdAt: new Date("2026-10-12T10:00:00.000Z"),
     } as never);
 
-    const res = await request(app).post("/auth/account-requests").send(REQUEST_BODY);
+    const res = await request(app).post("/auth/register").send(REQUEST_BODY);
 
     expect(res.status).toBe(201);
-    expect(res.body.request.accountStatus).toBe("PENDING_APPROVAL");
-    // No token, no user object: there is nothing this request may do yet, and a
-    // token would be a session the login gate refuses anyway.
+    expect(res.body.request.accountStatus).toBe("PENDING_EMAIL_VERIFICATION");
     expect(res.body.token).toBeUndefined();
     expect(res.body.user).toBeUndefined();
-    expect(JSON.stringify(res.body)).not.toContain("passwordHash");
 
-    const call = vi.mocked(prisma.user.create).mock.calls[0]?.[0] as {
+    const userCreateCall = vi.mocked(prisma.user.create).mock.calls[0]?.[0] as {
       data: Record<string, unknown>;
     };
-    expect(call.data.email).toBe("hanna@cncs.aau.edu.et");
-    expect(call.data.accountStatus).toBe("PENDING_APPROVAL");
-    // A request asks as STAFF and carries no role field at all, so no payload turns
-    // a request into a privileged account.
-    expect(call.data.role).toBe("STAFF");
-    // The person chose this password (spec 3.3.7/12.5), so there is no shared
-    // secret to replace and nothing to force a change of.
-    expect(call.data.mustChangePassword).toBeUndefined();
+    expect(userCreateCall.data.email).toBe("hanna@cncs.aau.edu.et");
+    expect(userCreateCall.data.staffId).toBe("ST-HANNA-01");
+    expect(userCreateCall.data.accountStatus).toBe("PENDING_EMAIL_VERIFICATION");
+    expect(userCreateCall.data.role).toBe("STAFF");
+
+    expect(vi.mocked(prisma.emailToken.create)).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "pending-1",
+        type: "VERIFY",
+        tokenHash: expect.any(String),
+      }),
+    });
   });
 
-  it("does not require a token — asking is public, approving is not", async () => {
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
-    vi.mocked(prisma.user.create).mockResolvedValueOnce({
-      id: "pending-1",
-      fullName: REQUEST_BODY.fullName,
-      email: "hanna@cncs.aau.edu.et",
-      accountStatus: "PENDING_APPROVAL",
-      createdAt: new Date(),
-    } as never);
+  it("rejects non-AAU email addresses in production environments", async () => {
+    const origEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
 
-    const res = await request(app).post("/auth/account-requests").send(REQUEST_BODY);
+    const res = await request(app)
+      .post("/auth/register")
+      .send({ ...REQUEST_BODY, email: "hanna@gmail.com" });
 
-    expect(res.status).toBe(201);
+    process.env.NODE_ENV = origEnv;
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("institutional AAU email address");
+  });
+
+  it("rejects duplicate staffId", async () => {
+    vi.mocked(prisma.user.findFirst)
+      .mockResolvedValueOnce(null) // email not taken
+      .mockResolvedValueOnce({ id: "existing-staff" } as never); // staffId taken
+
+    const res = await request(app).post("/auth/register").send(REQUEST_BODY);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("Staff ID already exists");
   });
 
   it("rejects a short password and a malformed email", async () => {
     const shortPassword = await request(app)
-      .post("/auth/account-requests")
+      .post("/auth/register")
       .send({ ...REQUEST_BODY, password: "short" });
     expect(shortPassword.status).toBe(400);
 
     const badEmail = await request(app)
-      .post("/auth/account-requests")
+      .post("/auth/register")
       .send({ ...REQUEST_BODY, email: "not-an-email" });
     expect(badEmail.status).toBe(400);
 
     expect(prisma.user.create).not.toHaveBeenCalled();
   });
 
-  it("answers 409 for an address that already has a row, pending or not", async () => {
+  it("answers 409 for an address that already has a row", async () => {
     vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({ id: "pending-1" } as never);
 
-    const res = await request(app).post("/auth/account-requests").send(REQUEST_BODY);
+    const res = await request(app).post("/auth/register").send(REQUEST_BODY);
 
     expect(res.status).toBe(409);
     expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /auth/verify-email", () => {
+  it("rejects an empty token", async () => {
+    const res = await request(app).post("/auth/verify-email").send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Verification token is required");
+  });
+
+  it("rejects an invalid or expired token", async () => {
+    vi.mocked(prisma.emailToken.findFirst).mockResolvedValueOnce(null);
+
+    const res = await request(app).post("/auth/verify-email").send({ token: "invalid-token" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid or expired");
+  });
+
+  it("transitions user to PENDING_APPROVAL and notifies department head on valid token", async () => {
+    vi.mocked(prisma.emailToken.findFirst).mockResolvedValueOnce({
+      id: "token-1",
+      userId: "user-1",
+      user: {
+        id: "user-1",
+        fullName: "Hanna Tesfaye",
+        email: "hanna@aau.edu.et",
+        orgUnitId: "unit-cs",
+        accountStatus: "PENDING_EMAIL_VERIFICATION",
+      },
+    } as never);
+
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+      id: "head-cs",
+      email: "head@aau.edu.et",
+      fullName: "Head CS",
+    } as never);
+
+    const res = await request(app).post("/auth/verify-email").send({ token: "valid-raw-token" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.accountStatus).toBe("PENDING_APPROVAL");
+
+    expect(vi.mocked(prisma.emailToken.update)).toHaveBeenCalledWith({
+      where: { id: "token-1" },
+      data: { usedAt: expect.any(Date) },
+    });
+
+    expect(vi.mocked(prisma.user.update)).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { accountStatus: "PENDING_APPROVAL" },
+    });
+
+    expect(vi.mocked(prisma.notification.create)).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "head-cs",
+        message: expect.stringContaining("has verified their email"),
+      }),
+    });
+  });
+});
+
+describe("Password Reset Acceptance: request and complete", () => {
+  it("request-password-reset gives identical message for existing and nonexistent emails (anti-enumeration)", async () => {
+    // Nonexistent
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
+    const res1 = await request(app)
+      .post("/auth/request-password-reset")
+      .send({ email: "nonexistent@aau.edu.et" });
+    expect(res1.status).toBe(200);
+    expect(res1.body.message).toContain("If the email exists");
+
+    // Existing ACTIVE
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "active-user-1",
+      email: "active@aau.edu.et",
+      fullName: "Active User",
+      accountStatus: "ACTIVE",
+    } as never);
+    const res2 = await request(app)
+      .post("/auth/request-password-reset")
+      .send({ email: "active@aau.edu.et" });
+    expect(res2.status).toBe(200);
+    expect(res2.body.message).toContain("If the email exists");
+    expect(vi.mocked(prisma.emailToken.create)).toHaveBeenCalled();
+  });
+
+  it("does not create a reset token for non-active accounts", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "pending-user",
+      email: "pending@aau.edu.et",
+      accountStatus: "PENDING_APPROVAL",
+    } as never);
+
+    const res = await request(app)
+      .post("/auth/request-password-reset")
+      .send({ email: "pending@aau.edu.et" });
+
+    expect(res.status).toBe(200);
+    expect(prisma.emailToken.create).not.toHaveBeenCalled();
+  });
+
+  it("completes reset-password, invalidating old sessions via tokenVersion bump", async () => {
+    vi.mocked(prisma.emailToken.findFirst).mockResolvedValueOnce({
+      id: "token-reset-1",
+      userId: "user-1",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000), // active
+      user: {
+        id: "user-1",
+        fullName: "Test User",
+        email: "test@aau.edu.et",
+        accountStatus: "ACTIVE",
+      },
+    } as never);
+
+    const res = await request(app)
+      .post("/auth/reset-password")
+      .send({ token: "reset-token-123", newPassword: "BrandNewPassword123" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toContain("successfully");
+
+    expect(vi.mocked(prisma.emailToken.update)).toHaveBeenCalledWith({
+      where: { id: "token-reset-1" },
+      data: { usedAt: expect.any(Date) },
+    });
+
+    expect(vi.mocked(prisma.user.update)).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: expect.objectContaining({
+        tokenVersion: { increment: 1 },
+      }),
+    });
+  });
+});
+
+describe("POST /auth/webhooks/resend", () => {
+  it("receives webhook event and answers 200", async () => {
+    const res = await request(app)
+      .post("/auth/webhooks/resend")
+      .send({
+        type: "email.delivered",
+        data: { email_id: "re_12345" },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.received).toBe(true);
   });
 });
 

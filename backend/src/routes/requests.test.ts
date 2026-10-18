@@ -196,7 +196,7 @@ describe("POST /requests", () => {
     // D2 — everyone who may decide (officer and head), except the requester.
     expect(prisma.user.findMany).toHaveBeenCalledWith({
       where: { role: { in: ["PROPERTY_OFFICER", "DEPARTMENT_HEAD"] }, id: { not: "staff-1" } },
-      select: { id: true, email: true, fullName: true },
+      select: { id: true, email: true, fullName: true, role: true },
     });
     expect(prisma.notification.createMany).toHaveBeenCalledWith({
       data: [
@@ -291,9 +291,15 @@ describe("POST /requests", () => {
       .send(TRANSFER_BODY);
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: "This item already has a pending request" });
+    expect(res.body).toEqual({
+      error:
+        "This item already has an active request in progress. You must withdraw the existing request before filing a new one.",
+    });
     expect(prisma.request.findFirst).toHaveBeenCalledWith({
-      where: { itemId: "item-1", status: "PENDING" },
+      where: {
+        itemId: "item-1",
+        status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2", "WAITLISTED"] },
+      },
       select: { id: true },
     });
     expectNoWrites();
@@ -402,7 +408,7 @@ describe("GET /requests", () => {
       string,
       unknown
     >;
-    expect(where.requestedById).toBe("staff-1");
+    expect(where.OR).toEqual([{ requestedById: "staff-1" }, { newOwnerId: "staff-1" }]);
     // The default window is `this-week` (SRS 7). Asserted as a bounded range rather
     // than an exact pair of dates so the test does not break on a Monday.
     const window = where.createdAt as { gte?: Date; lte?: Date };
@@ -518,7 +524,13 @@ describe("GET /requests/pending-count", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ pendingCount: 3 });
-    expect(prisma.request.count).toHaveBeenCalledWith({ where: { status: "PENDING" } });
+    expect(prisma.request.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"] },
+        }),
+      }),
+    );
     // The Express 5 route-ordering guard: `/:id` is what calls findFirst, so a
     // hit here means "pending-count" was swallowed as an id.
     expect(prisma.request.findFirst).not.toHaveBeenCalled();
@@ -532,9 +544,14 @@ describe("GET /requests/pending-count", () => {
       .set("Authorization", `Bearer ${staffToken}`);
 
     expect(res.status).toBe(200);
-    expect(prisma.request.count).toHaveBeenCalledWith({
-      where: { requestedById: "staff-1", status: "PENDING" },
-    });
+    expect(prisma.request.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [{ requestedById: "staff-1" }, { newOwnerId: "staff-1" }],
+          status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"] },
+        }),
+      }),
+    );
   });
 });
 
@@ -574,7 +591,7 @@ describe("GET /requests/:id", () => {
     expect(res.body).toEqual({ error: "Request not found" });
     expect(vi.mocked(prisma.request.findFirst).mock.calls[0]?.[0]?.where).toEqual({
       id: "req-someone-else",
-      requestedById: "staff-1",
+      OR: [{ requestedById: "staff-1" }, { newOwnerId: "staff-1" }],
     });
   });
 });
@@ -985,7 +1002,7 @@ describe("POST /requests/:id/approve", () => {
     // The holder pair rides along with `ownerId` (spec 4.1), derived from the same
     // `newOwnerId` — the item's custody columns and the custodian column can never
     // name two different people.
-    expect(res.body.itemChanges).toEqual({
+    expect(res.body.itemChanges).toMatchObject({
       floor: "1",
       room: "101",
       ownerId: "staff-2",

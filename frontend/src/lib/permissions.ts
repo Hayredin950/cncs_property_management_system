@@ -21,42 +21,42 @@ export type Capability =
   | "CATEGORY_MANAGE"
   | "AUDIT_RUN"
   | "AUDIT_VIEW"
+  | "AUDIT_REQUEST"
   | "AUDIT_ACKNOWLEDGE"
   | "REQUEST_DECIDE"
+  | "TRANSFER_APPROVE"
   | "TRANSFER_APPROVE_STAGE1"
   | "TRANSFER_APPROVE_STAGE2"
+  | "DISPOSAL_RECOMMEND"
   | "DISPOSAL_APPROVE"
+  | "DISPOSAL_FINALIZE"
   | "LOAN_APPROVE"
   | "REQUEST_READ_ALL"
   | "REPORT_VIEW_ALL"
   | "ACCOUNT_MANAGE"
+  | "ACCOUNT_APPROVE"
   | "ACCOUNT_APPROVE_OWN_UNIT"
   | "ACCOUNT_APPROVE_ANY"
   | "ACCOUNT_INVITE"
+  | "DESIGNATION_MANAGE"
+  | "ACCOUNT_DEACTIVATE"
   | "ACCOUNT_DEACTIVATE_OWN_UNIT"
   | "ACCOUNT_DEACTIVATE_PRIVILEGED"
+  | "SYSTEM_CONFIG"
   | "USER_READ";
 
 /**
- * Everyone except the SYSTEM_ADMIN — the roles that may see asset data at all
+ * Everyone except the SYSTEM_ADMIN and ACCOUNT_ADMIN — the roles that may see asset data at all
  * (spec 2.1.1). Declared once, here, and imported wherever a screen has to ask
  * "is this viewer an asset role?": `app/router.tsx` guards the asset routes with
- * it, and the dashboard gates its asset tiles on it. It used to be a local const
- * inside the router, so the dashboard had no such name to reach for and wrote
- * `!isAuditor` instead — which is how the SYSTEM_ADMIN got the Scan/Browse tiles.
+ * it, and the dashboard gates its asset tiles on it.
  */
 export const ASSET_ROLES: Role[] = ["PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"];
 
 /**
- * Does this role see asset data at all? The SYSTEM_ADMIN is an account role and
- * sees none — the rule the whole server-side scope is built around
- * (`backend/src/services/itemScope.ts`). This is the client-side twin, and the
- * check any asset UI should make before rendering. It is never a control: the
- * server still scopes every response, and the SYSTEM_ADMIN's scope is empty there
- * too. It exists so a new tile has an obvious predicate to call instead of
- * re-deriving the rule — and re-deriving it wrong, which is what happened three
- * times (the dashboard request list, `/system/events`, and the quick-action
- * tiles).
+ * Does this role see asset data at all? Both SYSTEM_ADMIN and ACCOUNT_ADMIN are account/technical
+ * roles and see none — the rule the whole server-side scope is built around
+ * (`backend/src/services/itemScope.ts`).
  */
 export const seesAssetData = (role: Role | undefined | null): boolean =>
   role != null && ASSET_ROLES.includes(role);
@@ -64,8 +64,19 @@ export const seesAssetData = (role: Role | undefined | null): boolean =>
 const GRANTS: Record<Role, readonly Capability[]> = {
   SYSTEM_ADMIN: [
     "ACCOUNT_MANAGE",
+    "ACCOUNT_INVITE",
+    "ACCOUNT_DEACTIVATE",
+    "ACCOUNT_DEACTIVATE_PRIVILEGED",
+    "SYSTEM_CONFIG",
+    "USER_READ",
+  ],
+  ACCOUNT_ADMIN: [
+    "ACCOUNT_MANAGE",
+    "ACCOUNT_APPROVE",
     "ACCOUNT_APPROVE_ANY",
     "ACCOUNT_INVITE",
+    "DESIGNATION_MANAGE",
+    "ACCOUNT_DEACTIVATE",
     "ACCOUNT_DEACTIVATE_PRIVILEGED",
     "USER_READ",
   ],
@@ -80,13 +91,16 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "TAG_MANAGE",
     "CATEGORY_MANAGE",
     "REQUEST_DECIDE",
+    "TRANSFER_APPROVE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
     "DISPOSAL_APPROVE",
+    "DISPOSAL_FINALIZE",
     "LOAN_APPROVE",
     "REQUEST_READ_ALL",
     "REPORT_VIEW_ALL",
     "AUDIT_VIEW",
+    "AUDIT_REQUEST",
     "AUDIT_ACKNOWLEDGE",
     "USER_READ",
   ],
@@ -94,14 +108,30 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "ITEM_EDIT_CUSTODY",
     "ITEM_CLAIM",
     "REQUEST_DECIDE",
+    "TRANSFER_APPROVE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
+    "DISPOSAL_RECOMMEND",
+    "LOAN_APPROVE",
+    "ACCOUNT_APPROVE",
     "ACCOUNT_APPROVE_OWN_UNIT",
+    "ACCOUNT_DEACTIVATE",
     "ACCOUNT_DEACTIVATE_OWN_UNIT",
     "REPORT_VIEW_ALL",
+    "AUDIT_REQUEST",
+    "USER_READ",
   ],
-  STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM"],
-  AUDITOR: ["ITEM_READ_ALL", "AUDIT_RUN", "AUDIT_VIEW", "REPORT_VIEW_ALL"],
+  STAFF: [
+    "ITEM_EDIT_CUSTODY",
+    "ITEM_CLAIM",
+  ],
+  AUDITOR: [
+    "ITEM_READ_ALL",
+    "AUDIT_RUN",
+    "AUDIT_VIEW",
+    "REPORT_VIEW_ALL",
+    "USER_READ",
+  ],
 };
 
 export function hasCapability(role: Role | undefined | null, capability: Capability): boolean {
@@ -118,7 +148,7 @@ export const canDecideRequests = (role: Role | undefined | null) =>
 export const canRunAudits = (role: Role | undefined | null) => hasCapability(role, "AUDIT_RUN");
 /** Read audit history and reports. */
 export const canViewAudits = (role: Role | undefined | null) => hasCapability(role, "AUDIT_VIEW");
-/** Formal audit acknowledgement & sign-off — Property Officer & Admin. */
+/** Formal audit acknowledgement & sign-off — Property Officer. */
 export const canAcknowledgeAudit = (role: Role | undefined | null) =>
   hasCapability(role, "AUDIT_ACKNOWLEDGE");
 /** Read college-wide reports. */
@@ -150,15 +180,15 @@ export const canApproveLoan = (role: Role | undefined | null) =>
 /** Approve staff self-registrations in own unit (Department Head). */
 export const canApproveOwnUnitAccounts = (role: Role | undefined | null) =>
   hasCapability(role, "ACCOUNT_APPROVE_OWN_UNIT");
-/** Approve any account request (System Admin). */
+/** Approve any account request (Account Admin fallback). */
 export const canApproveAnyAccount = (role: Role | undefined | null) =>
   hasCapability(role, "ACCOUNT_APPROVE_ANY");
-/** Invite privileged accounts (System Admin). */
+/** Invite privileged accounts (Account Admin). */
 export const canInviteAccounts = (role: Role | undefined | null) =>
   hasCapability(role, "ACCOUNT_INVITE");
 /** Deactivate staff in own unit (Department Head). */
 export const canDeactivateOwnUnitStaff = (role: Role | undefined | null) =>
   hasCapability(role, "ACCOUNT_DEACTIVATE_OWN_UNIT");
-/** Deactivate privileged roles (System Admin). */
+/** Deactivate privileged roles (Account Admin for heads/auditors; System Admin for account admins). */
 export const canDeactivatePrivileged = (role: Role | undefined | null) =>
   hasCapability(role, "ACCOUNT_DEACTIVATE_PRIVILEGED");

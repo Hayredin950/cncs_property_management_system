@@ -17,7 +17,7 @@ import { hasCapability } from "../services/permissions.js";
 import { ITEM_LOCATION_SELECT, withRowItemNames } from "../utils/itemLocation.js";
 import { validateBody, validateQuery, validatedBody, validatedQuery } from "../middleware/validate.js";
 import { httpError } from "../lib/httpError.js";
-import { sendNotificationEmail, type EmailDeliveryResult } from "../services/email.js";
+import { sendNotificationEmail } from "../services/email.js";
 import {
   emailSubjectFor,
   MAX_REJECTION_REASON_LENGTH,
@@ -293,7 +293,7 @@ function requireUser(req: AuthenticatedRequest): { id: string; role: UserRole; o
 async function emailEveryone(
   recipients: Array<{ email: string }>,
   rawMessage: string,
-): Promise<EmailDeliveryResult> {
+): Promise<"sent" | "failed" | "skipped"> {
   const { code, message } = parseNotificationMessage(rawMessage);
   const subject = emailSubjectFor(code);
   try {

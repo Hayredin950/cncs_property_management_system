@@ -6,6 +6,7 @@
 
 export const ROLES = [
   "SYSTEM_ADMIN",
+  "ACCOUNT_ADMIN",
   "PROPERTY_OFFICER",
   "DEPARTMENT_HEAD",
   "STAFF",
@@ -15,7 +16,7 @@ export type Role = (typeof ROLES)[number];
 
 /**
  * The roles that are **never self-registered** (authority doc D2): a Head,
- * Property Officer, Auditor and System Admin account comes only through an invite
+ * Property Officer, Auditor and Account Admin account comes only through an invite
  * an administrator issues with a recorded outside authorization. Everyone else
  * asks for an account through `/request-account`.
  *
@@ -27,7 +28,7 @@ export const INVITABLE_ROLES = [
   "DEPARTMENT_HEAD",
   "PROPERTY_OFFICER",
   "AUDITOR",
-  "SYSTEM_ADMIN",
+  "ACCOUNT_ADMIN",
 ] as const;
 export type InvitableRole = (typeof INVITABLE_ROLES)[number];
 
@@ -154,6 +155,7 @@ export const ACCOUNT_STATUS_LABELS: Record<AccountStatus, string> = {
 
 export const ROLE_LABELS: Record<Role, string> = {
   SYSTEM_ADMIN: "System Admin",
+  ACCOUNT_ADMIN: "Account Admin",
   PROPERTY_OFFICER: "Property Officer",
   DEPARTMENT_HEAD: "Department Head",
   STAFF: "Staff",

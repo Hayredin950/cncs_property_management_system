@@ -1,93 +1,121 @@
 import type { UserRole } from "../middleware/auth.js";
 
+export type BaseRole = UserRole;
+
 /**
- * The permission matrix — spec 2.1/2.2 as amended 12 Oct (Account Admin merged
- * into System Admin, so five roles).
+ * The unified permission capabilities across CNCS Property Management System (Master Plan v3).
  *
- * One place decides what a role may do. Routes ask "may this user do X?" rather
- * than naming roles, because a route that names roles is a matrix row written in
- * the wrong file: `requireRole(["PROPERTY_OFFICER", "DEPARTMENT_HEAD"])` on the
- * approval route reads as "these two may approve", which is true but is exactly
- * what this table already says, and updating the policy then means hunting every
- * call site instead of editing one row.
- *
- * The capabilities are deliberately coarse. `ITEM_EDIT_CUSTODY` covers condition
- * and notes; the finer "only on the item you hold" rule is a scope check the
- * route does per-row (permissions decide *whether*, scope decides *which*).
+ * One central place decides whether a user has the capability, and evaluate scope in the
+ * `allow(user, capability, targetScope)` function rather than baking scopes into capability names.
  */
 export type Capability =
-  /** Register an item individually or by bulk import (spec 4.3, 6.1). */
+  /** Register an item individually or by bulk import (Property Officer only). */
   | "ITEM_CREATE"
-  /** Edit identity and financial fields — name, category, brand, model, serial, cost, value (spec 4.7.1). */
+  /** Edit identity and financial fields — name, category, brand, model, serial, cost, value (Property Officer only). */
   | "ITEM_EDIT_IDENTITY"
-  /** Edit condition and notes on an item you hold (spec 4.7.2). */
+  /** Edit condition, notes, photo on an item you hold (Holders: STAFF, DEPT_HEAD, PO). */
   | "ITEM_EDIT_CUSTODY"
-  /** Claim or refuse a pending item assigned to you/your department (spec 4.4). */
+  /** Claim or refuse a pending item assigned to you / your department / college (Holders). */
   | "ITEM_CLAIM"
-  /** Void a duplicate or wrong entry (spec 4.8). */
+  /** Void an unclaimed item with no history (Property Officer only). */
   | "ITEM_VOID"
-  /** Read every item in full, including on a scan (spec 2.2; Yanet's scan rule). */
+  /** Read full item detail (Property Officer, Auditor). */
   | "ITEM_READ_ALL"
-  /** Maintain buildings (spec 7.3). */
+  /** Maintain buildings (Property Officer only). */
   | "BUILDING_MANAGE"
-  /** Generate and manage QR tags. */
+  /** Generate and manage QR tags (Property Officer only). */
   | "TAG_MANAGE"
-  /** Create, rename and delete categories. */
+  /** Create, rename and delete categories (Property Officer only). */
   | "CATEGORY_MANAGE"
-  /** Run an audit session (spec 8.1 — auditors only). */
+  /** Run an audit session (Auditors only). */
   | "AUDIT_RUN"
-  /** Read audit history and reports — the auditor who ran them and the officer who acts on findings. */
+  /** Read audit history and reports (Auditors, Property Officer). */
   | "AUDIT_VIEW"
-  /** Acknowledge and sign off an audit report (spec §8 — Property Officer only). */
+  /** Request an audit (Property Officer, Department Head). */
+  | "AUDIT_REQUEST"
+  /** Acknowledge and sign off an audit report (Property Officer only). */
   | "AUDIT_ACKNOWLEDGE"
-  /** Decide a transfer/disposal request (spec 5.1/5.2). */
-  | "REQUEST_DECIDE"
-  /** First-stage approval for a transfer (releasing head / property officer). */
-  | "TRANSFER_APPROVE_STAGE1"
-  /** Second-stage approval for a transfer (receiving head / property officer). */
-  | "TRANSFER_APPROVE_STAGE2"
-  /** Approve a disposal request (property officer only). */
-  | "DISPOSAL_APPROVE"
-  /** Approve a loan request (property officer only). */
-  | "LOAN_APPROVE"
-  /** Read every request, not only your own (spec 5.1.7). */
+  /** Read every request college-wide (Property Officer only). */
   | "REQUEST_READ_ALL"
-  /** Read college-wide reports. */
+  /** General decision on requests (Department Head, Property Officer). */
+  | "REQUEST_DECIDE"
+  /** Approve transfer (Department Head for own dept; Property Officer for cross-dept / head-held). */
+  | "TRANSFER_APPROVE"
+  | "TRANSFER_APPROVE_STAGE1"
+  | "TRANSFER_APPROVE_STAGE2"
+  /** Recommend disposal (Department Head). */
+  | "DISPOSAL_RECOMMEND"
+  /** Finalise disposal (Property Officer only). */
+  | "DISPOSAL_APPROVE"
+  | "DISPOSAL_FINALIZE"
+  /** Approve loans (Department Head for dept items; Property Officer for college items). */
+  | "LOAN_APPROVE"
+  /** Read college/department reports (Property Officer, Department Head, Auditor). */
   | "REPORT_VIEW_ALL"
-  /** Account administration: invites, approvals, deactivation, resets (spec 3). */
+  /** Account administration (Account Admin, System Admin technical). */
   | "ACCOUNT_MANAGE"
-  /** Approve staff self-registrations in own unit (DEPARTMENT_HEAD). */
+  /** Approve staff self-registrations (Department Head within own dept; Account Admin fallback only; never System Admin). */
+  | "ACCOUNT_APPROVE"
   | "ACCOUNT_APPROVE_OWN_UNIT"
-  /** Approve any account request (SYSTEM_ADMIN). */
   | "ACCOUNT_APPROVE_ANY"
-  /** Invite privileged accounts (SYSTEM_ADMIN). */
+  /** Invite privileged accounts (Account Admin only; System Admin seeds first Account Admin). */
   | "ACCOUNT_INVITE"
-  /** Deactivate staff in own unit (DEPARTMENT_HEAD). */
+  /** Grant or revoke designations (Account Admin only). */
+  | "DESIGNATION_MANAGE"
+  /** Deactivate accounts according to duty separation rules. */
+  | "ACCOUNT_DEACTIVATE"
   | "ACCOUNT_DEACTIVATE_OWN_UNIT"
-  /** Deactivate privileged roles (SYSTEM_ADMIN). */
   | "ACCOUNT_DEACTIVATE_PRIVILEGED"
-  /** System configuration and monitoring (SYSTEM_ADMIN). */
+  /** Technical system configuration & health (System Admin only). */
   | "SYSTEM_CONFIG"
-  /**
-   * Read the account list. Needed by the Property Officer to pick a holder when
-   * registering an item — a name and an email are not asset data, so this does
-   * not breach SYSTEM_ADMIN's "sees no asset data" rule.
-   */
+  /** Read account directory (Property Officer, Account Admin, Department Head, Auditor). */
   | "USER_READ";
 
-/** Every capability a role holds. Absent role ⇒ no capabilities. */
-const GRANTS: Record<UserRole, readonly Capability[]> = {
-  // Technical + account administration only. Sees no asset data, approves
-  // nothing business-related (spec 2.1.1). ACCOUNT_ADMIN merged into this role per 12 Oct decision.
+export interface ActiveDesignation {
+  designation: string;
+  orgUnitId?: string | null;
+  expiresAt?: Date | null;
+  revokedAt?: Date | null;
+}
+
+export interface UserContext {
+  id: string;
+  role: BaseRole;
+  orgUnitId?: string | null;
+  designations?: ActiveDesignation[];
+}
+
+export interface ScopeTarget {
+  orgUnitId?: string | null;
+  targetUserId?: string | null;
+  targetUserRole?: BaseRole | null;
+  targetUserUnitId?: string | null;
+  isOwnItem?: boolean;
+  isOwnUnitItem?: boolean;
+  isCollegeItem?: boolean;
+  fallbackTriggerMet?: boolean;
+}
+
+/** Base grants per role (without scope checks). */
+const GRANTS: Record<BaseRole, readonly Capability[]> = {
   SYSTEM_ADMIN: [
     "ACCOUNT_MANAGE",
-    "ACCOUNT_APPROVE_ANY",
     "ACCOUNT_INVITE",
+    "ACCOUNT_DEACTIVATE",
     "ACCOUNT_DEACTIVATE_PRIVILEGED",
     "SYSTEM_CONFIG",
     "USER_READ",
   ],
-  // The single college-level operational role (spec 2.1.2).
+  ACCOUNT_ADMIN: [
+    "ACCOUNT_MANAGE",
+    "ACCOUNT_APPROVE",
+    "ACCOUNT_APPROVE_ANY",
+    "ACCOUNT_INVITE",
+    "DESIGNATION_MANAGE",
+    "ACCOUNT_DEACTIVATE",
+    "ACCOUNT_DEACTIVATE_PRIVILEGED",
+    "USER_READ",
+  ],
   PROPERTY_OFFICER: [
     "ITEM_CREATE",
     "ITEM_EDIT_IDENTITY",
@@ -98,47 +126,213 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "BUILDING_MANAGE",
     "TAG_MANAGE",
     "CATEGORY_MANAGE",
+    "AUDIT_VIEW",
+    "AUDIT_REQUEST",
+    "AUDIT_ACKNOWLEDGE",
     "REQUEST_DECIDE",
+    "REQUEST_READ_ALL",
+    "TRANSFER_APPROVE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
     "DISPOSAL_APPROVE",
+    "DISPOSAL_FINALIZE",
     "LOAN_APPROVE",
-    "REQUEST_READ_ALL",
     "REPORT_VIEW_ALL",
-    "AUDIT_VIEW",
-    "AUDIT_ACKNOWLEDGE",
     "USER_READ",
   ],
-  // Scoped to one department. Approves transfers for their department and can
-  // hold, claim and edit condition/notes of items like any custodian.
-  // Approves staff registrations in their department. (spec 2.1.3)
-  // First-stage approval for outgoing transfers, second-stage for incoming.
   DEPARTMENT_HEAD: [
     "ITEM_EDIT_CUSTODY",
     "ITEM_CLAIM",
+    "AUDIT_REQUEST",
     "REQUEST_DECIDE",
+    "TRANSFER_APPROVE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
-    "ACCOUNT_APPROVE_OWN_UNIT",
-    "ACCOUNT_DEACTIVATE_OWN_UNIT",
+    "DISPOSAL_RECOMMEND",
+    "LOAN_APPROVE",
     "REPORT_VIEW_ALL",
+    "ACCOUNT_APPROVE",
+    "ACCOUNT_APPROVE_OWN_UNIT",
+    "ACCOUNT_DEACTIVATE",
+    "ACCOUNT_DEACTIVATE_OWN_UNIT",
+    "USER_READ",
   ],
-  // Scoped to one department. Holds and claims items, files requests, edits
-  // condition and notes of what they hold — nothing else.
-  STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM"],
-  // Conducts audits and reads everything read-only. Approves nothing.
-  AUDITOR: ["ITEM_READ_ALL", "AUDIT_RUN", "AUDIT_VIEW", "REPORT_VIEW_ALL"],
+  STAFF: [
+    "ITEM_EDIT_CUSTODY",
+    "ITEM_CLAIM",
+  ],
+  AUDITOR: [
+    "ITEM_READ_ALL",
+    "AUDIT_RUN",
+    "AUDIT_VIEW",
+    "REPORT_VIEW_ALL",
+    "USER_READ",
+  ],
 };
 
-export function hasCapability(role: UserRole, capability: Capability): boolean {
+export function hasCapability(role: BaseRole, capability: Capability): boolean {
   return GRANTS[role]?.includes(capability) ?? false;
 }
 
-export function capabilitiesFor(role: UserRole): readonly Capability[] {
+export function capabilitiesFor(role: BaseRole): readonly Capability[] {
   return GRANTS[role] ?? [];
 }
 
-/** True when a role may *read* an item's full detail (as opposed to a stripped view). */
-export function seesFullItemDetail(role: UserRole): boolean {
+/** Check if designation is currently active */
+function isDesignationActive(d: ActiveDesignation): boolean {
+  if (d.revokedAt != null) return false;
+  if (d.expiresAt != null && new Date(d.expiresAt) <= new Date()) return false;
+  return true;
+}
+
+/**
+ * Central capability and scope evaluation function (Section 2.2).
+ * Takes a user (or role), the desired capability, and the target scope, returning allow or deny.
+ */
+export function allow(
+  userOrRole: UserContext | BaseRole,
+  capability: Capability,
+  targetScope?: ScopeTarget,
+): boolean {
+  const user: UserContext = typeof userOrRole === "string"
+    ? { id: "", role: userOrRole, orgUnitId: null }
+    : userOrRole;
+
+  const role = user.role;
+
+  // Active designations held by the user
+  const activeDesignations = (user.designations ?? []).filter(isDesignationActive);
+
+  // 1. Check capability base grant
+  const hasBase = hasCapability(role, capability);
+
+  // Check if designation grants it (e.g. DEPARTMENT_CUSTODIAN)
+  const isDeptCustodian = activeDesignations.some(
+    (d) => d.designation === "DEPARTMENT_CUSTODIAN" && (!targetScope?.orgUnitId || d.orgUnitId === targetScope.orgUnitId),
+  );
+
+  let hasCapOrDesignation = hasBase;
+  if (isDeptCustodian) {
+    if (capability === "ITEM_CLAIM" || capability === "LOAN_APPROVE") {
+      hasCapOrDesignation = true;
+    }
+  }
+
+  if (!hasCapOrDesignation) return false;
+
+  // If no scope is specified, return true based on capability
+  if (!targetScope) return true;
+
+  // 2. Evaluate scope in one place
+  switch (capability) {
+    case "ACCOUNT_APPROVE":
+    case "ACCOUNT_APPROVE_OWN_UNIT":
+    case "ACCOUNT_APPROVE_ANY": {
+      // System Admin is strictly excluded from registrations
+      if (role === "SYSTEM_ADMIN") return false;
+
+      // Department Head: can only approve in own department
+      if (role === "DEPARTMENT_HEAD") {
+        if (!user.orgUnitId || !targetScope.orgUnitId) return false;
+        return user.orgUnitId === targetScope.orgUnitId;
+      }
+
+      // Account Admin: fallback queue only (head vacant OR pending > 5 days)
+      if (role === "ACCOUNT_ADMIN") {
+        return Boolean(targetScope.fallbackTriggerMet);
+      }
+
+      return false;
+    }
+
+    case "ACCOUNT_INVITE": {
+      if (role === "ACCOUNT_ADMIN") return true;
+      if (role === "SYSTEM_ADMIN") {
+        // System Admin can ONLY seed an Account Admin
+        return targetScope.targetUserRole === "ACCOUNT_ADMIN";
+      }
+      return false;
+    }
+
+    case "ACCOUNT_DEACTIVATE":
+    case "ACCOUNT_DEACTIVATE_OWN_UNIT":
+    case "ACCOUNT_DEACTIVATE_PRIVILEGED": {
+      if (user.id && targetScope.targetUserId && user.id === targetScope.targetUserId) {
+        return false; // No self-deactivation
+      }
+      if (role === "DEPARTMENT_HEAD") {
+        // Can deactivate staff in own department only
+        return (
+          targetScope.targetUserRole === "STAFF" &&
+          Boolean(user.orgUnitId && targetScope.targetUserUnitId === user.orgUnitId)
+        );
+      }
+      if (role === "ACCOUNT_ADMIN") {
+        // Can deactivate Heads and Auditors
+        return (
+          targetScope.targetUserRole === "DEPARTMENT_HEAD" ||
+          targetScope.targetUserRole === "AUDITOR"
+        );
+      }
+      if (role === "SYSTEM_ADMIN") {
+        // Can deactivate Account Admins
+        return targetScope.targetUserRole === "ACCOUNT_ADMIN";
+      }
+      return false;
+    }
+
+    case "ITEM_CLAIM": {
+      if (role === "PROPERTY_OFFICER") return Boolean(targetScope.isCollegeItem);
+      if (role === "DEPARTMENT_HEAD") {
+        return Boolean(targetScope.isOwnItem || targetScope.isOwnUnitItem);
+      }
+      if (isDeptCustodian && targetScope.isOwnUnitItem) return true;
+      if (role === "STAFF") return Boolean(targetScope.isOwnItem);
+      return false;
+    }
+
+    case "ITEM_EDIT_CUSTODY": {
+      if (role === "PROPERTY_OFFICER") return true;
+      return Boolean(targetScope.isOwnItem);
+    }
+
+    case "TRANSFER_APPROVE":
+    case "TRANSFER_APPROVE_STAGE1":
+    case "TRANSFER_APPROVE_STAGE2": {
+      if (role === "PROPERTY_OFFICER") return true;
+      if (role === "DEPARTMENT_HEAD") {
+        return Boolean(user.orgUnitId && targetScope.orgUnitId === user.orgUnitId);
+      }
+      return false;
+    }
+
+    case "LOAN_APPROVE": {
+      if (role === "PROPERTY_OFFICER") return Boolean(targetScope.isCollegeItem);
+      if (role === "DEPARTMENT_HEAD") {
+        return Boolean(user.orgUnitId && targetScope.orgUnitId === user.orgUnitId);
+      }
+      if (isDeptCustodian) {
+        return Boolean(targetScope.isOwnUnitItem);
+      }
+      return false;
+    }
+
+    default:
+      return true;
+  }
+}
+
+/** True when a role may read an item's full detail. */
+export function seesFullItemDetail(role: BaseRole): boolean {
   return hasCapability(role, "ITEM_READ_ALL");
+}
+
+/** Proves Property Officer and Auditor exclusion (Section 2.1). */
+export function assertOfficerAuditorExclusion(currentRole: BaseRole, targetRole: BaseRole): void {
+  if (
+    (currentRole === "PROPERTY_OFFICER" && targetRole === "AUDITOR") ||
+    (currentRole === "AUDITOR" && targetRole === "PROPERTY_OFFICER")
+  ) {
+    throw new Error("Property Officer and Auditor cannot be the same person");
+  }
 }

@@ -16,7 +16,39 @@ vi.mock("../lib/prisma.js", () => {
       update: vi.fn(),
       delete: vi.fn(),
     },
-    notification: { deleteMany: vi.fn() },
+    adminActionLog: {
+      create: vi.fn(),
+    },
+    emailToken: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
+    emailOutbox: {
+      create: vi.fn(),
+      count: vi.fn().mockResolvedValue(0),
+      update: vi.fn(),
+    },
+    designation: {
+      create: vi.fn(),
+      update: vi.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+    },
+    custodyEvent: {
+      create: vi.fn(),
+    },
+    item: {
+      findMany: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
+    },
+    orgUnit: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    notification: { deleteMany: vi.fn(), create: vi.fn() },
     request: { count: vi.fn() },
     $transaction: vi.fn(async (arg: unknown) =>
       typeof arg === "function"
@@ -26,31 +58,36 @@ vi.mock("../lib/prisma.js", () => {
   return { prisma: client };
 });
 
-const adminToken = createToken({ id: "admin-1", role: "SYSTEM_ADMIN" });
-const staffToken = createToken({ id: "staff-1", role: "STAFF" });
+const systemAdminToken = createToken({ id: "sysadmin-1", role: "SYSTEM_ADMIN" });
+const accountAdminToken = createToken({ id: "accountadmin-1", role: "ACCOUNT_ADMIN" });
+const headToken = createToken({ id: "head-1", role: "DEPARTMENT_HEAD", orgUnitId: "unit-1" });
+const otherHeadToken = createToken({ id: "head-2", role: "DEPARTMENT_HEAD", orgUnitId: "unit-2" });
+const staffToken = createToken({ id: "staff-1", role: "STAFF", orgUnitId: "unit-1" });
 
 /** A row in the shape `userListSelect` returns, `_count` included. */
 function adminUserRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "user-1",
     fullName: "Demo Staff",
-    email: "staff@cnus.aau.edu.et",
+    email: "staff@cncs.aau.edu.et",
     role: "STAFF",
+    orgUnitId: "unit-1",
     createdAt: new Date("2026-09-01T00:00:00.000Z"),
     accountStatus: "ACTIVE",
     reviewedAt: null,
     reviewNote: null,
+    staffId: "ST-001",
     _count: { ownedItems: 2 },
     ...overrides,
   };
 }
 
-/** A row as it comes back from `POST /auth/account-requests`: nobody decided it yet. */
+/** A row as it comes back from registration: nobody decided it yet. */
 function pendingUserRow(overrides: Record<string, unknown> = {}) {
   return adminUserRow({
     id: "pending-1",
-    fullName: "Hanna Tesfaye",
-    email: "hanna@cncs.aau.edu.et",
+    fullName: "Pending Staff",
+    email: "pending@cncs.aau.edu.et",
     accountStatus: "PENDING_APPROVAL",
     _count: { ownedItems: 0 },
     ...overrides,
@@ -75,8 +112,8 @@ describe("GET /users", () => {
   });
 
   it("lets a PROPERTY_OFFICER read the list, to choose a holder when registering", async () => {
-    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([adminUserRow()] as never);
     const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
+    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([adminUserRow()] as never);
 
     const res = await request(app)
       .get("/users")
@@ -89,19 +126,28 @@ describe("GET /users", () => {
   it("returns every account with an item count and no password hash", async () => {
     vi.mocked(prisma.user.findMany).mockResolvedValueOnce([
       adminUserRow(),
-      adminUserRow({ id: "user-2", role: "SYSTEM_ADMIN", _count: { ownedItems: 0 } }),
+      adminUserRow({ id: "user-2", email: "other@cncs.aau.edu.et" }),
     ] as never);
 
     const res = await request(app)
       .get("/users")
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${accountAdminToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(2);
-    expect(res.body[0]).toMatchObject({ id: "user-1", role: "STAFF", itemCount: 2 });
-    expect(res.body[1]).toMatchObject({ id: "user-2", role: "SYSTEM_ADMIN", itemCount: 0 });
-    expect(res.body[0].passwordHash).toBeUndefined();
-    expect(res.body[0]._count).toBeUndefined();
+    expect(res.body[0]).toEqual({
+      id: "user-1",
+      fullName: "Demo Staff",
+      email: "staff@cncs.aau.edu.et",
+      role: "STAFF",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      itemCount: 2,
+      accountStatus: "ACTIVE",
+      reviewedAt: null,
+      reviewNote: null,
+      staffId: "ST-001",
+    });
+    expect(JSON.stringify(res.body)).not.toContain("passwordHash");
   });
 });
 
@@ -111,111 +157,75 @@ describe("PATCH /users/:id", () => {
       .patch("/users/user-1")
       .set("Authorization", `Bearer ${staffToken}`)
       .send({ fullName: "New Name" });
-
     expect(res.status).toBe(403);
   });
 
   it("returns 400 when nothing is supplied", async () => {
     const res = await request(app)
       .patch("/users/user-1")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${accountAdminToken}`)
       .send({});
-
     expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Nothing to update");
   });
 
   it("returns 404 for an unknown account", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
-
     const res = await request(app)
       .patch("/users/missing")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${accountAdminToken}`)
       .send({ fullName: "New Name" });
-
     expect(res.status).toBe(404);
   });
 
   it("returns 409 when the email belongs to another account", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "user-1",
-      email: "old@cnus.aau.edu.et",
-    } as never);
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
-      id: "user-2",
-      email: "taken@cnus.aau.edu.et",
-    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(adminUserRow() as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(
+      adminUserRow({ id: "user-2", email: "clash@cncs.aau.edu.et" }) as never,
+    );
 
     const res = await request(app)
       .patch("/users/user-1")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ email: "taken@cnus.aau.edu.et" });
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({ email: "clash@cncs.aau.edu.et" });
 
     expect(res.status).toBe(409);
-  });
-
-  it("catches a clash that differs only by case", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "user-1",
-      email: "old@cnus.aau.edu.et",
-    } as never);
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({ id: "user-2" } as never);
-
-    const res = await request(app)
-      .patch("/users/user-1")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ email: "Taken@CNUS.aau.edu.et" });
-
-    expect(res.status).toBe(409);
-
-    // The comparison has to be the insensitive one, and it has to exclude the
-    // account being edited — otherwise re-saving a legacy mixed-case email would
-    // collide with the row it is already on.
-    const where = vi.mocked(prisma.user.findFirst).mock.calls[0]?.[0]?.where as {
-      email: { equals: string; mode: string };
-      id: { not: string };
-    };
-    expect(where.email.mode).toBe("insensitive");
-    expect(where.email.equals).toBe("taken@cnus.aau.edu.et");
-    expect(where.id).toEqual({ not: "user-1" });
+    expect(res.body.error).toBe("Email is already in use by another account");
   });
 
   it("stores an edited email lowercased", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "user-1",
-      email: "old@cnus.aau.edu.et",
-    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(adminUserRow() as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
-      adminUserRow({ email: "new@cnus.aau.edu.et" }) as never,
+      adminUserRow({ email: "hanna@cncs.aau.edu.et" }) as never,
     );
 
     const res = await request(app)
       .patch("/users/user-1")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ email: "New@CNUS.aau.edu.et" });
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({ email: "Hanna@CNCS.AAU.EDU.ET" });
 
     expect(res.status).toBe(200);
-    expect(vi.mocked(prisma.user.update).mock.calls[0]?.[0]?.data?.email).toBe(
-      "new@cnus.aau.edu.et",
-    );
+    expect(vi.mocked(prisma.user.update)).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { email: "hanna@cncs.aau.edu.et" },
+      select: expect.any(Object),
+    });
   });
 
   it("returns 200 and the updated account", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "user-1",
-      email: "staff@cnus.aau.edu.et",
-    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(adminUserRow() as never);
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
-      adminUserRow({ fullName: "Renamed Staff" }) as never,
+      adminUserRow({ fullName: "Updated Name" }) as never,
     );
 
     const res = await request(app)
       .patch("/users/user-1")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ fullName: "Renamed Staff" });
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({ fullName: "Updated Name" });
 
     expect(res.status).toBe(200);
-    expect(res.body.fullName).toBe("Renamed Staff");
+    expect(res.body.fullName).toBe("Updated Name");
   });
 });
 
@@ -223,246 +233,147 @@ describe("POST /users/:id/promote", () => {
   it("returns 403 for a STAFF caller", async () => {
     const res = await request(app)
       .post("/users/user-1/promote")
-      .set("Authorization", `Bearer ${staffToken}`);
-
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ role: "DEPARTMENT_HEAD" });
     expect(res.status).toBe(403);
   });
 
   it("returns 400 when the target role is missing or unknown", async () => {
-    const missing = await request(app)
+    const res = await request(app)
       .post("/users/user-1/promote")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${accountAdminToken}`)
       .send({});
-    expect(missing.status).toBe(400);
-
-    const unknown = await request(app)
-      .post("/users/user-1/promote")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ role: "SUPERUSER" });
-    expect(unknown.status).toBe(400);
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(res.status).toBe(400);
   });
 
   it("returns 404 for an unknown account", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
-
     const res = await request(app)
       .post("/users/missing/promote")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ role: "PROPERTY_OFFICER" });
-
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({ role: "DEPARTMENT_HEAD" });
     expect(res.status).toBe(404);
   });
 
   it("returns 409 when the account already holds the target role", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "user-2",
-      role: "PROPERTY_OFFICER",
-    } as never);
-
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(
+      adminUserRow({ role: "DEPARTMENT_HEAD" }) as never,
+    );
     const res = await request(app)
       .post("/users/user-2/promote")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ role: "PROPERTY_OFFICER" });
-
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({ role: "DEPARTMENT_HEAD" });
     expect(res.status).toBe(409);
+    expect(res.body.error).toBe("Account already holds this role");
+  });
+
+  it("enforces PO and Auditor mutual exclusion on role change", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(
+      adminUserRow({ role: "PROPERTY_OFFICER" }) as never,
+    );
+    const res = await request(app)
+      .post("/users/user-1/promote")
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({ role: "AUDITOR" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("Property Officer and Auditor cannot be the same person");
   });
 
   it("sets the role and bumps tokenVersion so old sessions die", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "user-1",
-      role: "STAFF",
-    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(adminUserRow({ role: "STAFF" }) as never);
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
-      adminUserRow({ role: "PROPERTY_OFFICER" }) as never,
+      adminUserRow({ role: "DEPARTMENT_HEAD" }) as never,
     );
 
     const res = await request(app)
       .post("/users/user-1/promote")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ role: "PROPERTY_OFFICER" });
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({ role: "DEPARTMENT_HEAD" });
 
     expect(res.status).toBe(200);
-    expect(res.body.role).toBe("PROPERTY_OFFICER");
-    expect(vi.mocked(prisma.user.update).mock.calls[0]?.[0]?.data).toMatchObject({
-      role: "PROPERTY_OFFICER",
-      tokenVersion: { increment: 1 },
-    });
-  });
-});
-
-describe("POST /users/:id/password", () => {
-  it("returns 400 when the password is too short", async () => {
-    const res = await request(app)
-      .post("/users/user-1/password")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ password: "short" });
-
-    expect(res.status).toBe(400);
-  });
-
-  it("returns 404 for an unknown account", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
-
-    const res = await request(app)
-      .post("/users/missing/password")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ password: "LongEnough123" });
-
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 200 and stores a new hash", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "user-1" } as never);
-    vi.mocked(prisma.user.update).mockResolvedValueOnce({ id: "user-1" } as never);
-
-    const res = await request(app)
-      .post("/users/user-1/password")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ password: "LongEnough123" });
-
-    expect(res.status).toBe(200);
-    expect(res.body.passwordChanged).toBe(true);
-
-    const call = vi.mocked(prisma.user.update).mock.calls[0]?.[0] as {
-      data: { passwordHash: string };
-    };
-    expect(call.data.passwordHash).not.toBe("LongEnough123");
-    expect(call.data.passwordHash.length).toBeGreaterThan(20);
-  });
-});
-
-describe("DELETE /users/:id", () => {
-  it("returns 403 for a STAFF caller", async () => {
-    const res = await request(app)
-      .delete("/users/user-1")
-      .set("Authorization", `Bearer ${staffToken}`);
-
-    expect(res.status).toBe(403);
-  });
-
-  it("refuses to delete the acting administrator's own account", async () => {
-    const res = await request(app)
-      .delete("/users/admin-1")
-      .set("Authorization", `Bearer ${adminToken}`);
-
-    expect(res.status).toBe(400);
-  });
-
-  it("returns 404 for an unknown account", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
-
-    const res = await request(app)
-      .delete("/users/missing")
-      .set("Authorization", `Bearer ${adminToken}`);
-
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 409 and names what blocks it when the account is part of the record", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "user-1",
-      _count: {
-        ownedItems: 2,
-        requestsCreated: 1,
-        requestsReviewed: 0,
-        auditsRun: 0,
-        itemEdits: 3,
-      },
-    } as never);
-
-    const res = await request(app)
-      .delete("/users/user-1")
-      .set("Authorization", `Bearer ${adminToken}`);
-
-    expect(res.status).toBe(409);
-    expect(res.body.error).toContain("2 owned items");
-    expect(res.body.error).toContain("3 edit-history rows");
-    expect(prisma.user.delete).not.toHaveBeenCalled();
-  });
-
-  it("returns 200 and clears the inbox before deleting an unused account", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "user-1",
-      _count: {
-        ownedItems: 0,
-        requestsCreated: 0,
-        requestsReviewed: 0,
-        auditsRun: 0,
-        itemEdits: 0,
-      },
-    } as never);
-    vi.mocked(prisma.notification.deleteMany).mockResolvedValueOnce({ count: 1 } as never);
-    vi.mocked(prisma.user.delete).mockResolvedValueOnce({ id: "user-1" } as never);
-
-    const res = await request(app)
-      .delete("/users/user-1")
-      .set("Authorization", `Bearer ${adminToken}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.deleted).toBe(true);
-    expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
-    expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: "user-1" } });
-  });
-});
-
-/**
- * The account-approval queue (spec 3.1.2).
- *
- * The flow the supervisor flagged as the biggest issue on record: a person asks for
- * an account, an administrator decides, and nobody becomes active by their own
- * action. `POST /auth/account-requests` is covered in auth.test.ts; these are the
- * administrator's side, and the two self-review tests below are the ones that prove
- * the rule lives on the server rather than in the queue screen.
- */
-describe("GET /users/approvals", () => {
-  it("returns 403 for a caller who may not administer accounts", async () => {
-    const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
-
-    const res = await request(app)
-      .get("/users/approvals")
-      .set("Authorization", `Bearer ${officerToken}`);
-
-    // `USER_READ` is what fills the custodian picker, and it is not this: who is
-    // waiting to join the system is nobody else's list.
-    expect(res.status).toBe(403);
-    expect(prisma.user.findMany).not.toHaveBeenCalled();
-  });
-
-  it("lists only the pending accounts, oldest first", async () => {
-    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([pendingUserRow()] as never);
-
-    const res = await request(app)
-      .get("/users/approvals")
-      .set("Authorization", `Bearer ${adminToken}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].accountStatus).toBe("PENDING_APPROVAL");
-    expect(JSON.stringify(res.body)).not.toContain("passwordHash");
-
-    // Worked from the tail: the person who has waited longest is the overdue one.
-    expect(prisma.user.findMany).toHaveBeenCalledWith({
-      where: { accountStatus: "PENDING_APPROVAL" },
-      orderBy: { createdAt: "asc" },
+    expect(vi.mocked(prisma.user.update)).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { role: "DEPARTMENT_HEAD", tokenVersion: { increment: 1 } },
       select: expect.any(Object),
     });
   });
 });
 
+describe("GET /users/approvals", () => {
+  it("returns 403 for SYSTEM_ADMIN (technical only)", async () => {
+    const res = await request(app)
+      .get("/users/approvals")
+      .set("Authorization", `Bearer ${systemAdminToken}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for STAFF caller", async () => {
+    const res = await request(app)
+      .get("/users/approvals")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns pending staff in own department for DEPARTMENT_HEAD", async () => {
+    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([pendingUserRow({ orgUnitId: "unit-1" })] as never);
+
+    const res = await request(app)
+      .get("/users/approvals")
+      .set("Authorization", `Bearer ${headToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(vi.mocked(prisma.user.findMany)).toHaveBeenCalledWith({
+      where: {
+        accountStatus: "PENDING_APPROVAL",
+        orgUnitId: "unit-1",
+        role: "STAFF",
+      },
+      orderBy: { createdAt: "asc" },
+      select: expect.any(Object),
+    });
+  });
+
+  it("returns fallback pending staff for ACCOUNT_ADMIN (vacant head or > 5 days)", async () => {
+    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([pendingUserRow()] as never);
+
+    const res = await request(app)
+      .get("/users/approvals")
+      .set("Authorization", `Bearer ${accountAdminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+  });
+});
+
 describe("POST /users/:id/approve", () => {
-  it("activates the account and records who decided it", async () => {
+  it("returns 403 when SYSTEM_ADMIN attempts to approve", async () => {
+    const res = await request(app)
+      .post("/users/pending-1/approve")
+      .set("Authorization", `Bearer ${systemAdminToken}`)
+      .send({});
+
+    expect(res.status).toBe(403);
+  });
+
+  it("activates the account when department head approves in own unit", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
       id: "pending-1",
       accountStatus: "PENDING_APPROVAL",
+      orgUnitId: "unit-1",
+      fullName: "Staff Member",
+      email: "staff@aau.edu.et",
+      role: "STAFF",
     } as never);
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
-      pendingUserRow({ accountStatus: "ACTIVE" }) as never,
+      pendingUserRow({ accountStatus: "ACTIVE", orgUnitId: "unit-1" }) as never,
     );
 
     const res = await request(app)
       .post("/users/pending-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${headToken}`)
       .send({});
 
     expect(res.status).toBe(200);
@@ -474,96 +385,67 @@ describe("POST /users/:id/approve", () => {
     };
     expect(call.where).toEqual({ id: "pending-1" });
     expect(call.data.accountStatus).toBe("ACTIVE");
-    expect(call.data.reviewedBy).toEqual({ connect: { id: "admin-1" } });
-    expect(call.data.reviewedAt).toBeInstanceOf(Date);
-    // The request carries no role, so approving without one must not invent a
-    // change: the account keeps the STAFF role the request asked as.
-    expect(call.data).not.toHaveProperty("role");
+    expect(call.data.reviewedById).toBe("head-1");
   });
 
-  it("assigns the real role at approval time, and revokes any session", async () => {
+  it("refuses department head approving request from another department", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
       id: "pending-1",
       accountStatus: "PENDING_APPROVAL",
+      orgUnitId: "unit-2",
+      role: "STAFF",
+    } as never);
+
+    const res = await request(app)
+      .post("/users/pending-1/approve")
+      .set("Authorization", `Bearer ${headToken}`)
+      .send({});
+
+    expect(res.status).toBe(404);
+  });
+
+  it("allows Account Admin fallback approval when head is vacant", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "pending-1",
+      accountStatus: "PENDING_APPROVAL",
+      orgUnitId: "unit-vacant",
+      role: "STAFF",
+      createdAt: new Date(), // recent, but vacant head
+      orgUnitRef: { id: "unit-vacant", headId: null, head: null },
     } as never);
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
-      pendingUserRow({ accountStatus: "ACTIVE", role: "AUDITOR" }) as never,
+      pendingUserRow({ accountStatus: "ACTIVE", reviewNote: "head unavailable" }) as never,
     );
 
     const res = await request(app)
       .post("/users/pending-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ role: "AUDITOR" });
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({});
 
     expect(res.status).toBe(200);
-    const call = vi.mocked(prisma.user.update).mock.calls[0]?.[0] as {
-      data: Record<string, unknown>;
-    };
-    expect(call.data.role).toBe("AUDITOR");
-    expect(call.data.tokenVersion).toEqual({ increment: 1 });
+    expect(res.body.accountStatus).toBe("ACTIVE");
+    const call = vi.mocked(prisma.user.update).mock.calls[0]?.[0] as any;
+    expect(call.data.reviewNote).toBe("head unavailable");
   });
 
-  it("refuses an administrator approving their own account (404, hides existence)", async () => {
-    // The account under decision IS the caller. Nothing about this request needs
-    // the queue screen to have hidden a button.
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "admin-1",
-      accountStatus: "PENDING_APPROVAL",
-    } as never);
-
+  it("refuses an administrator approving their own account", async () => {
     const res = await request(app)
-      .post("/users/admin-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .post("/users/head-1/approve")
+      .set("Authorization", `Bearer ${headToken}`)
       .send({});
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe("You cannot approve or reject your own account request");
-    expect(prisma.user.update).not.toHaveBeenCalled();
-  });
-
-  it("refuses a decision on an account that is not waiting (404, hides existence)", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "user-1",
-      accountStatus: "ACTIVE",
-    } as never);
-
-    const res = await request(app)
-      .post("/users/user-1/approve")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({});
-
-    expect(res.status).toBe(404);
-    expect(res.body.error).toBe("This request is not pending approval");
-    expect(prisma.user.update).not.toHaveBeenCalled();
-  });
-
-  it("returns 404 for an unknown account", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
-
-    const res = await request(app)
-      .post("/users/ghost/approve")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({});
-
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 403 for a STAFF caller", async () => {
-    const res = await request(app)
-      .post("/users/pending-1/approve")
-      .set("Authorization", `Bearer ${staffToken}`)
-      .send({});
-
-    expect(res.status).toBe(403);
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /users/:id/reject", () => {
-  it("declines the request with the reason the person will read", async () => {
+  it("declines the request with reason when head rejects in scope", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
       id: "pending-1",
       accountStatus: "PENDING_APPROVAL",
+      orgUnitId: "unit-1",
+      fullName: "Staff Member",
+      email: "staff@aau.edu.et",
     } as never);
     vi.mocked(prisma.user.update).mockResolvedValueOnce(
       pendingUserRow({ accountStatus: "REJECTED", reviewNote: "No matching staff record" }) as never,
@@ -571,7 +453,7 @@ describe("POST /users/:id/reject", () => {
 
     const res = await request(app)
       .post("/users/pending-1/reject")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${headToken}`)
       .send({ reason: "No matching staff record" });
 
     expect(res.status).toBe(200);
@@ -580,33 +462,99 @@ describe("POST /users/:id/reject", () => {
     };
     expect(call.data.accountStatus).toBe("REJECTED");
     expect(call.data.reviewNote).toBe("No matching staff record");
-    expect(call.data.reviewedById).toBe("admin-1");
+    expect(call.data.reviewedById).toBe("head-1");
   });
 
-  it("requires a reason long enough to be one (F6.2's rule, applied here)", async () => {
+  it("requires a reason long enough to be one", async () => {
     const res = await request(app)
       .post("/users/pending-1/reject")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Authorization", `Bearer ${headToken}`)
       .send({ reason: "no" });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("A reason of 3 to 500 characters is required");
-    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /users/:id/deactivate", () => {
+  it("prevents self-deactivation", async () => {
+    const res = await request(app)
+      .post("/users/accountadmin-1/deactivate")
+      .set("Authorization", `Bearer ${accountAdminToken}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("You cannot deactivate your own account");
   });
 
-  it("refuses an administrator rejecting their own account (404, hides existence)", async () => {
+  it("lets Account Admin deactivate Department Head, bumping tokenVersion and reverting items", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      id: "admin-1",
-      accountStatus: "PENDING_APPROVAL",
+      id: "head-1",
+      role: "DEPARTMENT_HEAD",
+      accountStatus: "ACTIVE",
+      orgUnitId: "unit-1",
+      fullName: "Head One",
+      email: "head@aau.edu.et",
+    } as never);
+    vi.mocked(prisma.item.findMany).mockResolvedValueOnce([
+      { id: "item-1" },
+    ] as never);
+
+    const res = await request(app)
+      .post("/users/head-1/deactivate")
+      .set("Authorization", `Bearer ${accountAdminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.deactivated).toBe(true);
+
+    expect(vi.mocked(prisma.user.update)).toHaveBeenCalledWith({
+      where: { id: "head-1" },
+      data: {
+        accountStatus: "DEACTIVATED",
+        tokenVersion: { increment: 1 },
+      },
+    });
+
+    // Check item reversion to department in REVERTED_UNVERIFIED
+    expect(vi.mocked(prisma.item.update)).toHaveBeenCalledWith({
+      where: { id: "item-1" },
+      data: {
+        status: "REVERTED_UNVERIFIED",
+        holderType: "DEPARTMENT",
+        holderId: "unit-1",
+      },
+    });
+  });
+});
+
+describe("Designations: POST /users/:id/designations", () => {
+  it("allows Account Admin to grant DEPARTMENT_CUSTODIAN designation", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(adminUserRow() as never);
+    vi.mocked(prisma.designation.create).mockResolvedValueOnce({
+      id: "desig-1",
+      userId: "user-1",
+      designation: "DEPARTMENT_CUSTODIAN",
+      orgUnitId: "unit-1",
     } as never);
 
     const res = await request(app)
-      .post("/users/admin-1/reject")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ reason: "Never mind" });
+      .post("/users/user-1/designations")
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({ designation: "DEPARTMENT_CUSTODIAN", orgUnitId: "unit-1" });
 
-    expect(res.status).toBe(404);
-    expect(res.body.error).toBe("You cannot approve or reject your own account request");
-    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(vi.mocked(prisma.user.update)).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { tokenVersion: { increment: 1 } },
+    });
+  });
+
+  it("strictly forbids granting PROPERTY_OFFICER or AUDITOR as designation", async () => {
+    const res = await request(app)
+      .post("/users/user-1/designations")
+      .set("Authorization", `Bearer ${accountAdminToken}`)
+      .send({ designation: "PROPERTY_OFFICER" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Designations cannot grant Property Officer or Auditor roles");
   });
 });

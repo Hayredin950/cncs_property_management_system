@@ -30,8 +30,15 @@ import { cn } from "../../lib/cn";
 import { formatDateTimeUTC } from "../../lib/formatters";
 import { canAcknowledgeAudit } from "../../lib/permissions";
 import { toast } from "../../lib/toast";
-import type { AuditCompletionResponse, AuditResultRow } from "../../types/audit";
+import type { AuditCompletionResponse } from "../../types/audit";
 import type { ReportFormat } from "../../types/report";
+
+interface ResultGroup {
+  result: string;
+  label: string;
+  icon: ReactNode;
+  heading: string;
+}
 
 const RESULT_GROUPS: readonly ResultGroup[] = [
   {

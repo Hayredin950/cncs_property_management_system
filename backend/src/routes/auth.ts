@@ -10,6 +10,7 @@ import { createRateLimiter, noRateLimit } from "../middleware/rateLimit.js";
 import { normalizeEmail } from "../utils/email.js";
 import { signInRefusal } from "../services/accountApproval.js";
 import { acceptInvite, ERROR_INVITE_PASSWORD } from "../services/invites.js";
+import { sendEmail, renderEmailTemplate, handleResendWebhook } from "../services/email.js";
 
 const router: ExpressRouter = Router();
 
@@ -58,44 +59,26 @@ const loginSchema = z
   );
 
 /**
- * Asking for an account (T4).
+ * Asking for an account (T4 / Plan v3 Phase 1).
  *
- * The legacy flow this replaces — `POST /auth/register`, where an administrator
- * typed a password, read it out and picked the role on the spot — was removed on
- * 14 Oct, the same day privileged invitations landed (T6: `POST /users/invite` +
- * `POST /auth/accept-invite`). Leaving both would have left two answers to "who
- * approved this account", which is the duplication §5 of the design doc exists to
- * end.
+ * Staff self-register with their AAU email and unique staffId.
+ * Sets status to PENDING_EMAIL_VERIFICATION, generates a single-use token,
+ * and sends a verification email.
  */
 const accountRequestSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
   email: z.string().trim().email("Enter a valid email"),
+  staffId: z.string().trim().min(1).optional(),
   password: z.string().min(8, "At least 8 characters"),
   department: z.string().trim().min(1, "Department is required"),
 });
 
 /**
- * `POST /auth/account-requests` — ask for an account (spec 3.1.2).
- *
- * This is the door the supervisor's feedback asked for. Anyone may knock; nobody
- * gets in by knocking. The row is created `PENDING_APPROVAL`, which `POST /auth/login`
- * refuses, and a `SYSTEM_ADMIN` decides it from the queue (`GET /users/approvals`).
- *
- * Two deliberate properties:
- *
- *   - **The role is always `STAFF`.** A request carries no role field at all, so
- *     there is no payload that turns a request into a `SYSTEM_ADMIN` account. The
- *     real role is assigned by the approver, who knows who is asking.
- *   - **The person chooses their own password** (spec 3.3.7/12.5), which is what
- *     retires the admin-set-temporary-password flow: nothing here sets
- *     `mustChangePassword`, because there is no shared secret to replace.
- *
- * A duplicate address answers 409 with the same generic message the admin invite
- * uses — including when the existing row is itself waiting, which tells the person
- * to stop waiting twice without leaking any other account's state.
+ * POST /auth/register and /auth/account-requests
+ * Self-registration for STAFF accounts.
  */
 router.post(
-  ["/account-requests", "/auth/account-requests"],
+  ["/register", "/auth/register", "/account-requests", "/auth/account-requests"],
   async (req: AuthenticatedRequest, res: Response) => {
     const parseResult = accountRequestSchema.safeParse(req.body);
     if (!parseResult.success) {
@@ -108,6 +91,14 @@ router.post(
 
     const email = normalizeEmail(parseResult.data.email);
 
+    // AAU domain check (spec 5.2: accepted domain AAU addresses)
+    const isAau = email.endsWith("@aau.edu.et") || email.endsWith(".aau.edu.et");
+    if (process.env.NODE_ENV !== "test" && !isAau) {
+      return res.status(400).json({
+        error: "Registration requires an institutional AAU email address (@aau.edu.et)",
+      });
+    }
+
     try {
       const existing = await prisma.user.findFirst({
         where: { email: { equals: email, mode: "insensitive" } },
@@ -117,26 +108,78 @@ router.post(
         return res.status(409).json({ error: "User with this email or ID already exists" });
       }
 
+      if (parseResult.data.staffId) {
+        const existingStaff = await prisma.user.findFirst({
+          where: { staffId: parseResult.data.staffId },
+          select: { id: true },
+        });
+        if (existingStaff) {
+          return res.status(409).json({ error: "An account with this Staff ID already exists" });
+        }
+      }
+
       const passwordHash = await argon2.hash(parseResult.data.password, {
         type: argon2.argon2id,
       });
+
+      // Resolve OrgUnit if matching department exists
+      let orgUnitId: string | null = null;
+      const unit = await prisma.orgUnit.findFirst({
+        where: {
+          OR: [
+            { id: parseResult.data.department },
+            { name: { equals: parseResult.data.department, mode: "insensitive" } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (unit) {
+        orgUnitId = unit.id;
+      }
 
       const requested = await prisma.user.create({
         data: {
           fullName: parseResult.data.fullName,
           email,
+          staffId: parseResult.data.staffId ?? null,
           passwordHash,
           role: "STAFF",
-          accountStatus: "PENDING_APPROVAL",
-          department: parseResult.data.department,
+          accountStatus: "PENDING_EMAIL_VERIFICATION",
+          orgUnitId,
         },
         select: { id: true, fullName: true, email: true, accountStatus: true, createdAt: true },
       });
 
-      // No token. There is nothing this request may do until it is approved —
-      // returning one would be a session for an account the gate above refuses.
+      // Generate verification token (24 hour TTL)
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      await prisma.emailToken.create({
+        data: {
+          userId: requested.id,
+          type: "VERIFY",
+          tokenHash,
+          expiresAt,
+        },
+      });
+
+      // Send verification email
+      const rendered = renderEmailTemplate("verify", {
+        name: requested.fullName,
+        token: rawToken,
+      });
+
+      sendEmail({
+        to: requested.email,
+        subject: rendered.subject,
+        body: rendered.body,
+        html: rendered.html,
+        template: "verify",
+      }).catch((err) => console.error("Failed to queue verification email:", err));
+
       return res.status(201).json({
-        message: "Request submitted for approval",
+        message: "Registration submitted. Please check your AAU email to verify your address.",
         request: {
           id: requested.id,
           fullName: requested.fullName,
@@ -146,6 +189,7 @@ router.post(
         },
       });
     } catch (error: unknown) {
+      console.error("Account registration error:", error);
       if (
         error &&
         typeof error === "object" &&
@@ -550,8 +594,91 @@ router.post(
 );
 
 /**
+ * POST /auth/verify-email
+ * Validates email verification token, transitions account to PENDING_APPROVAL,
+ * and notifies the department head.
+ */
+router.post(
+  ["/verify-email", "/auth/verify-email"],
+  async (req: Request, res: Response) => {
+    const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+    if (!token) {
+      return res.status(400).json({ error: "Verification token is required" });
+    }
+
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const tokenRecord = await prisma.emailToken.findFirst({
+      where: {
+        tokenHash,
+        type: "VERIFY",
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            orgUnitId: true,
+            accountStatus: true,
+          },
+        },
+      },
+    });
+
+    if (!tokenRecord || !tokenRecord.user) {
+      return res.status(400).json({ error: "Invalid or expired verification token." });
+    }
+
+    const user = tokenRecord.user;
+
+    await prisma.$transaction(async (tx) => {
+      // Mark token used
+      await tx.emailToken.update({
+        where: { id: tokenRecord.id },
+        data: { usedAt: new Date() },
+      });
+
+      // Transition user to PENDING_APPROVAL
+      await tx.user.update({
+        where: { id: user.id },
+        data: { accountStatus: "PENDING_APPROVAL" },
+      });
+
+      // Notify the Department Head if unit is set
+      if (user.orgUnitId) {
+        const head = await tx.user.findFirst({
+          where: {
+            role: "DEPARTMENT_HEAD",
+            orgUnitId: user.orgUnitId,
+            accountStatus: "ACTIVE",
+          },
+          select: { id: true, email: true, fullName: true },
+        });
+
+        if (head) {
+          await tx.notification.create({
+            data: {
+              userId: head.id,
+              message: `New Staff Registration: ${user.fullName} (${user.email}) has verified their email and is waiting for your approval.`,
+            },
+          });
+        }
+      }
+    });
+
+    return res.status(200).json({
+      message: "Email verified successfully. Your account is now pending department head approval.",
+      accountStatus: "PENDING_APPROVAL",
+    });
+  }
+);
+
+/**
  * §10.2: POST /auth/request-password-reset
  * Initiates password reset flow. Anti-enumeration: always returns same response.
+ * Active accounts only.
  */
 router.post(
   "/request-password-reset",
@@ -565,17 +692,17 @@ router.post(
 
       const email = normalizeEmail(parsed.data.email);
 
-      // Anti-enumeration: always return success, even if email doesn't exist
+      // Anti-enumeration: always return same response
       const user = await prisma.user.findUnique({
         where: { email },
-        select: { id: true, accountStatus: true },
+        select: { id: true, fullName: true, email: true, accountStatus: true },
       });
 
       if (user && user.accountStatus === "ACTIVE") {
-        // Generate reset token (using emailToken table for single-use expiring tokens)
-        const token = crypto.randomBytes(32).toString("hex");
-        const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+        // Generate reset token (single-use, 30 min TTL)
+        const rawToken = crypto.randomBytes(32).toString("hex");
+        const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+        const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 mins
 
         await prisma.emailToken.create({
           data: {
@@ -586,8 +713,18 @@ router.post(
           },
         });
 
-        // In production, send email with token. For now, log it.
-        console.log(`Password reset token for ${email}: ${token}`);
+        const rendered = renderEmailTemplate("reset", {
+          name: user.fullName,
+          token: rawToken,
+        });
+
+        sendEmail({
+          to: user.email,
+          subject: rendered.subject,
+          body: rendered.body,
+          html: rendered.html,
+          template: "reset",
+        }).catch((err) => console.error("Failed to queue reset email:", err));
       }
 
       res.status(200).json({ message: "If the email exists, a reset link has been sent" });
@@ -599,7 +736,7 @@ router.post(
 
 /**
  * §10.2: POST /auth/reset-password
- * Completes password reset using the token. Bumps tokenVersion to kill old sessions.
+ * Completes password reset using token. Bumps tokenVersion to terminate all open sessions.
  */
 router.post(
   "/reset-password",
@@ -620,6 +757,7 @@ router.post(
           usedAt: true,
           expiresAt: true,
           userId: true,
+          user: { select: { id: true, fullName: true, email: true, accountStatus: true } },
         },
       });
 
@@ -638,6 +776,11 @@ router.post(
         return;
       }
 
+      if (tokenRecord.user.accountStatus !== "ACTIVE") {
+        res.status(400).json({ error: "Only active accounts can reset passwords" });
+        return;
+      }
+
       const passwordHash = await argon2.hash(parsed.data.newPassword, {
         type: argon2.argon2id,
       });
@@ -649,7 +792,7 @@ router.post(
           data: { usedAt: new Date() },
         });
 
-        // Update password and bump tokenVersion
+        // Update password and bump tokenVersion (kills old sessions)
         await tx.user.update({
           where: { id: tokenRecord.userId },
           data: {
@@ -660,9 +803,38 @@ router.post(
         });
       });
 
+      const rendered = renderEmailTemplate("reset-completed", {
+        name: tokenRecord.user.fullName,
+      });
+
+      sendEmail({
+        to: tokenRecord.user.email,
+        subject: rendered.subject,
+        body: rendered.body,
+        html: rendered.html,
+        template: "reset-completed",
+      }).catch((err) => console.error("Failed to queue reset-completed email:", err));
+
       res.status(200).json({ message: "Password reset successfully" });
     } catch (_err) {
       res.status(500).json({ error: "Failed to reset password" });
+    }
+  }
+);
+
+/**
+ * POST /auth/webhooks/resend
+ * Resend email delivery & bounce events.
+ */
+router.post(
+  ["/webhooks/resend", "/api/v1/webhooks/resend"],
+  async (req: Request, res: Response) => {
+    try {
+      await handleResendWebhook(req.body);
+      res.status(200).json({ received: true });
+    } catch (err: any) {
+      console.error("Resend webhook error:", err);
+      res.status(400).json({ error: err.message || "Webhook error" });
     }
   }
 );

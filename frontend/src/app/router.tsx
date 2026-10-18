@@ -11,6 +11,7 @@ import { AcceptInvitePage } from "../features/auth/AcceptInvitePage";
 import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { RequestAccountPage } from "../features/auth/RequestAccountPage";
+import { VerifyEmailPage } from "../features/auth/VerifyEmailPage";
 import { CatalogPage } from "../features/catalog/CatalogPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { ItemFormPage } from "../features/items/ItemFormPage";
@@ -67,6 +68,7 @@ import { SmartLayout } from "./SmartLayout";
  * itself below, because the roles have genuinely different jobs now. */
 const ALL_ROLES: Role[] = [
   "SYSTEM_ADMIN",
+  "ACCOUNT_ADMIN",
   "PROPERTY_OFFICER",
   "DEPARTMENT_HEAD",
   "STAFF",
@@ -96,6 +98,7 @@ export const appRoutes: RouteObject[] = [
           { path: "/map", element: <MapPage /> },
           { path: "/login", element: <LoginPage /> },
           { path: "/request-account", element: <RequestAccountPage /> },
+          { path: "/verify-email", element: <VerifyEmailPage /> },
           // The invited person is not signed in and has no account to sign in
           // with — the invitation is what creates one (T6), so this belongs to
           // the public shell rather than behind `RequireAuth`.
@@ -195,19 +198,24 @@ export const appRoutes: RouteObject[] = [
             ],
           },
 
-          // Account administration is the System Admin's (the Account Admin was
-          // merged into it on 12 Oct). A failed role check renders the same 404
-          // as any unknown path (frontend-plan.md §6, §9.1).
+          // User and registration management (Account Admin, Department Head approvals, System Admin)
+          {
+            element: (
+              <RequireAuth roles={["SYSTEM_ADMIN", "ACCOUNT_ADMIN", "DEPARTMENT_HEAD"]}>
+                <Outlet />
+              </RequireAuth>
+            ),
+            children: [{ path: "/admin/users", element: <AdminUsersPage /> }],
+          },
+
+          // System configuration & health (System Admin only)
           {
             element: (
               <RequireAuth roles={["SYSTEM_ADMIN"]}>
                 <Outlet />
               </RequireAuth>
             ),
-            children: [
-              { path: "/admin/users", element: <AdminUsersPage /> },
-              { path: "/admin/system", element: <SystemStatusPage /> },
-            ],
+            children: [{ path: "/admin/system", element: <SystemStatusPage /> }],
           },
         ],
       },

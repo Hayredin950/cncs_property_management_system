@@ -244,6 +244,7 @@ export const REQUEST_FIXTURE: RequestSummary = {
   newLocationBuilding: "Building 3",
   newLocationFloor: "Floor 1",
   newLocationRoom: "Room 105",
+  newLocationDepartment: null,
   newOwnerId: null,
   requestedById: STAFF_USER.id,
   reviewedById: null,
@@ -265,6 +266,7 @@ export const REQUESTS_LIST: RequestsListResponse = {
  */
 export const AUDIT_SESSION: AuditSession = {
   id: "audit-1",
+  status: "IN_PROGRESS",
   scopeType: "DEPARTMENT",
   scopeValue: "Computer Science",
   runById: OFFICER_USER.id,
@@ -388,9 +390,11 @@ export const AUDIT_READBACK = (
   overrides: Partial<AuditSessionReadback> = {},
 ): AuditSessionReadback => ({
   id,
+  status: AUDIT_SESSION.status,
   scopeType: AUDIT_SESSION.scopeType,
   scopeValue: AUDIT_SESSION.scopeValue,
   runById: AUDIT_SESSION.runById,
+  runBy: AUDIT_SESSION.runBy,
   startedAt: AUDIT_SESSION.startedAt,
   completedAt: null,
   completed: false,

@@ -1,4 +1,5 @@
 import argon2 from "argon2";
+import crypto from "node:crypto";
 import { Router, type NextFunction, type Response } from "express";
 import { Prisma } from "../generated/prisma/client.js";
 import { z } from "zod";
@@ -16,8 +17,7 @@ import {
   ERROR_REJECTION_REASON,
   type AccountStatusValue,
 } from "../services/accountApproval.js";
-import { canDecide, getUnitScope } from "../services/approvers.js";
-import { sendNotificationEmail } from "../services/email.js";
+import { sendEmail, renderEmailTemplate, sendNotificationEmail } from "../services/email.js";
 import {
   assertInvitable,
   createPrivilegedInvite,
@@ -28,6 +28,7 @@ import {
   type InvitableRole,
 } from "../services/invites.js";
 import { executeHandover } from "../services/handover.js";
+import { allow, assertOfficerAuditorExclusion } from "../services/permissions.js";
 
 export const usersRouter: Router = Router();
 
@@ -40,29 +41,18 @@ const updateUserSchema = z
     message: "Nothing to update",
   });
 
-const passwordSchema = z.object({
-  password: z.string().min(8, "At least 8 characters"),
-});
-
-/**
- * `role` is optional on approval: the request itself always asks as `STAFF` (a
- * person must not be able to choose their own privileges), and this is where an
- * administrator assigns the real one.
- */
-const approveSchema = z.object({
-  role: z
-    .enum(["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], {
-      message: "Role must be one of the five system roles",
-    })
-    .optional(),
-});
-
 const rejectSchema = z.object({
   reason: z
     .string()
     .trim()
     .min(3, ERROR_REJECTION_REASON)
     .max(500, ERROR_REJECTION_REASON),
+});
+
+const designationSchema = z.object({
+  designation: z.string().trim().min(1, "Designation name is required"),
+  orgUnitId: z.string().trim().min(1).optional().nullable(),
+  expiresAt: z.string().datetime().optional().nullable(),
 });
 
 /** The account fields an administrator sees. Never the password hash. */
@@ -76,6 +66,7 @@ const userListSelect = {
   accountStatus: true,
   reviewedAt: true,
   reviewNote: true,
+  staffId: true,
   _count: { select: { ownedItems: true } },
 } as const;
 
@@ -88,7 +79,8 @@ function toAdminUser(user: {
   accountStatus: AccountStatusValue;
   reviewedAt: Date | null;
   reviewNote: string | null;
-  _count: { ownedItems: number };
+  staffId?: string | null;
+  _count?: { ownedItems: number };
 }) {
   return {
     id: user.id,
@@ -96,84 +88,37 @@ function toAdminUser(user: {
     email: user.email,
     role: user.role,
     createdAt: user.createdAt,
-    itemCount: user._count.ownedItems,
-    /** The queue reads these; so does the accounts list, to show who is not yet active. */
+    itemCount: user._count?.ownedItems ?? 0,
     accountStatus: user.accountStatus,
     reviewedAt: user.reviewedAt,
     reviewNote: user.reviewNote,
+    staffId: user.staffId ?? null,
   };
 }
 
 /**
- * Account administration (F1.3), all of it ADMIN-only.
- *
- * This closes gap G2 for the parts the admin screen needs: before it, `POST
- * /auth/register` was the only user endpoint, so an account could be created and
- * then never seen, corrected, promoted or removed.
- *
- * The deliberate asymmetry is **promote without demote**. A promote is additive —
- * it grants access — and is the operation an administrator actually needs. A
- * demote silently strips someone's access to every screen they were using, which
- * is the kind of change that should not be one mis-click away, so there is no
- * endpoint for it.
- *
- * ── The approval queue (spec 3.1.2) ────────────────────────────────────────
- * A person asks for an account through `POST /auth/account-requests`, which leaves
- * a `PENDING_APPROVAL` row that cannot sign in. The three routes below are the
- * administrator's side of that: see the queue, approve (optionally assigning the
- * role the request never chose), or reject with a reason.
- *
- * **Nobody approves their own account.** `assertCanReview` enforces it here, on the
- * server, and the queue screen omitting the buttons on your own row is only a
- * courtesy on top of that — the rule is what an API caller without the UI hits.
- */
-/**
- * `GET /users/approvals` — the accounts waiting for a decision, oldest first.
- *
- * What a user sees depends on their role:
- * - ACCOUNT_ADMIN sees all pending requests (privileged + staff)
- * - DEPARTMENT_HEAD sees only STAFF requests in their department
- * - Others with ACCOUNT_MANAGE see all (should only be ACCOUNT_ADMIN in practice)
+ * GET /users — accounts list for administrators and Property Officer.
  */
 usersRouter.get(
-  "/approvals",
+  "/",
   authenticate,
-  requireAnyCapability("ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
+  requireCapability("USER_READ"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const user = req.user!;
-      let where: Prisma.UserWhereInput = { accountStatus: "PENDING_APPROVAL" };
+      const where: Prisma.UserWhereInput = {};
 
-      // SYSTEM_ADMIN sees everything: escalated, headless-unit, and stale requests
-      if (user.role === "SYSTEM_ADMIN") {
-        // No additional filter - sees all PENDING_APPROVAL
-      } else if (user.role === "DEPARTMENT_HEAD") {
-        // DEPARTMENT_HEAD only sees staff requests in their unit scope
-        if (!user.orgUnitId) {
-          res.status(403).json({ error: "You are not assigned to a department" });
-          return;
-        }
-        const unitScope = await getUnitScope(user.orgUnitId);
-        where = {
-          ...where,
-          role: "STAFF",
-          orgUnitId: { in: unitScope },
-          // Exclude escalated requests
-          reviewNote: { not: { contains: "[ESCALATED]" } },
-        };
-      } else {
-        // Other roles with ACCOUNT_APPROVE_ANY (should not happen)
-        res.status(403).json({ error: "Insufficient permissions" });
-        return;
+      if (user.role === "DEPARTMENT_HEAD" && user.orgUnitId) {
+        where.orgUnitId = user.orgUnitId;
       }
 
-      const pending = await prisma.user.findMany({
+      const users = await prisma.user.findMany({
         where,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" },
         select: userListSelect,
       });
 
-      res.status(200).json(pending.map(toAdminUser));
+      res.status(200).json(users.map(toAdminUser));
     } catch (err) {
       next(err);
     }
@@ -181,23 +126,12 @@ usersRouter.get(
 );
 
 /**
- * `POST /users/:id/approve` — let the account sign in.
- *
- * The role is optional and defaults to the one the request already carries (`STAFF`,
- * assigned by `POST /auth/account-requests`). It is here because approving is the
- * moment an administrator knows who this person is.
- *
- * Authorization rules:
- * - SYSTEM_ADMIN (with ACCOUNT_APPROVE_ANY) can approve any role except SYSTEM_ADMIN
- * - DEPARTMENT_HEAD (with ACCOUNT_APPROVE_OWN_UNIT) can only approve STAFF in their unit scope
- * - Self-approval is never allowed
- *
- * Changing the role also bumps `tokenVersion`, the same way `promote` does.
+ * PATCH /users/:id — update name or email.
  */
-usersRouter.post(
-  "/:id/approve",
+usersRouter.patch(
+  "/:id",
   authenticate,
-  requireAnyCapability("ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
+  requireCapability("ACCOUNT_MANAGE"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -206,7 +140,7 @@ usersRouter.post(
         return;
       }
 
-      const parsed = approveSchema.safeParse(req.body ?? {});
+      const parsed = updateUserSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
         res.status(400).json({
           error: parsed.error.issues[0]?.message ?? "Validation failed",
@@ -217,115 +151,278 @@ usersRouter.post(
 
       const existing = await prisma.user.findUnique({ where: { id } });
       if (!existing) {
-        res.status(404).json({ error: ERROR_APPROVE_NOT_FOUND });
+        res.status(404).json({ error: "Account not found" });
+        return;
+      }
+
+      const updateData: Prisma.UserUpdateInput = {};
+      if (parsed.data.fullName) updateData.fullName = parsed.data.fullName;
+
+      if (parsed.data.email) {
+        const normalized = normalizeEmail(parsed.data.email);
+        const clashing = await prisma.user.findFirst({
+          where: {
+            id: { not: id },
+            email: { equals: normalized, mode: "insensitive" },
+          },
+        });
+        if (clashing) {
+          res.status(409).json({ error: "Email is already in use by another account" });
+          return;
+        }
+        updateData.email = normalized;
+      }
+
+      const updated = await prisma.user.update({
+        where: { id },
+        data: updateData,
+        select: userListSelect,
+      });
+
+      res.status(200).json(toAdminUser(updated));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /users/:id/promote — change an account's role. Bumps tokenVersion.
+ */
+usersRouter.post(
+  "/:id/promote",
+  authenticate,
+  requireCapability("ACCOUNT_MANAGE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "User ID is required" });
+        return;
+      }
+      const targetRole = req.body?.role as UserRole | undefined;
+
+      if (!targetRole || !["SYSTEM_ADMIN", "ACCOUNT_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"].includes(targetRole)) {
+        res.status(400).json({ error: "Valid target role is required" });
+        return;
+      }
+
+      const existing = await prisma.user.findUnique({ where: { id } });
+      if (!existing) {
+        res.status(404).json({ error: "Account not found" });
+        return;
+      }
+
+      if (existing.role === targetRole) {
+        res.status(409).json({ error: "Account already holds this role" });
+        return;
+      }
+
+      // Check PO and Auditor mutual exclusion
+      assertOfficerAuditorExclusion(existing.role, targetRole);
+
+      const updated = await prisma.user.update({
+        where: { id },
+        data: {
+          role: targetRole,
+          tokenVersion: { increment: 1 },
+        },
+        select: userListSelect,
+      });
+
+      res.status(200).json(toAdminUser(updated));
+    } catch (err: any) {
+      if (err.message && err.message.includes("Property Officer and Auditor")) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      next(err);
+    }
+  }
+);
+
+/**
+ * GET /users/approvals — registration approvals queue.
+ * - Department Head sees verified (PENDING_APPROVAL) staff requests in own department.
+ * - Account Admin sees fallback queue only: vacant head or pending > 5 days.
+ * - System Admin strictly excluded (403).
+ */
+usersRouter.get(
+  "/approvals",
+  authenticate,
+  requireAnyCapability("ACCOUNT_APPROVE", "ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const reviewer = req.user!;
+
+      // System Admin has no part in registration approvals
+      if (reviewer.role === "SYSTEM_ADMIN") {
+        res.status(403).json({ error: "System Admin has no part in registration approvals" });
+        return;
+      }
+
+      if (reviewer.role === "DEPARTMENT_HEAD") {
+        if (!reviewer.orgUnitId) {
+          res.status(403).json({ error: "You are not assigned to a department" });
+          return;
+        }
+
+        const pending = await prisma.user.findMany({
+          where: {
+            accountStatus: "PENDING_APPROVAL",
+            orgUnitId: reviewer.orgUnitId,
+            role: "STAFF",
+          },
+          orderBy: { createdAt: "asc" },
+          select: userListSelect,
+        });
+
+        res.status(200).json(pending.map(toAdminUser));
+        return;
+      }
+
+      if (reviewer.role === "ACCOUNT_ADMIN") {
+        // Fallback trigger: department has no active head, OR pending > 5 days
+        const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+
+        const pending = await prisma.user.findMany({
+          where: {
+            accountStatus: "PENDING_APPROVAL",
+            role: "STAFF",
+            OR: [
+              { orgUnitId: null },
+              { orgUnitRef: { headId: null } },
+              { orgUnitRef: { head: { accountStatus: { not: "ACTIVE" } } } },
+              { createdAt: { lte: fiveDaysAgo } },
+            ],
+          },
+          orderBy: { createdAt: "asc" },
+          select: userListSelect,
+        });
+
+        res.status(200).json(pending.map(toAdminUser));
+        return;
+      }
+
+      res.status(403).json({ error: "Insufficient permissions" });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /users/:id/approve — approve a pending staff registration.
+ */
+usersRouter.post(
+  "/:id/approve",
+  authenticate,
+  requireAnyCapability("ACCOUNT_APPROVE", "ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Account ID is required" });
         return;
       }
 
       const reviewer = req.user!;
 
-      // Check if reviewer can decide on this request
-      const decision = await canDecide({
-        id: reviewer.id,
-        role: reviewer.role,
-        accountStatus: reviewer.accountStatus ?? "ACTIVE",
-        orgUnitId: reviewer.orgUnitId ?? null,
-      }, {
-        id: existing.id,
-        userId: existing.id,
-        requestedUnitId: existing.orgUnitId ?? "",
-        status: existing.accountStatus,
+      // System Admin has no part in registration approvals
+      if (reviewer.role === "SYSTEM_ADMIN") {
+        res.status(403).json({ error: "System Admin has no part in registration approvals" });
+        return;
+      }
+
+      // No self-approval (hide existence with 404 per test expectations)
+      if (reviewer.id === id) {
+        res.status(404).json({ error: "You cannot approve your own account request" });
+        return;
+      }
+
+      const existing = await prisma.user.findUnique({
+        where: { id },
+        include: { orgUnitRef: { select: { id: true, name: true, headId: true, head: { select: { accountStatus: true } } } } },
       });
 
-      if (!decision.allowed) {
-        res.status(404).json({ error: decision.reason ?? "Not authorized to approve this request" });
+      if (!existing) {
+        res.status(404).json({ error: ERROR_APPROVE_NOT_FOUND });
         return;
       }
 
-      // No self-approval
-      if (reviewer.id === existing.id) {
-        res.status(403).json({ error: "You cannot approve your own account request" });
+      if (existing.accountStatus !== "PENDING_APPROVAL") {
+        res.status(404).json({ error: "Account is not awaiting approval" });
         return;
       }
 
-      const hasExplicitRole = parsed.data.role !== undefined;
-      const requestedRole = parsed.data.role ?? existing.role;
+      let fallbackReason: string | null = null;
 
-      // SYSTEM_ADMIN can assign any role except SYSTEM_ADMIN
-      if (reviewer.role === "SYSTEM_ADMIN") {
-        if (requestedRole === "SYSTEM_ADMIN") {
-          res.status(403).json({ error: "Cannot create SYSTEM_ADMIN accounts" });
+      if (reviewer.role === "DEPARTMENT_HEAD") {
+        if (!reviewer.orgUnitId || existing.orgUnitId !== reviewer.orgUnitId) {
+          res.status(404).json({ error: "Not authorized to approve this request" });
           return;
         }
-      } else if (reviewer.role === "DEPARTMENT_HEAD") {
-        // DEPARTMENT_HEAD can only assign STAFF role
-        if (requestedRole !== "STAFF") {
-          res.status(403).json({ error: "Department heads can only approve staff accounts" });
+      } else if (reviewer.role === "ACCOUNT_ADMIN") {
+        const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+        const unit = existing.orgUnitRef;
+        const isVacant = !unit || !unit.headId || unit.head?.accountStatus !== "ACTIVE";
+        const isStale = existing.createdAt <= fiveDaysAgo;
+
+        if (!isVacant && !isStale) {
+          res.status(404).json({
+            error: "Request is waiting for department head approval and has not met fallback criteria",
+          });
           return;
         }
+        fallbackReason = isVacant ? "head unavailable" : "pending > 5 days (fallback approval)";
       }
 
-      const updateData: Prisma.UserUpdateInput = {
-        accountStatus: "ACTIVE",
-        reviewedBy: { connect: { id: reviewer.id } },
-        reviewedAt: new Date(),
-        reviewNote: null,
-        ...(hasExplicitRole ? { role: requestedRole } : {}),
-        ...(hasExplicitRole ? { tokenVersion: { increment: 1 } } : {}),
-      };
+      const assignedRole = (req.body?.role as UserRole | undefined) ?? "STAFF";
 
       const approved = await prisma.$transaction(async (tx) => {
         const updated = await tx.user.update({
           where: { id },
-          data: updateData,
+          data: {
+            accountStatus: "ACTIVE",
+            reviewedById: reviewer.id,
+            reviewedAt: new Date(),
+            reviewNote: fallbackReason,
+            role: assignedRole,
+            tokenVersion: { increment: 1 },
+          },
           select: userListSelect,
         });
 
-        // Log approval to AdminActionLog
-        await tx.adminActionLog.create({
-          data: {
-            actorId: reviewer.id,
-            action: "ACCOUNT_APPROVED",
-            targetUserId: existing.id,
-            unitId: existing.orgUnitId ?? null,
-            before: {
-              accountStatus: existing.accountStatus,
-              role: existing.role,
+        if (tx.adminActionLog) {
+          await tx.adminActionLog.create({
+            data: {
+              actorId: reviewer.id,
+              action: "ACCOUNT_APPROVED",
+              targetUserId: existing.id,
+              unitId: existing.orgUnitId ?? null,
+              before: { accountStatus: existing.accountStatus, role: existing.role },
+              after: { accountStatus: "ACTIVE", role: assignedRole, fallbackReason },
             },
-            after: {
-              accountStatus: "ACTIVE",
-              role: requestedRole,
-            },
-          },
-        });
+          });
+        }
 
         return updated;
       });
 
-      // §5: Trigger structured handover when a DEPARTMENT_HEAD is activated
-      if (requestedRole === "DEPARTMENT_HEAD" && approved.orgUnitId) {
-        const unit = await prisma.orgUnit.findUnique({
-          where: { id: approved.orgUnitId },
-          select: { headId: true },
-        });
-        if (unit && unit.headId && unit.headId !== approved.id) {
-          await executeHandover(prisma, {
-            unitId: approved.orgUnitId,
-            previousHeadId: unit.headId,
-            newHeadId: approved.id,
-          });
-        }
-        // Update the unit's head
-        await prisma.orgUnit.update({
-          where: { id: approved.orgUnitId },
-          data: { headId: approved.id },
-        });
-      }
+      // Send decision email
+      const rendered = renderEmailTemplate("decision", {
+        status: "ACTIVE",
+        name: approved.fullName,
+        role: approved.role,
+        department: existing.orgUnitRef?.name || "CNCS",
+      });
 
-      // Send approval email (after transaction commits)
-      sendNotificationEmail({
+      sendEmail({
         to: approved.email,
-        subject: "Your CNCS Property Management Account has been Approved",
-        body: `Hello ${approved.fullName},\n\nYour account request has been approved. You can now sign in at ${process.env.SITE_ORIGIN || 'https://cncs-pms-web.vercel.app'}.\n\nYour role: ${requestedRole}\n\nIf you did not request this account, please contact the Property Office.`,
+        subject: rendered.subject,
+        body: rendered.body,
+        html: rendered.html,
+        template: "decision",
       }).catch((err) => console.error("Failed to send approval email:", err));
 
       res.status(200).json(toAdminUser(approved));
@@ -336,23 +433,28 @@ usersRouter.post(
 );
 
 /**
- * `POST /users/:id/reject` — decline the request, with a reason.
- *
- * The reason is required and length-checked for the same reason a request rejection
- * is (F6.2): the person is told why, and "no" with no explanation is the answer that
- * sends them to the property office anyway. The row survives as `REJECTED` rather
- * than being deleted, so the same person cannot ask again into a void and an
- * administrator can see that this request was already declined once.
+ * POST /users/:id/reject — decline a registration request.
  */
 usersRouter.post(
   "/:id/reject",
   authenticate,
-  requireAnyCapability("ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
+  requireAnyCapability("ACCOUNT_APPROVE", "ACCOUNT_APPROVE_ANY", "ACCOUNT_APPROVE_OWN_UNIT"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
         res.status(400).json({ error: "Account ID is required" });
+        return;
+      }
+
+      const reviewer = req.user!;
+      if (reviewer.role === "SYSTEM_ADMIN") {
+        res.status(403).json({ error: "System Admin has no part in registration decisions" });
+        return;
+      }
+
+      if (reviewer.id === id) {
+        res.status(404).json({ error: "You cannot reject your own account request" });
         return;
       }
 
@@ -362,36 +464,26 @@ usersRouter.post(
         return;
       }
 
-      const existing = await prisma.user.findUnique({ where: { id } });
+      const existing = await prisma.user.findUnique({
+        where: { id },
+        include: { orgUnitRef: { select: { id: true, name: true, headId: true, head: { select: { accountStatus: true } } } } },
+      });
+
       if (!existing) {
         res.status(404).json({ error: ERROR_APPROVE_NOT_FOUND });
         return;
       }
 
-      const reviewer = req.user!;
-
-      // Check if reviewer can decide on this request
-      const decision = await canDecide({
-        id: reviewer.id,
-        role: reviewer.role,
-        accountStatus: reviewer.accountStatus ?? "ACTIVE",
-        orgUnitId: reviewer.orgUnitId ?? null,
-      }, {
-        id: existing.id,
-        userId: existing.id,
-        requestedUnitId: existing.orgUnitId ?? "",
-        status: existing.accountStatus,
-      });
-
-      if (!decision.allowed) {
-        res.status(404).json({ error: decision.reason ?? "Not authorized to reject this request" });
+      if (existing.accountStatus !== "PENDING_APPROVAL") {
+        res.status(404).json({ error: "Account is not awaiting approval" });
         return;
       }
 
-      // No self-rejection
-      if (reviewer.id === existing.id) {
-        res.status(403).json({ error: "You cannot reject your own account request" });
-        return;
+      if (reviewer.role === "DEPARTMENT_HEAD") {
+        if (!reviewer.orgUnitId || existing.orgUnitId !== reviewer.orgUnitId) {
+          res.status(404).json({ error: "Not authorized to reject this request" });
+          return;
+        }
       }
 
       const rejected = await prisma.$transaction(async (tx) => {
@@ -399,38 +491,43 @@ usersRouter.post(
           where: { id },
           data: {
             accountStatus: "REJECTED",
-            reviewedById: req.user!.id,
+            reviewedById: reviewer.id,
             reviewedAt: new Date(),
             reviewNote: parsed.data.reason,
           },
           select: userListSelect,
         });
 
-        // Log rejection to AdminActionLog
-        await tx.adminActionLog.create({
-          data: {
-            actorId: reviewer.id,
-            action: "ACCOUNT_REJECTED",
-            targetUserId: existing.id,
-            unitId: existing.orgUnitId ?? null,
-            before: {
-              accountStatus: existing.accountStatus,
+        if (tx.adminActionLog) {
+          await tx.adminActionLog.create({
+            data: {
+              actorId: reviewer.id,
+              action: "ACCOUNT_REJECTED",
+              targetUserId: existing.id,
+              unitId: existing.orgUnitId ?? null,
+              before: { accountStatus: existing.accountStatus },
+              after: { accountStatus: "REJECTED", reason: parsed.data.reason },
             },
-            after: {
-              accountStatus: "REJECTED",
-              rejectionReason: parsed.data.reason,
-            },
-          },
-        });
+          });
+        }
 
         return updated;
       });
 
-      // Send rejection email (after transaction commits)
-      sendNotificationEmail({
+      // Send rejection email
+      const rendered = renderEmailTemplate("decision", {
+        status: "REJECTED",
+        name: rejected.fullName,
+        reason: parsed.data.reason,
+        department: existing.orgUnitRef?.name || "CNCS",
+      });
+
+      sendEmail({
         to: rejected.email,
-        subject: "Your CNCS Property Management Account Request was Rejected",
-        body: `Hello ${rejected.fullName},\n\nYour account request has been rejected.\n\nReason: ${parsed.data.reason}\n\nIf you believe this is an error, please contact the Property Office.`,
+        subject: rendered.subject,
+        body: rendered.body,
+        html: rendered.html,
+        template: "decision",
       }).catch((err) => console.error("Failed to send rejection email:", err));
 
       res.status(200).json(toAdminUser(rejected));
@@ -441,128 +538,14 @@ usersRouter.post(
 );
 
 /**
- * `POST /users/:id/escalate` — mark a request as "Not in my department".
- *
- * Only the DEPARTMENT_HEAD in scope for the request can escalate.
- * The request moves to the SYSTEM_ADMIN queue.
- */
-usersRouter.post(
-  "/:id/escalate",
-  authenticate,
-  requireCapability("ACCOUNT_APPROVE_OWN_UNIT"),
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (!id) {
-        res.status(400).json({ error: "Account ID is required" });
-        return;
-      }
-
-      const existing = await prisma.user.findUnique({ where: { id } });
-      if (!existing) {
-        res.status(404).json({ error: ERROR_APPROVE_NOT_FOUND });
-        return;
-      }
-
-      const reviewer = req.user!;
-
-      // Check if reviewer can decide on this request (must be DEPARTMENT_HEAD in scope)
-      if (reviewer.role !== "DEPARTMENT_HEAD") {
-        res.status(403).json({ error: "Only department heads can escalate requests" });
-        return;
-      }
-
-      const decision = await canDecide({
-        id: reviewer.id,
-        role: reviewer.role,
-        accountStatus: reviewer.accountStatus ?? "ACTIVE",
-        orgUnitId: reviewer.orgUnitId ?? null,
-      }, {
-        id: existing.id,
-        userId: existing.id,
-        requestedUnitId: existing.orgUnitId ?? "",
-        status: existing.accountStatus,
-      });
-
-      if (!decision.allowed) {
-        res.status(404).json({ error: decision.reason ?? "This request is not in your department scope" });
-        return;
-      }
-
-      // No self-escalation
-      if (reviewer.id === existing.id) {
-        res.status(403).json({ error: "You cannot escalate your own account request" });
-        return;
-      }
-
-      const escalated = await prisma.$transaction(async (tx) => {
-        const updated = await tx.user.update({
-          where: { id },
-          data: {
-            accountStatus: "PENDING_APPROVAL", // Keep as pending but mark for SYSTEM_ADMIN
-            reviewNote: (existing.reviewNote ?? "") + "\n[ESCALATED] Not in my department",
-            escalatedAt: new Date(),
-            escalatedById: reviewer.id,
-          },
-          select: userListSelect,
-        });
-
-        // Log escalation to AdminActionLog
-        await tx.adminActionLog.create({
-          data: {
-            actorId: reviewer.id,
-            action: "ACCOUNT_ESCALATED",
-            targetUserId: existing.id,
-            unitId: existing.orgUnitId ?? null,
-            before: {
-              accountStatus: existing.accountStatus,
-            },
-            after: {
-              accountStatus: "PENDING_APPROVAL",
-              escalatedAt: new Date(),
-              escalatedById: reviewer.id,
-            },
-          },
-        });
-
-        return updated;
-      });
-
-      // Send escalation notification to SYSTEM_ADMIN (after transaction commits)
-      // Find SYSTEM_ADMIN users to notify
-      const systemAdmins = await prisma.user.findMany({
-        where: { role: "SYSTEM_ADMIN", accountStatus: "ACTIVE" },
-        select: { email: true, fullName: true },
-      });
-      for (const admin of systemAdmins) {
-        sendNotificationEmail({
-          to: admin.email,
-          subject: "Account Request Escalated to SYSTEM_ADMIN",
-          body: `An account request for ${existing.fullName} (${existing.email}) has been escalated by Department Head.\n\nReason: Not in my department\n\nPlease review this request in the approval queue.`,
-        }).catch((err) => console.error("Failed to send escalation email:", err));
-      }
-
-      res.status(200).json(toAdminUser(escalated));
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-/**
- * The privileged-invite body (T6).
- *
- * `authorizedBy` and `authorizationRef` are required **here** as well as in the
- * service: this is where a payload missing them becomes a 400 with the field
- * named in `details`, and the service is where the same rule is enforced for any
- * caller that did not come through the HTTP layer. Repeating a rule at two layers
- * is deliberate for this pair — it is the requirement, and one enforcement point
- * that someone later refactors away is a requirement quietly dropped.
+ * POST /users/invite — create a privileged account by invitation.
+ * - Account Admin invites Heads, Property Officer, Auditors, other Account Admins.
+ * - System Admin seeds first Account Admin only.
  */
 const inviteSchema = z.object({
   email: z.string().trim().email("Enter a valid email"),
   role: z.enum(INVITABLE_ROLES, {
-    message: "A privileged invite is for a department head, property officer, auditor or system admin",
+    message: "A privileged invite is for a department head, property officer, auditor or account admin",
   }),
   unitId: z.string().trim().min(1).nullish(),
   authorizedBy: z.string().trim().min(1, ERROR_INVITE_AUTHORIZED_BY).max(200),
@@ -570,28 +553,6 @@ const inviteSchema = z.object({
   authorizationNote: z.string().trim().max(500).nullish(),
 });
 
-/**
- * `POST /users/invite` — create a privileged account by invitation (T6).
- *
- * SYSTEM_ADMIN only (`ACCOUNT_INVITE`), and the account it creates **cannot be
- * signed into by anyone until the invitee sets their own password** through
- * `POST /auth/accept-invite`. That is the requirement, and it is why this route
- * has no `password` field at all: there is no code path here that could accept
- * one, so the legacy "administrator types a password and reads it out" flow is
- * not a thing a future edit can reintroduce by accident.
- *
- * The four rejections the authority doc's §4 table checks live in
- * `services/invites.ts` — missing authorization, a unit that already has an
- * active head, one person holding Property Officer and Auditor, and an admin
- * inviting themselves.
- *
- * The link is returned in the response as well as emailed. That is not a leak:
- * the caller is the administrator who just created the appointment, the link is
- * single-use and expires, and the transport below is a stub until `NOTIFY_EMAIL`
- * is on — without the link in the response an invitation could be created and
- * never delivered, which is a worse failure than the administrator seeing it.
- * `email` says which of the two happened.
- */
 usersRouter.post(
   "/invite",
   authenticate,
@@ -613,13 +574,12 @@ usersRouter.post(
       const role = data.role as InvitableRole;
       const unitId = role === "DEPARTMENT_HEAD" ? (data.unitId ?? null) : null;
 
-      /**
-       * The three facts the rules need, read together: the unit being appointed
-       * (only for a head), a live account on the address, and a still-usable
-       * invite on it. `liveInvite` and `lapsedAccount` are the two states that
-       * look identical in the `User` table and must be told apart — the first
-       * blocks the invite, the second is the renewal this route exists to serve.
-       */
+      // System Admin can only seed Account Admin
+      if (actor.role === "SYSTEM_ADMIN" && role !== "ACCOUNT_ADMIN") {
+        res.status(403).json({ error: "System Admin can only invite an Account Admin" });
+        return;
+      }
+
       const [actorRow, unit, account] = await Promise.all([
         prisma.user.findUnique({ where: { id: actor.id }, select: { email: true } }),
         unitId
@@ -649,14 +609,11 @@ usersRouter.post(
         }),
       ]);
 
-      const liveInvite = account?.emailTokens.length
-        ? { role: account.role }
-        : null;
+      const liveInvite = account?.emailTokens.length ? { role: account.role } : null;
       const lapsedInviteUserId =
         account && !liveInvite && account.accountStatus === "PENDING_EMAIL_VERIFICATION"
           ? account.id
           : null;
-      /** A live account that is not a lapsed invite: "already has an account". */
       const existingAccount =
         account && !liveInvite && !lapsedInviteUserId
           ? { id: account.id, role: account.role }
@@ -684,7 +641,7 @@ usersRouter.post(
             : null,
           existingAccount,
           liveInviteRole: liveInvite?.role ?? null,
-        },
+        }
       );
 
       const invite = await createPrivilegedInvite(
@@ -697,12 +654,9 @@ usersRouter.post(
           authorizationNote: data.authorizationNote ?? null,
         },
         { id: actor.id, email: actorRow?.email ?? "" },
-        lapsedInviteUserId,
+        lapsedInviteUserId
       );
 
-      // Best-effort and after the transaction commits: a mail server that is down
-      // must not undo an invitation that is already recorded. The response says
-      // which of the two happened, and the link is in it either way.
       const delivery = await sendNotificationEmail({
         to: invite.email,
         subject: "Your CNCS PMS account invitation",
@@ -724,7 +678,10 @@ usersRouter.post(
           expiresAt: invite.expiresAt,
           renewed: lapsedInviteUserId !== null,
         },
+        userId: invite.userId,
+        role: invite.role,
         inviteUrl: invite.inviteUrl,
+        expiresAt: invite.expiresAt,
         email: delivery,
       });
     } catch (err) {
@@ -734,239 +691,18 @@ usersRouter.post(
 );
 
 /**
- * GET /users/transfer-recipients
- * Returns active staff and department heads with their department info.
- * Accessible to all authenticated users for populating the recipient dropdown when filing transfers.
+ * POST /users/:id/deactivate — deactivate an account.
+ * Replaces hard delete.
+ * - Department Head deactivates own unit staff.
+ * - Account Admin deactivates Heads and Auditors.
+ * - System Admin deactivates Account Admins.
+ * Moves held items to department in REVERTED_UNVERIFIED.
+ * Kills sessions by bumping tokenVersion.
  */
-usersRouter.get(
-  "/transfer-recipients",
-  authenticate,
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
-      if (search.length < 2) {
-        res.status(200).json([]);
-        return;
-      }
-
-      const departmentId = typeof req.query.departmentId === "string" ? req.query.departmentId.trim() : undefined;
-      const departmentName = typeof req.query.department === "string" ? req.query.department.trim() : undefined;
-
-      const where: Prisma.UserWhereInput = {
-        accountStatus: "ACTIVE",
-        role: { in: ["STAFF", "DEPARTMENT_HEAD", "PROPERTY_OFFICER"] },
-        fullName: { contains: search, mode: "insensitive" },
-      };
-
-      if (departmentId) {
-        where.orgUnitId = departmentId;
-      } else if (departmentName) {
-        where.orgUnitRef = { name: departmentName };
-      }
-
-      const users = await prisma.user.findMany({
-        where,
-        take: 10,
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-          role: true,
-          orgUnitId: true,
-          orgUnitRef: {
-            select: {
-              id: true,
-              name: true,
-              code: true,
-            },
-          },
-        },
-        orderBy: { fullName: "asc" },
-      });
-
-      res.status(200).json(
-        users.map((u) => ({
-          id: u.id,
-          fullName: u.fullName,
-          email: u.email,
-          role: u.role,
-          departmentId: u.orgUnitId,
-          departmentName: u.orgUnitRef?.name ?? null,
-        }))
-      );
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-usersRouter.get(
-  "/",
-  authenticate,
-  requireCapability("USER_READ"),
-  async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const users = await prisma.user.findMany({
-        orderBy: { createdAt: "asc" },
-        select: userListSelect,
-      });
-
-      res.status(200).json(users.map(toAdminUser));
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-/** `PATCH /users/:id` — correct a name or email. Role changes go through promote. */
-usersRouter.patch(
-  "/:id",
-  authenticate,
-  requireCapability("ACCOUNT_MANAGE"),
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (!id) {
-        res.status(400).json({ error: "Account ID is required" });
-        return;
-      }
-
-      const parsed = updateUserSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          error: parsed.error.issues[0]?.message ?? "Validation failed",
-          details: parsed.error.issues,
-        });
-        return;
-      }
-
-      const existing = await prisma.user.findUnique({ where: { id } });
-      if (!existing) {
-        res.status(404).json({ error: "Account not found" });
-        return;
-      }
-
-      const { fullName } = parsed.data;
-      const email =
-        parsed.data.email === undefined ? undefined : normalizeEmail(parsed.data.email);
-
-      /**
-       * Changing an email to one already in use is a 409, not a 500 from the
-       * unique constraint — checked here so the message can name the conflict.
-       *
-       * Compared without regard to case, and excluding this account, for the same
-       * reason login is (`utils/email.ts`): the unique index is case-sensitive, so
-       * an exact check would let `Admin@x` be set on one account while `admin@x`
-       * sits on another. The `id: { not: id }` clause is what stops a legacy row
-       * still stored as `Admin@x` from clashing with itself once normalised.
-       */
-      if (email !== undefined && email !== existing.email) {
-        const clash = await prisma.user.findFirst({
-          where: { email: { equals: email, mode: "insensitive" }, id: { not: id } },
-        });
-        if (clash) {
-          res.status(409).json({ error: "Another account already uses this email" });
-          return;
-        }
-      }
-
-      const updated = await prisma.user.update({
-        where: { id },
-        data: {
-          ...(fullName !== undefined ? { fullName } : {}),
-          ...(email !== undefined ? { email } : {}),
-        },
-        select: userListSelect,
-      });
-
-      res.status(200).json(toAdminUser(updated));
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-const promoteSchema = z.object({
-  role: z.enum(["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"]),
-});
-
-/**
- * `POST /users/:id/promote` — set an account's role. There is no separate demote:
- * a role change is one operation, and every change bumps `tokenVersion` so the
- * account's old sessions — which carry the old role — die immediately. Without
- * that bump a demoted user would keep their previous privileges until their token
- * expired (gap-analysis E10).
- */
-usersRouter.post(
-  "/:id/promote",
-  authenticate,
-  requireCapability("ACCOUNT_MANAGE"),
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (!id) {
-        res.status(400).json({ error: "Account ID is required" });
-        return;
-      }
-
-      const parsed = promoteSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          error: "Role must be one of SYSTEM_ADMIN, PROPERTY_OFFICER, DEPARTMENT_HEAD, STAFF, AUDITOR",
-          details: parsed.error.issues,
-        });
-        return;
-      }
-
-      const existing = await prisma.user.findUnique({ where: { id } });
-      if (!existing) {
-        res.status(404).json({ error: "Account not found" });
-        return;
-      }
-
-      if (existing.role === parsed.data.role) {
-        res.status(409).json({ error: `This account is already ${parsed.data.role}` });
-        return;
-      }
-
-      const updated = await prisma.user.update({
-        where: { id },
-        data: { role: parsed.data.role, tokenVersion: { increment: 1 } },
-        select: userListSelect,
-      });
-
-      // §5: Trigger structured handover when promoted to DEPARTMENT_HEAD
-      if (parsed.data.role === "DEPARTMENT_HEAD" && updated.orgUnitId) {
-        const unit = await prisma.orgUnit.findUnique({
-          where: { id: updated.orgUnitId },
-          select: { headId: true },
-        });
-        if (unit && unit.headId && unit.headId !== updated.id) {
-          await executeHandover(prisma, {
-            unitId: updated.orgUnitId,
-            previousHeadId: unit.headId,
-            newHeadId: updated.id,
-          });
-        }
-        // Update the unit's head
-        await prisma.orgUnit.update({
-          where: { id: updated.orgUnitId },
-          data: { headId: updated.id },
-        });
-      }
-
-      res.status(200).json(toAdminUser(updated));
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-/** `POST /users/:id/deactivate` — deactivate an account (not delete). */
 usersRouter.post(
   "/:id/deactivate",
   authenticate,
-  requireAnyCapability("ACCOUNT_DEACTIVATE_OWN_UNIT", "ACCOUNT_DEACTIVATE_PRIVILEGED"),
+  requireAnyCapability("ACCOUNT_DEACTIVATE", "ACCOUNT_DEACTIVATE_OWN_UNIT", "ACCOUNT_DEACTIVATE_PRIVILEGED"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -975,14 +711,15 @@ usersRouter.post(
         return;
       }
 
-      if (req.user?.id === id) {
+      const actor = req.user!;
+      if (actor.id === id) {
         res.status(400).json({ error: "You cannot deactivate your own account" });
         return;
       }
 
       const existing = await prisma.user.findUnique({
         where: { id },
-        select: { id: true, role: true, accountStatus: true, orgUnitId: true, reviewNote: true },
+        select: { id: true, role: true, accountStatus: true, orgUnitId: true, fullName: true, email: true },
       });
 
       if (!existing) {
@@ -995,77 +732,58 @@ usersRouter.post(
         return;
       }
 
-      // DEPARTMENT_HEAD can only deactivate in their unit
-      if (req.user?.role === "DEPARTMENT_HEAD") {
-        if (!existing.orgUnitId || existing.orgUnitId !== req.user.orgUnitId) {
-          res.status(403).json({ error: "You can only deactivate accounts in your department" });
-          return;
-        }
-        if (existing.role === "PROPERTY_OFFICER" || existing.role === "SYSTEM_ADMIN") {
-          res.status(403).json({ error: "Cannot deactivate privileged roles. Use SYSTEM_ADMIN for this." });
-          return;
-        }
+      // Check permission via central allow() function
+      const canDeactivate = allow(actor, "ACCOUNT_DEACTIVATE", {
+        targetUserId: existing.id,
+        targetUserRole: existing.role,
+        targetUserUnitId: existing.orgUnitId,
+      });
+
+      if (!canDeactivate) {
+        res.status(403).json({ error: "Insufficient permissions to deactivate this account" });
+        return;
       }
 
       await prisma.$transaction(async (tx) => {
-        // §8.1: Reassign pending approvals to SYSTEM_ADMIN
+        // If department head deactivated, vacate unit headId
         if (existing.role === "DEPARTMENT_HEAD" && existing.orgUnitId) {
-          const unit = await tx.orgUnit.findUnique({
-            where: { id: existing.orgUnitId },
-            select: { headId: true },
+          await tx.orgUnit.updateMany({
+            where: { id: existing.orgUnitId, headId: existing.id },
+            data: { headId: null },
           });
-          if (unit && unit.headId === existing.id) {
-            await tx.orgUnit.update({
-              where: { id: existing.orgUnitId },
-              data: { headId: null },
-            });
-          }
-          const sysAdmin = await tx.user.findFirst({
-            where: { role: "SYSTEM_ADMIN", accountStatus: "ACTIVE" },
-            select: { id: true },
-          });
-          if (sysAdmin) {
-            await tx.request.updateMany({
-              where: {
-                reviewedById: existing.id,
-                status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"] },
-              },
-              data: {
-                reviewedById: sysAdmin.id,
-                reviewNote: (existing.reviewNote ?? "") + "\n[REASSIGNED] Original approver deactivated",
-              },
-            });
-          }
         }
 
-        // Revert items held by this user
+        // Revert items held by this user to DEPARTMENT in REVERTED_UNVERIFIED
         const heldItems = await tx.item.findMany({
           where: { holderId: existing.id, holderType: "STAFF" },
           select: { id: true },
         });
+
         for (const item of heldItems) {
           await tx.item.update({
             where: { id: item.id },
             data: {
               status: "REVERTED_UNVERIFIED",
-              holderType: "COLLEGE",
-              holderId: null,
+              holderType: "DEPARTMENT",
+              holderId: existing.orgUnitId ?? null,
             },
           });
+
           await tx.custodyEvent.create({
             data: {
               itemId: item.id,
               eventType: "HOLDER_DEACTIVATED",
               fromHolderType: "STAFF",
               fromHolderId: existing.id,
-              toHolderType: "COLLEGE",
-              toHolderId: null,
-              actingUserId: req.user!.id,
+              toHolderType: "DEPARTMENT",
+              toHolderId: existing.orgUnitId ?? null,
+              actingUserId: actor.id,
               reason: "Holder deactivated",
             },
           });
         }
 
+        // Deactivate user and bump tokenVersion
         await tx.user.update({
           where: { id },
           data: {
@@ -1073,6 +791,19 @@ usersRouter.post(
             tokenVersion: { increment: 1 },
           },
         });
+
+        if (tx.adminActionLog) {
+          await tx.adminActionLog.create({
+            data: {
+              actorId: actor.id,
+              action: "ACCOUNT_DEACTIVATED",
+              targetUserId: existing.id,
+              unitId: existing.orgUnitId ?? null,
+              before: { accountStatus: existing.accountStatus, role: existing.role },
+              after: { accountStatus: "DEACTIVATED" },
+            },
+          });
+        }
       });
 
       res.status(200).json({ id, deactivated: true });
@@ -1082,54 +813,63 @@ usersRouter.post(
   }
 );
 
-/** `POST /users/:id/password` — set a new password for the account. */
+/**
+ * POST /users/:id/send-reset-link — send a password reset link to an active account.
+ * Account Admin initiates link, never sets a password directly.
+ */
 usersRouter.post(
-  "/:id/password",
+  "/:id/send-reset-link",
   authenticate,
   requireCapability("ACCOUNT_MANAGE"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
-        res.status(400).json({ error: "Account ID is required" });
+        res.status(400).json({ error: "User ID is required" });
         return;
       }
+      const target = await prisma.user.findUnique({
+        where: { id },
+        select: { id: true, email: true, fullName: true, accountStatus: true },
+      });
 
-      const parsed = passwordSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          error: parsed.error.issues[0]?.message ?? "Validation failed",
-          details: parsed.error.issues,
-        });
-        return;
-      }
-
-      const existing = await prisma.user.findUnique({ where: { id } });
-      if (!existing) {
+      if (!target) {
         res.status(404).json({ error: "Account not found" });
         return;
       }
 
-      const passwordHash = await argon2.hash(parsed.data.password, {
-        type: argon2.argon2id,
+      if (target.accountStatus !== "ACTIVE") {
+        res.status(400).json({ error: "Password reset links can only be sent to active accounts" });
+        return;
+      }
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 mins
+
+      await prisma.emailToken.create({
+        data: {
+          userId: target.id,
+          type: "RESET",
+          tokenHash,
+          expiresAt,
+        },
       });
 
-      /**
-       * A reset does two more things than writing a hash:
-       *
-       *   - `mustChangePassword: true` — the temporary password is a shared
-       *     secret an administrator typed out loud, so the account holder is
-       *     forced to replace it on next sign-in.
-       *   - `tokenVersion` bumped — every session the account already had is
-       *     revoked (the same guarantee `POST /auth/change-password` gives). A
-       *     reset that left old tokens working would not actually be a reset.
-       */
-      await prisma.user.update({
-        where: { id },
-        data: { passwordHash, mustChangePassword: true, tokenVersion: { increment: 1 } },
+      const rendered = renderEmailTemplate("reset", {
+        name: target.fullName,
+        token: rawToken,
       });
 
-      res.status(200).json({ id, passwordChanged: true });
+      sendEmail({
+        to: target.email,
+        subject: rendered.subject,
+        body: rendered.body,
+        html: rendered.html,
+        template: "reset",
+      }).catch((err) => console.error("Failed to queue reset link email:", err));
+
+      res.status(200).json({ message: "Password reset link sent to user email" });
     } catch (err) {
       next(err);
     }
@@ -1137,97 +877,162 @@ usersRouter.post(
 );
 
 /**
- * `DELETE /users/:id` — remove an account, but only one with no trail.
- *
- * An account that owns items, filed or reviewed a request, ran an audit or made
- * an edit is part of the record the rest of the system exists to preserve, and
- * every one of those relations would block the delete at the database level
- * anyway. So the handler checks first and reports *which* relations stand in the
- * way, rather than surfacing a foreign-key error.
- *
- * Notifications are the one exception: they are a per-account inbox, meaningless
- * without the account, so they go in the same transaction.
- *
- * Deleting yourself is refused — it would leave the acting administrator signed
- * out with no way back in mid-session, and it is almost always a mistake.
+ * POST /users/:id/designations — grant a designation (Section 2.3).
+ * Account Admin only.
  */
-usersRouter.delete(
-  "/:id",
+usersRouter.post(
+  "/:id/designations",
   authenticate,
-  requireCapability("ACCOUNT_MANAGE"),
+  requireCapability("DESIGNATION_MANAGE"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
-        res.status(400).json({ error: "Account ID is required" });
+        res.status(400).json({ error: "User ID is required" });
+        return;
+      }
+      const parsed = designationSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid designation payload" });
         return;
       }
 
-      if (req.user?.id === id) {
-        res.status(400).json({ error: "You cannot delete your own account" });
+      const { designation, orgUnitId, expiresAt } = parsed.data;
+
+      // Section 2.1: Designations can NEVER grant PROPERTY_OFFICER or AUDITOR
+      if (designation === "PROPERTY_OFFICER" || designation === "AUDITOR") {
+        res.status(400).json({ error: "Designations cannot grant Property Officer or Auditor roles" });
         return;
       }
 
-      const existing = await prisma.user.findUnique({
-        where: { id },
-        select: {
-          id: true,
-          _count: {
-            select: {
-              ownedItems: true,
-              requestsCreated: true,
-              requestsReviewed: true,
-              auditsRun: true,
-              itemEdits: true,
-            },
+      const user = await prisma.user.findUnique({ where: { id } });
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+
+      const record = await prisma.$transaction(async (tx) => {
+        const created = await tx.designation.create({
+          data: {
+            userId: id,
+            designation,
+            orgUnitId: orgUnitId ?? null,
+            expiresAt: expiresAt ? new Date(expiresAt) : null,
+            grantedById: req.user!.id,
           },
-        },
-      });
-
-      if (!existing) {
-        res.status(404).json({ error: "Account not found" });
-        return;
-      }
-
-      const { ownedItems, requestsCreated, requestsReviewed, auditsRun, itemEdits } =
-        existing._count;
-
-      /**
-       * `Request.newOwnerId` is a bare string with no foreign key, so it is not
-       * covered by `_count` and the database would happily let the referenced
-       * account disappear, leaving a transfer that can never be approved. It is
-       * counted explicitly so that dangling reference cannot be created here.
-       */
-      const referencedAsNewOwner = await prisma.request.count({
-        where: { newOwnerId: id },
-      });
-
-      const blockers = [
-        [ownedItems, "owned item"],
-        [requestsCreated, "filed request"],
-        [requestsReviewed, "reviewed request"],
-        [auditsRun, "audit"],
-        [itemEdits, "edit-history row"],
-        [referencedAsNewOwner, "pending transfer naming this account as its new owner"],
-      ] as const;
-
-      const inUse = blockers.filter(([count]) => count > 0);
-      if (inUse.length > 0) {
-        const summary = inUse
-          .map(([count, label]) => `${count} ${label}${count === 1 ? "" : "s"}`)
-          .join(", ");
-        res.status(409).json({
-          error: `This account is part of the record and cannot be deleted (${summary}). Records are preserved, not destroyed (F7.2).`,
         });
+
+        // Bumps tokenVersion so user gets refreshed permissions
+        await tx.user.update({
+          where: { id },
+          data: { tokenVersion: { increment: 1 } },
+        });
+
+        if (tx.adminActionLog) {
+          await tx.adminActionLog.create({
+            data: {
+              actorId: req.user!.id,
+              action: "DESIGNATION_GRANTED",
+              targetUserId: id,
+              unitId: orgUnitId ?? null,
+              after: { designation, orgUnitId, expiresAt },
+            },
+          });
+        }
+
+        return created;
+      });
+
+      res.status(201).json(record);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /users/:id/designations/:designationId/revoke — revoke a designation.
+ * Account Admin only.
+ */
+usersRouter.post(
+  "/:id/designations/:designationId/revoke",
+  authenticate,
+  requireCapability("DESIGNATION_MANAGE"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const designationId = Array.isArray(req.params.designationId) ? req.params.designationId[0] : req.params.designationId;
+      if (!id || !designationId) {
+        res.status(400).json({ error: "User ID and designation ID are required" });
         return;
       }
 
-      await prisma.$transaction([
-        prisma.notification.deleteMany({ where: { userId: id } }),
-        prisma.user.delete({ where: { id } }),
-      ]);
+      const record = await prisma.designation.findUnique({
+        where: { id: designationId },
+      });
 
-      res.status(200).json({ id, deleted: true });
+      if (!record || record.userId !== id) {
+        res.status(404).json({ error: "Designation not found" });
+        return;
+      }
+
+      if (record.revokedAt) {
+        res.status(409).json({ error: "Designation is already revoked" });
+        return;
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const rev = await tx.designation.update({
+          where: { id: designationId },
+          data: { revokedAt: new Date() },
+        });
+
+        await tx.user.update({
+          where: { id },
+          data: { tokenVersion: { increment: 1 } },
+        });
+
+        if (tx.adminActionLog) {
+          await tx.adminActionLog.create({
+            data: {
+              actorId: req.user!.id,
+              action: "DESIGNATION_REVOKED",
+              targetUserId: id,
+              unitId: record.orgUnitId,
+              after: { designation: record.designation, revokedAt: new Date() },
+            },
+          });
+        }
+
+        return rev;
+      });
+
+      res.status(200).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * GET /users/:id/designations — list designations for a user.
+ */
+usersRouter.get(
+  "/:id/designations",
+  authenticate,
+  requireCapability("USER_READ"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "User ID is required" });
+        return;
+      }
+      const designations = await prisma.designation.findMany({
+        where: { userId: id },
+        orderBy: { grantedAt: "desc" },
+      });
+      res.status(200).json(designations);
     } catch (err) {
       next(err);
     }

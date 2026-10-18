@@ -11,23 +11,35 @@ export function login(payload: LoginRequest): Promise<LoginResponse> {
   return apiClient.post<LoginResponse>("/auth/login", payload);
 }
 
-/** Body of `POST /auth/account-requests` — asking for an account (spec 3.1.2). */
 export interface AccountRequestPayload {
   fullName: string;
   email: string;
   password: string;
+  staffId?: string;
+  department?: string;
 }
 
 /**
- * `POST /auth/account-requests` — public: anyone may ask, and nobody gets in by
- * asking. The response carries no token, because the account is `PENDING_APPROVAL`
- * and cannot sign in until a SYSTEM_ADMIN decides it from the queue.
- *
- * There is no `role` field on purpose: the request always lands as STAFF, and the
- * approver assigns the real role.
+ * `POST /auth/register` (or `/auth/account-requests`) — public staff self-registration.
+ * Sets account to PENDING_EMAIL_VERIFICATION and dispatches verification email.
  */
 export function requestAccount(payload: AccountRequestPayload): Promise<AccountRequestResponse> {
-  return apiClient.post<AccountRequestResponse>("/auth/account-requests", payload);
+  return apiClient.post<AccountRequestResponse>("/auth/register", payload);
+}
+
+/**
+ * `POST /auth/verify-email` — validates email token and transitions account to PENDING_APPROVAL.
+ */
+export function verifyEmail(token: string): Promise<{ message: string; status: string; email: string }> {
+  return apiClient.post<{ message: string; status: string; email: string }>("/auth/verify-email", { token });
+}
+
+export function requestPasswordReset(email: string): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>("/auth/request-password-reset", { email });
+}
+
+export function resetPassword(payload: { token: string; password: string }): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>("/auth/reset-password", payload);
 }
 
 /** `GET /auth/me` — rehydrates a stored token into a user on boot. */

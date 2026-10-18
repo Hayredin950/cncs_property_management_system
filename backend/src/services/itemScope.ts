@@ -22,7 +22,7 @@ import type { Prisma } from "../generated/prisma/client.js";
 /** The authenticated shape the scope rules read. */
 export interface ScopedUser {
   id: string;
-  role: "SYSTEM_ADMIN" | "PROPERTY_OFFICER" | "DEPARTMENT_HEAD" | "STAFF" | "AUDITOR";
+  role: "SYSTEM_ADMIN" | "ACCOUNT_ADMIN" | "PROPERTY_OFFICER" | "DEPARTMENT_HEAD" | "STAFF" | "AUDITOR";
   orgUnitId?: string | null;
 }
 
@@ -58,6 +58,7 @@ export function itemListScope(user?: ScopedUser | null): Prisma.ItemWhereInput |
       return undefined;
     // Account administration only — sees no asset data (spec 2.1.1).
     case "SYSTEM_ADMIN":
+    case "ACCOUNT_ADMIN":
       return MATCHES_NOTHING;
     // Own holdings only, via either the legacy owner link or the holder fields.
     case "STAFF":

@@ -8,7 +8,7 @@
     "build": "prisma generate && tsc",
     "start": "node dist/server.js",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=4 --isolate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx prisma/seed.ts"

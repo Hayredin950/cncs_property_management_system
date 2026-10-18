@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  ArrowRight,
   CheckCircle2,
   Clock,
   FileCheck2,
@@ -16,7 +15,6 @@ import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { EmptyState } from "../../components/EmptyState";
-import { Input } from "../../components/Input";
 import { Skeleton } from "../../components/Skeleton";
 import { StatCard } from "../../components/StatCard";
 import { useAuditSession, useFinalizeAudit, useSortAuditItem } from "../../hooks/useAudits";

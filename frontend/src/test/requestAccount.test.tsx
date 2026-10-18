@@ -22,7 +22,7 @@ describe("RequestAccountPage", () => {
     clearToken();
     let body: unknown = null;
     server.use(
-      http.post(`${API}/auth/account-requests`, async ({ request }) => {
+      http.post(`${API}/auth/register`, async ({ request }) => {
         body = await request.json();
         return HttpResponse.json(
           {
@@ -46,6 +46,7 @@ describe("RequestAccountPage", () => {
     expect(await screen.findByRole("heading", { name: "Request an account" })).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Full name"), "New Person");
+    await user.type(screen.getByLabelText("Staff ID"), "AAU/1234/15");
     await user.type(screen.getByLabelText("Email"), "new.person@aau.edu.et");
     await user.type(screen.getByLabelText("Password"), "SecurePass1");
     const select = await screen.findByLabelText<HTMLSelectElement>("Department");
@@ -56,6 +57,7 @@ describe("RequestAccountPage", () => {
     await waitFor(() =>
       expect(body).toEqual({
         fullName: "New Person",
+        staffId: "AAU/1234/15",
         email: "new.person@aau.edu.et",
         password: "SecurePass1",
         /** The unit id from the API, not a display name baked into the client. */

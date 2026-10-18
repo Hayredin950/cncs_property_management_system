@@ -42,6 +42,7 @@ export const INVITABLE_ROLES = [
   "DEPARTMENT_HEAD",
   "PROPERTY_OFFICER",
   "AUDITOR",
+  "ACCOUNT_ADMIN",
   "SYSTEM_ADMIN",
 ] as const;
 
@@ -614,6 +615,18 @@ export async function acceptInvite(input: {
         where: { id: user.orgUnitId },
         data: { headId: user.id },
       });
+
+      await tx.item.updateMany({
+        where: {
+          orgUnitId: user.orgUnitId,
+          holderType: "DEPARTMENT",
+          status: { notIn: ["DISPOSED", "VOIDED", "LOST"] },
+        },
+        data: {
+          status: "REVERTED_UNVERIFIED",
+        },
+      });
+
       headedUnitId = user.orgUnitId;
     }
 

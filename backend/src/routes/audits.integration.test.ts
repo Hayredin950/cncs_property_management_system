@@ -19,10 +19,15 @@ vi.mock("../lib/prisma.js", () => {
       },
       auditItemResultRow: {
         create: vi.fn(),
+        findUnique: vi.fn(),
       },
       item: {
         findUnique: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
         update: vi.fn(),
+      },
+      user: {
+        findMany: vi.fn().mockResolvedValue([]),
       },
     },
   };

@@ -56,7 +56,7 @@ describe("/admin/users — inviting a privileged account (T6)", () => {
       "DEPARTMENT_HEAD",
       "PROPERTY_OFFICER",
       "AUDITOR",
-      "SYSTEM_ADMIN",
+      "ACCOUNT_ADMIN",
     ]);
     expect(values).not.toContain("STAFF");
   });

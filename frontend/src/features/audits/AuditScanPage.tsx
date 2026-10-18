@@ -257,11 +257,14 @@ export function AuditScanPage() {
           </Button>
         </Link>
         {!completed && (
-          <Link to={`/audit/${id}/sort`}>
-            <Button variant="outline" type="button">
-              Sorting Workbench
-            </Button>
-          </Link>
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => void handleFinishWalk()}
+            loading={closeWalkMutation.isPending}
+          >
+            Sorting Workbench
+          </Button>
         )}
         <Button
           type="button"

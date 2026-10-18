@@ -37,6 +37,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [formError, setFormError] = useState<string | null>(null);
+  const [errorReason, setErrorReason] = useState<string | null>(null);
 
   const {
     register,
@@ -52,6 +53,7 @@ export function LoginPage() {
 
   async function onSubmit(values: LoginFormValues) {
     setFormError(null);
+    setErrorReason(null);
     try {
       const authed = await login(values.email, values.password);
       toast.success("Signed in.");
@@ -59,14 +61,16 @@ export function LoginPage() {
       // the account can go anywhere else.
       navigate(authed.mustChangePassword ? "/change-password" : next, { replace: true });
     } catch (err) {
-      // The server's own string, shown verbatim (frontend-plan.md §4) — a 401
-      // here is deliberately "Invalid credentials", not a hint about which
-      // field was wrong.
-      setFormError(
-        err instanceof ApiError
-          ? err.message
-          : "Couldn't reach the server. Check your connection and try again.",
-      );
+      if (err instanceof ApiError) {
+        setFormError(err.message);
+        if (typeof err.details === "string") {
+          setErrorReason(err.details);
+        } else if (err.details && typeof err.details === "object" && "reason" in err.details) {
+          setErrorReason(String((err.details as any).reason));
+        }
+      } else {
+        setFormError("Couldn't reach the server. Check your connection and try again.");
+      }
     }
   }
 
@@ -94,9 +98,32 @@ export function LoginPage() {
             {...register("password")}
           />
           {formError && (
-            <p role="alert" className="rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-700">
-              {formError}
-            </p>
+            <div
+              role="alert"
+              className={`rounded-md p-3 text-sm ${
+                formError.toLowerCase().includes("pending")
+                  ? "border border-amber-200 bg-amber-50 text-amber-800"
+                  : formError.toLowerCase().includes("rejected") || formError.toLowerCase().includes("deactivated")
+                  ? "border border-rose-200 bg-rose-50 text-rose-800"
+                  : "border border-danger-200 bg-danger-50 text-danger-700"
+              }`}
+            >
+              <div className="font-medium">{formError}</div>
+              {errorReason && (
+                <div className="mt-1.5 text-xs text-rose-700">
+                  <span className="font-semibold">Reason:</span> {errorReason}
+                </div>
+              )}
+              {formError.toLowerCase().includes("verification") && (
+                <div className="mt-2 text-xs">
+                  Please check your inbox and spam folder for the activation link, or{" "}
+                  <Link to="/request-account" className="font-semibold underline">
+                    submit a new registration request
+                  </Link>
+                  .
+                </div>
+              )}
+            </div>
           )}
           <Button type="submit" fullWidth loading={isSubmitting} className="rounded-sm">
             Sign in

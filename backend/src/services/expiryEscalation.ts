@@ -121,6 +121,7 @@ export async function checkExpiredApprovals(prisma: DbClient): Promise<number> {
       itemId: true,
       requestedById: true,
       reviewedById: true,
+      reviewNote: true,
       item: { select: { tagId: true, name: true, orgUnitId: true } },
     },
   });
@@ -169,11 +170,18 @@ export async function checkExpiredApprovals(prisma: DbClient): Promise<number> {
 
       if (!escalationTarget) return;
 
+      // Fetch current rejectionReason first
+      const currentRequest = await tx.request.findUnique({
+        where: { id: request.id },
+        select: { rejectionReason: true },
+      });
+
       await tx.request.update({
         where: { id: request.id },
         data: {
           reviewedById: escalationTarget,
-          reviewNote: (request.reviewNote ?? "") + `\n[ESCALATED] Auto-escalated after ${APPROVAL_ESCALATION_DAYS} days`,
+          rejectionReason: (currentRequest?.rejectionReason ?? "")
+            + `\n[ESCALATED] Auto-escalated after ${APPROVAL_ESCALATION_DAYS} days`,
         },
       });
 

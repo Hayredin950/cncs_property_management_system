@@ -69,7 +69,7 @@ export function DepartmentDetailPage() {
   }
 
   const departmentName = rosterQuery.data?.department?.name ?? "Loading...";
-  const staffMembers = rosterQuery.data?.staff ?? [];
+  const staffMembers: readonly { id: string; fullName: string; email: string; orgUnitId?: string; itemCount?: number }[] = []; // Backend doesn't return staff list, only count
 
   function updateParam(key: string, value: string) {
     if (activeTab === "items") {
@@ -142,7 +142,7 @@ export function DepartmentDetailPage() {
               <Package className="h-5 w-5 text-amber-600" aria-hidden="true" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-900">{itemsQuery.data?.pagination?.totalItems ?? 0}</p>
+              <p className="text-2xl font-bold text-slate-900">{itemsQuery.data?.pagination?.total ?? 0}</p>
               <p className="text-xs text-slate-600">items in department</p>
             </div>
           </div>
@@ -159,7 +159,7 @@ export function DepartmentDetailPage() {
               : "border-transparent text-slate-500 hover:text-slate-700"
           }`}
         >
-          Items ({itemsQuery.data?.pagination?.totalItems ?? 0})
+          Items ({itemsQuery.data?.pagination?.total ?? 0})
         </button>
         <button
           onClick={() => setActiveTab("staff")}

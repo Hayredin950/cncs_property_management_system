@@ -29,7 +29,6 @@ import { useApprovals, useInvitableUnits, useUsers } from "../../hooks/useUsers"
 import { formatDateUTC } from "../../lib/formatters";
 import { ApiError } from "../../types/api";
 import type { InviteAccountResponse, UserSummary } from "../../types/user";
-import { canManageAccounts, canInviteAccounts } from "../../lib/permissions";
 
 /**
  * The invite form (T6).

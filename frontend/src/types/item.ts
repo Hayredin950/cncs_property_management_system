@@ -89,4 +89,5 @@ export interface ItemsListQuery {
   categoryId?: string;
   orgUnitId?: string;
   mine?: boolean;
+  scope?: string;
 }

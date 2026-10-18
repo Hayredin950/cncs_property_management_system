@@ -238,7 +238,7 @@ export async function checkExpiredApprovals(): Promise<number> {
   const now = new Date();
   const cutoff = new Date(now.getTime() - APPROVAL_ESCALATION_DAYS * 24 * 60 * 60 * 1000);
 
-  const staleRequests = await prisma.request.findMany({
+const staleRequests = await prisma.request.findMany({
     where: {
       status: { in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"] },
       createdAt: { lt: cutoff },
@@ -247,7 +247,11 @@ export async function checkExpiredApprovals(): Promise<number> {
       id: true,
       type: true,
       status: true,
+      reason: true,
+      itemId: true,
+      requestedById: true,
       reviewedById: true,
+      rejectionReason: true,
       item: { select: { tagId: true, name: true, orgUnitId: true } },
     },
   });
@@ -301,11 +305,17 @@ export async function checkExpiredApprovals(): Promise<number> {
 
       if (!escalationTarget) return;
 
+      // Fetch current rejectionReason first
+      const currentRequest = await tx.request.findUnique({
+        where: { id: request.id },
+        select: { rejectionReason: true },
+      });
+
       await tx.request.update({
         where: { id: request.id },
         data: {
           reviewedById: escalationTarget,
-          reviewNote: (await tx.request.findUnique({ where: { id: request.id }, select: { reviewNote: true } }))?.reviewNote ?? ""
+          rejectionReason: (currentRequest?.rejectionReason ?? "")
             + `\n[ESCALATED] Auto-escalated after ${APPROVAL_ESCALATION_DAYS} days`,
         },
       });

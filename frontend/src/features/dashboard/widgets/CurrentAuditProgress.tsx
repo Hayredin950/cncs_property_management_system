@@ -21,7 +21,7 @@ export function CurrentAuditProgress() {
         <h2 className="text-base font-semibold text-slate-900">Current audit</h2>
         {data && (
           <Link
-            to={`/audit/${data.id}`}
+            to={`/audit/${data.id}/report`}
             className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
           >
             View details →

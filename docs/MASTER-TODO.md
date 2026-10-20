@@ -18,17 +18,19 @@
 
 | Area | Truth today | Evidence |
 |---|---|---|
-| Backend tests | **534 pass** | `cd backend && pnpm test` → `Test Files 37 passed (37) / Tests 534 passed` |
+| Backend tests | **535 pass** | `cd backend && pnpm test` → `Test Files 37 passed (37) / Tests 535 passed` |
 | Backend build | clean | `cd backend && pnpm run build` |
 | Frontend build | clean | `cd frontend && pnpm run build` |
-| Frontend tests | **243 pass** (was 27 failing) | `cd frontend && pnpm test` → `Test Files 35 passed (35)`, `Tests 243 passed (243)` |
+| Frontend tests | **246 pass** (was 27 failing) | `cd frontend && pnpm test` → `Test Files 36 passed (36)`, `Tests 246 passed (246)` |
 | Frontend CI | **now runs the tests** and the API contract check | `.github/workflows/frontend.yaml` — test step + contract step added; the suite it runs is green |
+| E2E CI | **new** — builds a real database, seeds it, drives the real flows | `.github/workflows/e2e.yaml` → `scripts/e2e-flows.sh` — 42 checks, green |
 | Mobile analyze | **0 errors** (2 style infos) | `cd mobile && flutter analyze` → `2 issues found` (infos only) |
 | Mobile CI | **exists now** | `.github/workflows/mobile.yaml` — analyze + test |
 | Production | live and healthy | `https://cncs-pms-web.vercel.app` → 200 · `https://cncs-pms-api.vercel.app/api/v1/health` → 200 `{"status":"ok"}` |
 | Production bugs | **4 endpoints 500 in production** — fixed in code, **not yet deployed** | `GET /users/invites`, `POST /expiry/check`, `GET /expiry/status` → 500; `POST /auth/account-requests` → 500 (staff sign-up was completely broken). P2-6 has the deploy order. |
 | Migrations | **a fresh database now builds and seeds** | `prisma migrate deploy` → `All migrations have been successfully applied`; `pnpm prisma:seed` completes (Phase 2) |
-| Seed | **completes on a from-scratch database** | three causes fixed: the OrgUnit id in `Item.ownerId`, the legacy `Item.building` field, and demo accounts left `PENDING_EMAIL_VERIFICATION` |
+| Seed | **completes on a from-scratch database**, with data for every individual | idempotent (a second run changes nothing); every staff member holds 5–8 items and has 5–7 requests, every head 6 and 4; all nine request states, seven item statuses, both audit sessions, 45 notifications |
+| End-to-end flows | **42 checks pass** against a real database | `./scripts/e2e-flows.sh` → `passed: 42 failed: 0` — and it found the approvals-queue bug on its first run |
 | Capability sync | backend/web/mobile **still out of sync** | web missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, DEPT_HEAD `ITEM_READ_ALL`; mobile missing the latter two (KB §3.1.1) — Backlog F09 |
 | API contract | **two real breaks found by the new check** | `fetchInvitableUnits` read `response.units` from an endpoint that answers with a bare array → **the whole `/admin/users` screen failed in production**; the mobile client called `DELETE /items/:id`, a route the server has never had. Both fixed. `scripts/check-api-contract.mjs` now runs in CI. |
 

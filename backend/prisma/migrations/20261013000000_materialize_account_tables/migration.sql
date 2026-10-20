@@ -163,6 +163,13 @@ CREATE TABLE IF NOT EXISTS "AccountRequest" (
   "escalationReason" TEXT,
   CONSTRAINT "AccountRequest_pkey" PRIMARY KEY ("id")
 );
+-- The five invite columns (authorizedBy, authorizationRef, authorizationNote,
+-- invitedById, invitedAt) are deliberately NOT created here: the migration
+-- that follows (`20261014000000_account_invite_fields`) adds them, and that
+-- file is unchanged from the revision the live database already applied. Adding
+-- them here as well would make that migration fail on a fresh database with
+-- "column already exists" — and modifying that file would change its
+-- checksum, which Prisma refuses for a migration that is already applied.
 
 CREATE TABLE IF NOT EXISTS "EmailToken" (
   "id" TEXT NOT NULL,
@@ -183,8 +190,6 @@ CREATE TABLE IF NOT EXISTS "AdminActionLog" (
   "unitId" TEXT,
   "before" JSONB,
   "after" JSONB,
-  "authorizedBy" TEXT,
-  "authorizationRef" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "AdminActionLog_pkey" PRIMARY KEY ("id")
 );

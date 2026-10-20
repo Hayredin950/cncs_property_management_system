@@ -31,6 +31,7 @@
 | Migrations | **a fresh database now builds and seeds** | `prisma migrate deploy` → `All migrations have been successfully applied`; `pnpm prisma:seed` completes (Phase 2) |
 | Seed | **completes on a from-scratch database**, with data for every individual | idempotent (a second run changes nothing); every staff member holds 5–8 items and has 5–7 requests, every head 6 and 4; all nine request states, seven item statuses, both audit sessions, 45 notifications |
 | End-to-end flows | **42 checks pass** against a real database | `./scripts/e2e-flows.sh` → `passed: 42 failed: 0` — and it found the approvals-queue bug on its first run |
+| Production database | **migrated, seeded and verified** (20 Oct) | the three new migrations applied to the live Neon database after a verified backup; the four 500s are gone; the sign-up → head's queue → approval → sign-in flow works live |
 | Capability sync | backend/web/mobile **still out of sync** | web missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, DEPT_HEAD `ITEM_READ_ALL`; mobile missing the latter two (KB §3.1.1) — Backlog F09 |
 | API contract | **two real breaks found by the new check** | `fetchInvitableUnits` read `response.units` from an endpoint that answers with a bare array → **the whole `/admin/users` screen failed in production**; the mobile client called `DELETE /items/:id`, a route the server has never had. Both fixed. `scripts/check-api-contract.mjs` now runs in CI. |
 
@@ -196,7 +197,7 @@
   *Why:* a renamed or deleted backend route breaks the frontend silently — the UI shows an empty list, not an error.
   *Evidence:* the script runs in `frontend.yaml` and is green; when you delete a route, it fails.
 
-- [ ] **P4-2 A request/response shape contract.**
+- [~] **P4-2 A request/response shape contract.** — the static path check is done (P4-1). The shape half started with a real find: `GET /departments/invitable` answers with a bare array and the client read `response.units` — the whole `/admin/users` screen failed in production, and the test mock had answered with the shape the *client* expected, which is why no test caught it. Still to do: a fixture per endpoint captured from the running server, rendered by the component, asserting it does not fall into an error branch.
   *Do:* for each endpoint the frontend calls, assert the **response fields the frontend reads** exist in the backend response. The two real examples found so far: `GET /audits/active` returns `{active, session, progress}` (the frontend maps it to a flat tile) and `GET /items/recent` returns `registeredAt` (not `createdAt`).
   *How:* a shared fixture per endpoint + a test per client that renders the component with the **real backend response body** (captured from the running server) and asserts it does not fall into an error/empty branch.
   *Evidence:* a fixture directory `frontend/src/test/fixtures/api-responses/*.json` generated from the live API.
@@ -237,7 +238,7 @@
   One source of truth (`navConfig.ts`) that matches the router, is role-filtered, and keeps the badge counts honest. `navRoutes.test.tsx` must pass for all 5 roles. Mobile bottom-bar overflow must carry the same items and badges as the sidebar.
   *Evidence:* the nav test green + a manual pass on both layouts.
 
-- [ ] **P5-4 Requests: file, decide, withdraw, return.**
+- [~] **P5-4 Requests: file, decide, withdraw, return.** — the request form accepts LOAN now (the backend does), and the withdraw action works. Still missing: the **stage-2 dedicated approval control** (one Approve button serves both stages), the **loan-return handshake UI** (initiate / confirm / dispute — the endpoints exist), and the **claim-with-correction / verify-confirm / verify-flag / reverse-disposal** controls (all exist server-side with no UI at all).
   The request form must support **LOAN** (with the due date) — the backend accepts it now. The decision surface must distinguish **stage 1** from **stage 2** (today one Approve button serves both). Add the **loan-return** handshake UI (initiate / confirm / dispute) — the endpoints exist and have no UI. Add the **claim-with-correction**, **verify-confirm/verify-flag** and **reverse-disposal** controls — all three exist server-side with no UI.
   *Evidence:* one test per action; the flow walkthrough in Phase 9 uses only the UI.
 

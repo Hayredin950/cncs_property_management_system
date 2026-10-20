@@ -403,13 +403,28 @@ describe("GET /requests", () => {
       unknown
     >;
     expect(where.requestedById).toBe("staff-1");
-    // The default window is `this-week` (SRS 7). Asserted as a bounded range rather
-    // than an exact pair of dates so the test does not break on a Monday.
-    const window = where.createdAt as { gte?: Date; lte?: Date };
-    expect(window.gte).toBeInstanceOf(Date);
-    expect(window.lte).toBeInstanceOf(Date);
-    expect(window.lte!.getTime()).toBeGreaterThan(window.gte!.getTime());
+    // The default window is **all time**. It was "this-week" until 20 Oct 2026,
+    // and the web client hid the difference by always sending an explicit
+    // window — but the mobile client sends none, so on mobile a staff
+    // member's requests from last week did not exist in the app at all. A
+    // default that hides a person's own history is not a default.
+    expect(where.createdAt).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+  });
+
+  it("still honours an explicit window", async () => {
+    const res = await request(app)
+      .get("/requests?window=this-month")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    const where = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where as {
+      createdAt?: { gte?: Date; lte?: Date };
+    };
+    // A bounded range, asserted as a range rather than an exact pair of dates
+    // so the test does not break on a Monday.
+    expect(where.createdAt?.gte).toBeInstanceOf(Date);
+    expect(where.createdAt?.lte).toBeInstanceOf(Date);
   });
 
   it("gives a reviewer the unscoped queue, pending first", async () => {

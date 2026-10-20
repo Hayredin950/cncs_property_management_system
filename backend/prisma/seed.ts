@@ -97,6 +97,8 @@ const PASSWORDS = {
   staffCHEM: "StaffCHEM123!",
   auditor: "Auditor123!",
   pending: "Pending123!",
+  generic: "Staff123!",
+  genericHead: "DeptHead123!",
 } as const;
 
 /**
@@ -225,6 +227,31 @@ const ACCOUNTS: AccountSpec[] = [
     staffId: null,
     status: AccountStatus.ACTIVE,
     appointed: true,
+  },
+  {
+    // The generic accounts an earlier revision of the seed created. They exist
+    // in the live database, people know them by heart, and leaving them
+    // unmanaged left them as orphans: ACTIVE, with no unit and nothing to do.
+    // The seed now owns them, so they arrive with a unit, holdings and
+    // requests like everyone else.
+    key: "genericHead",
+    email: "dept.head@cncs.aau.edu.et",
+    password: PASSWORDS.genericHead,
+    fullName: "Hanna Dereje",
+    role: Role.DEPARTMENT_HEAD,
+    unit: "cs",
+    staffId: null,
+    status: AccountStatus.ACTIVE,
+  },
+  {
+    key: "genericStaff",
+    email: "staff@cncs.aau.edu.et",
+    password: PASSWORDS.generic,
+    fullName: "Yaw Osei",
+    role: Role.STAFF,
+    unit: "cs",
+    staffId: "STAFF-CS-000",
+    status: AccountStatus.ACTIVE,
   },
   {
     key: "cs1",
@@ -434,6 +461,161 @@ interface ItemSpec {
  */
 const ITEMS: ItemSpec[] = [
   // ── College pool and Physics ─────────────────────────────────────────────
+  {
+    // The generic demo accounts (an earlier seed revision created them). They
+    // are people in the demo like anyone else, so they hold items and file
+    // requests — an account with nothing to act on cannot exercise its role.
+    tagId: "CNCS-DEMO-0021",
+    name: "Generic Head Office Laptop",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "204",
+    owner: "genericHead",
+    holder: "STAFF",
+    cost: 52000,
+    condition: Condition.GOOD,
+    brand: "HP",
+    model: "EliteBook 840",
+    photo: "/photos/laptop.jpg",
+  },
+  {
+    tagId: "CNCS-DEMO-0022",
+    name: "Generic Staff Tablet",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "205",
+    owner: "genericStaff",
+    holder: "STAFF",
+    cost: 18000,
+    condition: Condition.GOOD,
+    brand: "Apple",
+    model: "iPad 10th",
+    photo: "/photos/desk.jpg",
+  },
+  {
+    tagId: "CNCS-STAFF-0083",
+    name: "Generic Head Projector",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "204",
+    owner: "genericHead",
+    holder: "STAFF",
+    cost: 32000,
+    condition: Condition.GOOD,
+    brand: "Epson",
+    model: "EB-L530U",
+    photo: "/photos/desk.jpg",
+  },
+  {
+    tagId: "CNCS-STAFF-0084",
+    name: "Generic Head Printer",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "204",
+    owner: "genericHead",
+    holder: "STAFF",
+    cost: 14000,
+    condition: Condition.GOOD,
+    brand: "HP",
+    model: "LaserJet M428",
+    photo: "/photos/desk.jpg",
+  },
+  {
+    tagId: "CNCS-STAFF-0085",
+    name: "Generic Staff Laptop",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "205",
+    owner: "genericStaff",
+    holder: "STAFF",
+    cost: 41000,
+    condition: Condition.GOOD,
+    brand: "Lenovo",
+    model: "ThinkPad E14",
+    photo: "/photos/laptop.jpg",
+  },
+  {
+    tagId: "CNCS-STAFF-0086",
+    name: "Generic Staff Monitor",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "205",
+    owner: "genericStaff",
+    holder: "STAFF",
+    cost: 11000,
+    condition: Condition.GOOD,
+    brand: "Dell",
+    model: "P2422H",
+    photo: "/photos/desk.jpg",
+  },
+  {
+    tagId: "CNCS-STAFF-0087",
+    name: "Generic Staff Office Chair",
+    category: "Furniture",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "205",
+    owner: "genericStaff",
+    holder: "STAFF",
+    cost: 7000,
+    condition: Condition.GOOD,
+    photo: "/photos/desk.jpg",
+  },
+  {
+    tagId: "CNCS-STAFF-0080",
+    name: "Generic Head Office Chair",
+    category: "Furniture",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "204",
+    owner: "genericHead",
+    holder: "STAFF",
+    cost: 6000,
+    condition: Condition.GOOD,
+    photo: "/photos/desk.jpg",
+  },
+  {
+    tagId: "CNCS-STAFF-0081",
+    name: "Generic Staff Bookshelf",
+    category: "Furniture",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "205",
+    owner: "genericStaff",
+    holder: "STAFF",
+    cost: 4500,
+    condition: Condition.FAIR,
+    photo: "/photos/desk.jpg",
+  },
+  {
+    tagId: "CNCS-STAFF-0082",
+    name: "Generic Head Desk",
+    category: "Furniture",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "204",
+    owner: "genericHead",
+    holder: "STAFF",
+    cost: 9000,
+    condition: Condition.GOOD,
+    photo: "/photos/desk.jpg",
+  },
   {
     tagId: "CNCS-DEMO-0001",
     name: "Dell Latitude Laptop",
@@ -2121,6 +2303,89 @@ interface RequestSpec {
 const REQUESTS: RequestSpec[] = [
   // ── Computer Science staff 1 ─────────────────────────────────────────────
   {
+    id: "seed-req-generic-head-transfer",
+    type: RequestType.TRANSFER,
+    status: RequestStatus.PENDING,
+    item: "CNCS-DEMO-0021",
+    by: "genericHead",
+    reason: "The office is being rearranged and the laptop moves with the desk.",
+    createdDaysAgo: 2,
+    newFloor: "1",
+    newRoom: "110",
+  },
+  {
+    id: "seed-req-generic-staff-disposal",
+    type: RequestType.DISPOSAL,
+    status: RequestStatus.PENDING,
+    item: "CNCS-STAFF-0081",
+    by: "genericStaff",
+    reason: "The shelf is broken beyond repair and should be replaced.",
+    createdDaysAgo: 1,
+  },
+  {
+    id: "seed-req-generic-head-disposal",
+    type: RequestType.DISPOSAL,
+    status: RequestStatus.REJECTED,
+    item: "CNCS-STAFF-0084",
+    by: "genericHead",
+    reason: "The printer has failed and the service quote is higher than a new one.",
+    createdDaysAgo: 6,
+    decidedDaysAgo: 5,
+    decision: "Disposal rejected: the college replaces printers centrally, keep the existing one until the budget cycle.",
+  },
+  {
+    id: "seed-req-generic-head-withdrawn",
+    type: RequestType.TRANSFER,
+    status: RequestStatus.WITHDRAWN,
+    item: "CNCS-STAFF-0083",
+    by: "genericHead",
+    reason: "The projector stays where it is after all.",
+    createdDaysAgo: 4,
+    withdrawnDaysAgo: 3,
+  },
+  {
+    id: "seed-req-generic-staff-transfer",
+    type: RequestType.TRANSFER,
+    status: RequestStatus.PENDING_STAGE1,
+    item: "CNCS-STAFF-0085",
+    by: "genericStaff",
+    reason: "Moving to the first floor for the semester's lab sessions.",
+    createdDaysAgo: 2,
+    newFloor: "1",
+    newRoom: "107",
+  },
+  {
+    id: "seed-req-generic-staff-disposal-2",
+    type: RequestType.DISPOSAL,
+    status: RequestStatus.PENDING,
+    item: "CNCS-STAFF-0087",
+    by: "genericStaff",
+    reason: "The chair is broken beyond repair.",
+    createdDaysAgo: 1,
+  },
+  {
+    id: "seed-req-generic-staff-approved",
+    type: RequestType.TRANSFER,
+    status: RequestStatus.APPROVED,
+    item: "CNCS-DEMO-0022",
+    by: "genericStaff",
+    reason: "The tablet goes to the seminar room for the course.",
+    createdDaysAgo: 9,
+    decidedDaysAgo: 8,
+    newFloor: "1",
+    newRoom: "112",
+  },
+  {
+    id: "seed-req-generic-staff-withdrawn",
+    type: RequestType.TRANSFER,
+    status: RequestStatus.WITHDRAWN,
+    item: "CNCS-STAFF-0086",
+    by: "genericStaff",
+    reason: "Asked for the wrong room.",
+    createdDaysAgo: 5,
+    withdrawnDaysAgo: 4,
+  },
+  {
     id: "seed-req-0001",
     type: RequestType.TRANSFER,
     status: RequestStatus.PENDING,
@@ -3141,15 +3406,21 @@ interface EditLogSpec {
 async function main() {
   console.log("Seeding categories...");
   const categoryNames = ["Electronics", "Furniture", "Lab Equipment", "Vehicles", "Office Supplies"];
-  const categories = await Promise.all(
-    categoryNames.map((name) =>
-      prisma.category.upsert({
+  // Sequential, not `Promise.all`: the seed runs against Neon's **pooler**,
+  // and nine concurrent connections at once are more than the pooler will
+  // hand out — the extra ones are dropped with ETIMEDOUT and the seed dies
+  // halfway through with "connect failed". One connection at a time is slower
+  // and always completes.
+  const categories = [];
+  for (const name of categoryNames) {
+    categories.push(
+      await prisma.category.upsert({
         where: { name },
         update: {},
         create: { name },
       }),
-    ),
-  );
+    );
+  }
   const categoriesByName = Object.fromEntries(categories.map((c) => [c.name, c]));
 
   console.log("Seeding Buildings...");
@@ -3159,15 +3430,42 @@ async function main() {
     { code: "CHEM", name: "Chemistry Building", description: "Chemistry Building" },
     { code: "PHYS", name: "Physics Building", description: "Physics Building" },
   ];
-  const buildings = await Promise.all(
-    buildingSpecs.map((spec) =>
-      prisma.building.upsert({
-        where: { code: spec.code },
-        update: { name: spec.name, description: spec.description },
-        create: spec,
-      }),
-    ),
-  );
+  // Sequential for the same reason as the categories above.
+  //
+  // Keyed on the **name**, not the code. `Building.name` is unique, and the
+  // code is not: the live database has "CNCS Building" under the code
+  // `CNCS-BLD`, because people registered the buildings by hand. Upserting by
+  // code would try to create a *second* "CNCS Building" and fail on the name
+  // constraint — the seed would die on the first building.
+  //
+  // So: find the building by its name, and keep its id (items may already
+  // point at it). The code is only aligned when no other building has it.
+  const buildings = [];
+  for (const spec of buildingSpecs) {
+    const byName = await prisma.building.findFirst({ where: { name: spec.name } });
+    if (byName) {
+      const codeTaken = await prisma.building.findFirst({
+        where: { code: spec.code, NOT: { id: byName.id } },
+      });
+      buildings.push(
+        await prisma.building.update({
+          where: { id: byName.id },
+          data: {
+            description: spec.description,
+            ...(codeTaken ? {} : { code: spec.code }),
+          },
+        }),
+      );
+    } else {
+      buildings.push(
+        await prisma.building.upsert({
+          where: { code: spec.code },
+          update: { name: spec.name, description: spec.description },
+          create: spec,
+        }),
+      );
+    }
+  }
   const buildingsByCode = Object.fromEntries(buildings.map((b) => [b.code, b]));
 
   console.log("Seeding OrgUnits (College + Departments)...");
@@ -4429,7 +4727,52 @@ async function main() {
   console.log(`  Outstanding invitation (accept-invite): /accept-invite?token=${SEED_INVITE_TOKEN}`);
 }
 
-main()
+/**
+ * Run the seed, and run it again if the network drops a connection.
+ *
+ * The seed makes hundreds of sequential connections, and Neon's pooled endpoint
+ * drops a fraction of the new ones (the incident recorded in
+ * `docs/db-connection-resilience.md`). The per-query retry covers a single
+ * statement, but over hundreds of statements one drop is close to certain —
+ * and a half-finished seed is a failed seed.
+ *
+ * Because the seed is **idempotent** (every row is an upsert keyed on a
+ * unique column), the whole thing can simply be run again: the rows that were
+ * written are written identically, and the ones that were not are written on
+ * the next pass. So a transient connection error costs a restart, not a mess.
+ */
+const SEED_ATTEMPTS = 6;
+
+async function runSeed(): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await main();
+      return;
+    } catch (err) {
+      // Prisma puts the transport failure in `err.code` ('ETIMEDOUT',
+      // 'P1001'), not in the message — the message is a rendering of the
+      // statement that failed. So both are checked.
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as { code?: unknown })?.code;
+      const transient =
+        (typeof code === "string" && /ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|P1001/i.test(code)) ||
+        /ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|P1001|could not connect|Connection terminated/i.test(
+          message,
+        );
+      if (!transient || attempt >= SEED_ATTEMPTS) {
+        console.error("Seed failed:", err);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(
+        `  (connection dropped mid-seed — the seed is idempotent, so it is being run again: attempt ${attempt} of ${SEED_ATTEMPTS})`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  }
+}
+
+runSeed()
   .catch((err) => {
     console.error("Seed failed:", err);
     process.exitCode = 1;

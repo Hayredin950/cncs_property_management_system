@@ -95,13 +95,25 @@ END$$;
 -- Copy the legacy free-text building onto the new relation where the name
 -- matches a `Building` row. Rows that do not match keep a null `buildingId` —
 -- an unmatched name is not a guess.
-UPDATE "Item" i
-   SET "buildingId" = b."id"
-  FROM "Building" b
- WHERE i."buildingId" IS NULL
-   AND i."building" IS NOT NULL
-   AND lower(btrim(i."building")) = lower(btrim(b."name"))
-   AND NOT EXISTS (SELECT 1 FROM "Item" x WHERE x."id" = i."id" AND x."buildingId" IS NOT NULL);
+--
+-- Guarded, because the column does not exist everywhere: the **live** database
+-- was pushed from a later schema state and never had the free-text column at
+-- all, while a database built from the migration history does. Without the
+-- guard the statement would fail there with "column building does not exist"
+-- and take the whole deployment with it.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'Item' AND column_name = 'building') THEN
+    UPDATE "Item" i
+       SET "buildingId" = b."id"
+      FROM "Building" b
+     WHERE i."buildingId" IS NULL
+       AND i."building" IS NOT NULL
+       AND lower(btrim(i."building")) = lower(btrim(b."name"))
+       AND NOT EXISTS (SELECT 1 FROM "Item" x WHERE x."id" = i."id" AND x."buildingId" IS NOT NULL);
+  END IF;
+END$$;
 
 -- ---------------------------------------------------------------- Request --
 ALTER TABLE "Request" ADD COLUMN IF NOT EXISTS "stage1ApprovedAt" TIMESTAMP(3);

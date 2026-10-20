@@ -170,7 +170,18 @@ const listQuerySchema = z.object({
   search: z.string().trim().optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
-  window: z.enum(["this-week", "this-month", "last-30-days", "custom", "none"]).optional().default("this-week"),
+  /**
+   * The time window the list is limited to.
+   *
+   * The default is **"none" — every request, all time** — and it was
+   * "this-week" until 20 Oct. The web client always sent an explicit window
+   * (`none` by default), so it never noticed; the **mobile** client sends no
+   * window at all, so it inherited the server default — which meant a staff
+   * member's requests from last week simply did not exist in the app, with no
+   * way to see them. A default that hides a person's own history is not a
+   * default, it is a bug wearing a filter's clothes.
+   */
+  window: z.enum(["this-week", "this-month", "last-30-days", "custom", "none"]).optional().default("none"),
   fromDate: z.coerce.date().optional(),
   toDate: z.coerce.date().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),

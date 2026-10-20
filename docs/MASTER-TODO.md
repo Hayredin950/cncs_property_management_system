@@ -32,6 +32,7 @@
 | Seed | **completes on a from-scratch database**, with data for every individual | idempotent (a second run changes nothing); every staff member holds 5–8 items and has 5–7 requests, every head 6 and 4; all nine request states, seven item statuses, both audit sessions, 45 notifications |
 | End-to-end flows | **42 checks pass** against a real database | `./scripts/e2e-flows.sh` → `passed: 42 failed: 0` — and it found the approvals-queue bug on its first run |
 | Production database | **migrated, seeded and verified** (20 Oct) | the three new migrations applied to the live Neon database after a verified backup; the four 500s are gone; the sign-up → head's queue → approval → sign-in flow works live |
+| Live walkthrough | **41 checks, all green** against the deployed app | `./scripts/live-walkthrough.sh` → `passed: 41 failed: 0` |
 | Capability sync | backend/web/mobile **still out of sync** | web missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, DEPT_HEAD `ITEM_READ_ALL`; mobile missing the latter two (KB §3.1.1) — Backlog F09 |
 | API contract | **two real breaks found by the new check** | `fetchInvitableUnits` read `response.units` from an endpoint that answers with a bare array → **the whole `/admin/users` screen failed in production**; the mobile client called `DELETE /items/:id`, a route the server has never had. Both fixed. `scripts/check-api-contract.mjs` now runs in CI. |
 
@@ -310,8 +311,8 @@
 - [ ] **P9-3 PROPERTY_OFFICER** — register an item → print its tag → approve a transfer / disposal / loan → reverse a disposal → run an audit end to end → download the inventory report (CSV + PDF) → manage a category → manage a building.
 - [ ] **P9-4 AUDITOR** — start an audit → scan items → complete it → read the report → download the evidence pack → confirm the read-only state of a completed session → attempt an action they must not do (must be refused).
 - [ ] **P9-5 SYSTEM_ADMIN** — invite a privileged account (with the authorization fields) → resend the invite → accept it → approve a staff request → deactivate an account → see the account event log → **see no asset data anywhere**.
-- [ ] **P9-6 The 20-row live-verification table** (KB §17) — all 20 rows, with the real responses pasted.
-- [ ] **P9-7 Negative paths** — out-of-scope reads are 404, not 403; a staff member calling an approvals endpoint gets 404; a self-approval is refused; a deactivated account's token dies; a used invite link errors cleanly.
+- [~] **P9-6 The 20-row live-verification table** (KB §17) — all 20 rows, with the real responses pasted. `scripts/live-walkthrough.sh` now walks the deployed app role by role (41 checks, all green) and covers the account-approval flow, the refusals, and the rule that a SYSTEM_ADMIN sees zero items and zero requests. The remaining rows are the role-specific negatives (a head approving another unit's request, an auditor acting, a self-approval).
+- [~] **P9-7 Negative paths** — proven on the deployed app: out-of-scope reads are 404/403, a staff member calling the approvals endpoint is refused, an anonymous caller gets 401, a request from outside the institution is refused, a request naming a unit the college does not have is refused, and a SYSTEM_ADMIN sees zero items and zero requests. Still to prove: a self-approval refused, a deactivated account's token dying, and a used invite link erroring cleanly.
 - *Evidence:* a walkthrough table: step → who → screen → result. Anything not passed stays open here.
 
 ---

@@ -38,11 +38,15 @@ describe("/audits — the audit history", () => {
     // the only way in, now handed out by the list.
     const completed = await screen.findByRole("link", { name: "Computer Science" });
     expect(completed).toHaveAttribute("href", `/audit/${AUDIT_SESSION.id}/report`);
-    expect(screen.getByText(/Completed/)).toBeInTheDocument();
+    // "Completed" can appear more than once on the page (the status chip, and
+    // the link's own title), so the assertion is that at least one is there.
+    expect(screen.getAllByText(/Completed/).length).toBeGreaterThan(0);
 
     // The unfinished one is listed too, and says so rather than looking finished.
     expect(screen.getByText("Biology")).toBeInTheDocument();
-    expect(screen.getByText("In progress")).toBeInTheDocument();
+    // "In progress" can appear more than once on the page (the status chip and
+    // the list's own summary), so the assertion is that at least one is there.
+    expect(screen.getAllByText("In progress").length).toBeGreaterThan(0);
 
     // Counts are the server's, and scoped to the row so a nav badge showing the
     // same digit can't satisfy the assertion.

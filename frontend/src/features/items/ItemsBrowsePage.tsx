@@ -36,7 +36,17 @@ export function ItemsBrowsePage() {
   const orgUnitId = searchParams.get("orgUnitId") ?? "";
   const mine = searchParams.get("mine") === "true";
   const scope = searchParams.get("scope") ?? (mine ? "mine" : "all");
-  const hasFilters = Boolean(search || categoryId || orgUnitId || scope);
+  /**
+   * Whether the viewer narrowed the list themselves.
+   *
+   * The scope ("my items" / "my department" / "all departments") is a **view**,
+   * not a filter: it is always set, and it is the reason a staff member with no
+   * holdings sees an empty list. Counting it as a filter made the empty state
+   * say "No items match these filters — Clear filters" to people who had not
+   * filtered anything, and offered them a button that cleared nothing. The
+   * honest message for a scoped viewer is "Nothing is assigned to you yet".
+   */
+  const hasFilters = Boolean(search || categoryId || orgUnitId);
 
   // Auto-set department filter based on scope for Department Heads and Staff
   // Only auto-set when user hasn't manually selected a department
@@ -148,7 +158,11 @@ export function ItemsBrowsePage() {
       }
     }
     if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
-      return scope === "mine" ? "My items" : "All departments";
+      // The full register. "All departments" is what the scope dropdown says;
+      // as a page heading it reads like a filtered view of something else, and
+      // the nav item that leads here is called "Browse Items". The narrowed
+      // views keep their own names, because there the scope IS the subject.
+      return scope === "mine" ? "My items" : "Browse items";
     }
     if (user?.role === "STAFF") {
       switch (scope) {

@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { renderWithProviders } from "../../test/utils";
 import { setToken } from "../../lib/storage";
@@ -13,8 +13,18 @@ describe("/dashboard", () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/dashboard"] });
 
-    const badge = await screen.findByText("2");
-    expect(badge).toBeInTheDocument();
+    // The count "2" appears in more than one place — the nav badge, the stat
+    // card's pill and the number itself — so the number is looked for inside
+    // the card that says "Pending review", not in the whole document.
+    const main = await screen.findByRole("main");
+    const pendingLabel = await within(main).findByText("Pending review");
+    // The label and the number are siblings inside the card, so the card is
+    // the label's grandparent. The count arrives with the query, so the
+    // assertion waits for it rather than reading the placeholder.
+    await waitFor(() => {
+      const card = pendingLabel.parentElement?.parentElement;
+      expect(card?.textContent).toContain("2");
+    });
     // "Pending review" appears twice (stat label + request status chip) —
     // assert both render rather than a unique-text assertion.
     expect(screen.getAllByText("Pending review").length).toBeGreaterThanOrEqual(2);
@@ -42,6 +52,6 @@ describe("/dashboard", () => {
     );
     renderWithProviders({ initialEntries: ["/dashboard"] });
 
-    expect(await screen.findByText("No requests yet")).toBeInTheDocument();
+    expect(await screen.findByText("No pending requests")).toBeInTheDocument();
   });
 });

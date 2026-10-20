@@ -20,6 +20,17 @@ const API = "http://localhost:4000/api/v1";
  * fields but dropped them on submit, or one that quietly kept a password field,
  * would render identically and fail here.
  */
+
+/**
+ * Open the "Invite an Account" tab.
+ *
+ * The screen has three tabs (queue, invite, accounts) and a System Admin lands
+ * on the account list, so a test about the invite form has to go and get it.
+ */
+async function openInviteTab(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: /Invite an Account/i }));
+}
+
 describe("/admin/users — inviting a privileged account (T6)", () => {
   beforeEach(() => {
     server.use(http.get(`${API}/auth/me`, () => HttpResponse.json({ user: SYSTEM_ADMIN_USER })));
@@ -28,6 +39,8 @@ describe("/admin/users — inviting a privileged account (T6)", () => {
   it("asks for the outside authorization and offers no password field at all", async () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
+    const user = userEvent.setup();
+    await openInviteTab(user);
 
     const main = await screen.findByRole("main");
     await within(main).findByText("Invite an account");
@@ -45,6 +58,8 @@ describe("/admin/users — inviting a privileged account (T6)", () => {
   it("offers only the four roles that are never self-registered", async () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
+    const user = userEvent.setup();
+    await openInviteTab(user);
 
     const main = await screen.findByRole("main");
     const select = (await within(main).findByLabelText("Role")) as HTMLSelectElement;
@@ -65,6 +80,7 @@ describe("/admin/users — inviting a privileged account (T6)", () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
     const user = userEvent.setup();
+    await openInviteTab(user);
 
     const main = await screen.findByRole("main");
     // The default is a head, and a head is the one role bound to a unit.
@@ -108,6 +124,7 @@ describe("/admin/users — inviting a privileged account (T6)", () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
     const user = userEvent.setup();
+    await openInviteTab(user);
 
     const main = await screen.findByRole("main");
     await within(main).findByText("Invite an account");
@@ -158,6 +175,7 @@ describe("/admin/users — inviting a privileged account (T6)", () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
     const user = userEvent.setup();
+    await openInviteTab(user);
 
     const main = await screen.findByRole("main");
     await within(main).findByText("Invite an account");
@@ -193,6 +211,7 @@ describe("/admin/users — inviting a privileged account (T6)", () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
     const user = userEvent.setup();
+    await openInviteTab(user);
 
     const main = await screen.findByRole("main");
     await within(main).findByText("Invite an account");
@@ -221,6 +240,7 @@ describe("/admin/users — inviting a privileged account (T6)", () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
     const user = userEvent.setup();
+    await openInviteTab(user);
 
     const main = await screen.findByRole("main");
     await within(main).findByText("Invite an account");

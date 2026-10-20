@@ -45,3 +45,12 @@ jobs:
       # CI was green — that is what this step is for.
       - name: Run tests
         run: pnpm test
+
+      # The API contract check: every call the web and mobile clients make must
+      # resolve to a route the server actually serves. It found two real breaks
+      # on the day it was written — the web client read `response.units` from an
+      # endpoint that answers with a bare array (which broke the whole
+      # /admin/users screen in production), and the mobile client called
+      # `DELETE /items/:id`, a route the server has never had.
+      - name: API contract check
+        run: pnpm run check:api

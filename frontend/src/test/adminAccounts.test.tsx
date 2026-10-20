@@ -24,6 +24,18 @@ const API = "http://localhost:4000/api/v1";
  * request's `{ role }` body is the only evidence that the confirmation the
  * administrator read is the change that was actually sent.
  */
+
+/**
+ * Open the "Waiting for Approval" tab.
+ *
+ * The screen has three tabs (queue, invite, accounts). A System Admin lands
+ * on the account list — that is where their work is — so a test that is about
+ * the queue has to go and get it, the same way a person would.
+ */
+async function openApprovalsTab(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: /Waiting for Approval/ }));
+}
+
 describe("/admin/users — the accounts screen", () => {
   // Every case below starts as the System Admin, because that is the only role
   // that can reach this screen at all. The token alone decides nothing — the app
@@ -125,12 +137,17 @@ describe("/admin/users — the accounts screen", () => {
     expect(own).toBeDisabled();
   });
 
-  it("changes an account's password through the reset dialog", async () => {
+  it("never offers to set another person's password, and sends a reset link instead", async () => {
+    // The rule (workflow spec §10.2) is absolute: no administrator, of any
+    // role, ever sees or sets a password they do not own. The old screen had a
+    // "Change password" dialog for exactly that — and no button ever opened
+    // it, which is why it survived. The recovery path is a single-use link to
+    // the account's own address.
     let body: unknown = null;
     server.use(
-      http.post(`${API}/users/:id/password`, async ({ request }) => {
+      http.post(`${API}/auth/request-password-reset`, async ({ request }) => {
         body = await request.json();
-        return HttpResponse.json({ id: STAFF_USER.id, passwordChanged: true });
+        return HttpResponse.json({ message: "If that address has an account, a link is on its way." });
       }),
     );
 
@@ -139,12 +156,21 @@ describe("/admin/users — the accounts screen", () => {
     const user = userEvent.setup();
 
     await user.click(
-      await screen.findByRole("button", { name: `Change password for ${STAFF_USER.fullName}` }),
+      await screen.findByRole("button", {
+        name: `Send a password reset link to ${STAFF_USER.email}`,
+      }),
     );
-    await user.type(await screen.findByLabelText("New password"), "BrandNew123");
-    await user.click(screen.getByRole("button", { name: "Change password" }));
 
-    await waitFor(() => expect(body).toEqual({ password: "BrandNew123" }));
+    // The dialog asks for no password at all.
+    expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change password" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Send reset link" }));
+
+    await waitFor(() => expect(body).toEqual({ email: STAFF_USER.email }));
+    expect(
+      await screen.findByText(/A password reset link has been sent to/i),
+    ).toBeInTheDocument();
   });
 
   it("is not reachable by a staff account at all", async () => {
@@ -167,20 +193,24 @@ describe("/admin/users — the accounts screen", () => {
     expect(await screen.findByText("Page not found")).toBeInTheDocument();
   });
 
-  it("renders the pending approval queue above the invite form", async () => {
+  it("puts the pending approval queue first, ahead of the privileged-invite form", async () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
+    const user = userEvent.setup();
+    await openApprovalsTab(user);
 
     const main = await screen.findByRole("main");
-    expect(await within(main).findByText(/Waiting for approval/)).toBeInTheDocument();
+    expect(await within(main).findByText(/Waiting for Approval/i)).toBeInTheDocument();
     expect(within(main).getByText(PENDING_ACCOUNT.fullName)).toBeInTheDocument();
     expect(within(main).getByText(PENDING_ACCOUNT.email)).toBeInTheDocument();
     expect(within(main).getByText(/Requested/)).toBeInTheDocument();
 
-    // The queue sits above "Invite an account" (T6) so waiting people are not
+    // The queue comes before the invite form (T6) so waiting people are not
     // buried under the form an administrator uses for privileged appointments.
-    const waiting = within(main).getByText(/Waiting for approval/);
-    const invite = within(main).getByText("Invite an account");
+    // They are separate tabs now, so the order that matters is the order of the
+    // tabs themselves.
+    const waiting = within(main).getByRole("button", { name: /Waiting for Approval/i });
+    const invite = within(main).getByRole("button", { name: /Invite an Account/i });
     expect(
       waiting.compareDocumentPosition(invite) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -205,6 +235,8 @@ describe("/admin/users — the accounts screen", () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
     const user = userEvent.setup();
+    await openApprovalsTab(user);
+    await openApprovalsTab(user);
 
     const main = await screen.findByRole("main");
     const row = (await within(main).findByText(PENDING_ACCOUNT.fullName)).closest(
@@ -238,6 +270,7 @@ describe("/admin/users — the accounts screen", () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
     const user = userEvent.setup();
+    await openApprovalsTab(user);
 
     const main = await screen.findByRole("main");
     const row = (await within(main).findByText(PENDING_ACCOUNT.fullName)).closest(
@@ -272,6 +305,8 @@ describe("/admin/users — the accounts screen", () => {
 
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/admin/users"] });
+    const user = userEvent.setup();
+    await openApprovalsTab(user);
 
     const main = await screen.findByRole("main");
 

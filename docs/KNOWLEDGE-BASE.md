@@ -128,6 +128,19 @@ The backend matrix is authoritative (27 capability strings). The clients are han
 Everything else matches exactly (STAFF, AUDITOR, PROPERTY_OFFICER sets are identical across all three; the 6-role `ACCOUNT_ADMIN` residue is mobile-only, §3).
 **Ruling:** the backend matrix is the single source; the clients must be regenerated from it, and an automated three-way comparison test must fail CI on drift (Backlog F09).
 
+### 3.1.1a The API contract check (new, and it earns its keep)
+
+`scripts/check-api-contract.mjs` compares every call the web and mobile clients make with every route the server declares, and fails the build when a client calls something that does not exist. It runs in `frontend.yaml`.
+
+It found two real breaks on the day it was written, neither of which any test had caught:
+
+| Break | Effect | Fix |
+|---|---|---|
+| `fetchInvitableUnits` read `response.units`, but `GET /departments/invitable` answers with a **bare array** | `undefined` → React Query rejects it → **the whole `/admin/users` screen failed to render in production** (invite form, accounts list, approvals queue) | the client reads the array |
+| the mobile client called `DELETE /items/:id` | the server has never had that route — items are **voided**, never deleted — so the call would 404 | replaced with `voidItem(id, reason)` → `POST /items/:id/void` |
+
+The second one is the shape of bug that hides best: the method existed, was never called by any screen, and would have failed the first time somebody wired it up.
+
 ### 3.1.2 Two custody-field rulings (measured, not inferred)
 
 1. **`ownerId` is legacy but still returned to privileged callers.** `utils/filterItemFields.ts` strips `ownerId`/`owner` for restricted (public/anonymous) views, but the privileged payload keeps it alongside the holder pair — so a Property Officer/Auditor payload carries **two sources of truth for custody** (`ownerId` and `holderType`/`holderId`), both dual-written by `services/holder.ts`. Cleanup item: stop returning `ownerId` to clients once the contract migration drops the column (it is a schema-column decision, not a leak).
@@ -432,7 +445,7 @@ Legend: `[DONE]` = built, wired, tested + live behavior proof · `[PARTIAL]` = b
 | Loan return handshake (initiate / confirm / dispute) | [BACKEND done, NO UI] | three-endpoint handshake replaced the old single-step return |
 | Expiry/escalation (claim, revert, loan grace) | [BROKEN] | ALL 3 of `expiry.ts`-surface and `expiryEscalation.ts`-reference `Item.updatedAt`/`Request.updatedAt`, not in schema. Also there are two divergent services doing the same job — merge the two |
 | Audits (open, scan, complete) | [DONE + 12 tests] | frozen PENDING rows compute MISSING/LOCATION_MISMATCH at completion — backend solid |
-| Reports (inventory/disposals/audit/evidence-pack) | [PARTIAL — evidence-pack BROKEN] | `GET /reports/audit-evidence-pack` queries `sessionNumber/type/scope/itemCount` — fields DON'T exist on AuditSession — guaranteed 500 |
+| Reports (inventory/disposals/audit/evidence-pack) | [PARTIAL] | the evidence pack was broken (it selected four fields that do not exist) and is fixed; the audit-session card now offers a **list of completed sessions** instead of asking for a raw id |
 | Holdings export `GET /export/holdings` | [DONE route, no UI] | the route exists and is mounted (at `/api/v1/export` and `/export`) but nothing in either client calls it — spec §9.2 wants it as a dated personal-holdings CSV |
 | Notifications + email stub | [PARTIAL] | in-app + `[CODE]-prefix` approach; email transport stub (console only); anything users "look for email" (reset link, invite) won't arrive |
 
@@ -442,10 +455,10 @@ Legend: `[DONE]` = built, wired, tested + live behavior proof · `[PARTIAL]` = b
 |---|---|---|
 | Route table + guards (5 roles) | [DONE] | `navRoutes.test.tsx` (17 tests) pass |
 | Login + forced password change + change | [DONE] | 2-layer funnel (login redirect + RequireAuth catch-all) |
-| Account request page | [PARTIAL] | form exists but **sends raw `department`-name string alongside the typed payload with no `department` field** — server rejects it after dropping `User.department` descriptor |
+| Account request page | [PARTIAL] | the server intake was broken (500) and is fixed; the page still sends the department **name**, which the server now resolves to a unit — an id would be better |
 | Invite acceptance | [DONE] | 3 designed states (no token / rejected token / form) |
 | Dashboard per role (5 different branches) | [DONE] | role-scoped widgets + graceful fallbacks; AUDITOR branch verified; SYSTEM_ADMIN branch verified |
-| Items browse (scope filter, URL-synced) | [DONE] | role-specific scope options per §9; skeleton/empty/offline states everywhere |
+| Items browse (scope filter, URL-synced) | [DONE] | role-specific scope options per §9; skeleton/empty/offline states everywhere; the **scope is not counted as a filter**, so a scoped viewer with nothing gets "Nothing is assigned to you yet" rather than "no items match these filters — clear your filters" |
 | Items create/edit | [DONE] | 409 disposed-mid-edit surfaced; photo upload with pending-photo slice; `isDirty` gating |
 | Tag workbench (regenerate + accessories) | [DONE] | print/QR fine |
 | Requests list + filters | [DONE] | window enum + URL-synced; fixed |
@@ -455,9 +468,9 @@ Legend: `[DONE]` = built, wired, tested + live behavior proof · `[PARTIAL]` = b
 | Audit abandon | [BROKEN] | ConfirmDialog opens → **fake success toast**, code walks `// TODO: Call abandon API endpoint when implemented` (line 90) |
 | Audit report | [DONE] | instant summary from router state + breakdown from read-back; graceful download-failure copy |
 | Reports page (4 tabs, CSV+PDF) | [DONE] | date-range presets computed client-side; range validation; `saveReport` |
-| Admin users (approvals / invite / accounts tabs) | [PARTIAL] | Fine overall; password-reset modal dead (never opened by any button); **no pagination** on users slice |
+| Admin users (approvals / invite / accounts tabs) | [PARTIAL] | three tabs; a System Admin lands on the accounts list and a Department Head on the queue. **No admin ever sets a password** — the dead "Change password" dialog is gone, replaced by "send a reset link" (the holder chooses the password). No pagination on the users slice. |
 | Admin categories | [DONE] | delete refused with reason while `itemCount > 0` |
-| System status page | [PARTIAL] | minimal env/version/db rows; no retry button, no OfflineState; uptime/lastDeploy never rendered |
+| System status page | [PARTIAL] | env/version/db rows **plus uptime and last deploy**, which the API always returned and the widget never showed; still no retry button and no OfflineState |
 | Department detail (2 tabs + staff) | [PARTIAL] | hardcoded fake category IDs ("1","2","3"); summary card shows **department name** in the "Department Head" field; emerald/amber colors off-theme |
 | Catalog + department catalog | [REMOVE] | `/catalog` orphan route (no nav entry); `CatalogPage` card links hard-code `/items?mine=true` ignoring the clicked item; `DepartmentCatalogPage` is unrouted dead code |
 | Map | [DONE] | grouping all items by building; roadside pages all — but a caption says "Showing up to 100 items" (stale copy) |

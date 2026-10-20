@@ -158,12 +158,24 @@ class ItemsApi {
   Future<List<int>> tagPng(String itemId) =>
       _client.getBytes('/items/${Uri.encodeComponent(itemId)}/tag');
 
-  /// `DELETE /items/:id` — **Admin only**, and a deliberate departure from F7.2:
-  /// it really destroys the row and its dependents. Nothing in this app routes to
-  /// it by default; the confirmation names what goes and points at the disposal
-  /// workflow as the alternative.
-  Future<Map<String, dynamic>> delete(String id) =>
-      _client.delete<Map<String, dynamic>>('/items/${Uri.encodeComponent(id)}');
+  /// `POST /items/:id/void` — voids an item (Property Officer).
+  ///
+  /// The old method here was `DELETE /items/:id`, copied from a version of the
+  /// spec where an item could be destroyed. **The server has never had that
+  /// route**: an item is voided (a status change, `VOIDED`, with a reason and
+  /// an audit trail), never deleted — the whole point of the `CustodyEvent`
+  /// log is that the history survives. The call would have answered 404, and
+  /// because nothing in the app called it, nothing noticed.
+  ///
+  /// The API contract check (`scripts/check-api-contract.mjs`) is what found
+  /// it: it compares every client call with every server route.
+  Future<Map<String, dynamic>> voidItem(String id, String reason) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/items/${Uri.encodeComponent(id)}/void',
+      body: {'reason': reason},
+    );
+    return json;
+  }
 
   /// `POST /items/:id/claim` — claim a PENDING_CLAIM item. Returns the updated item.
   Future<Item> claim(String id) async {

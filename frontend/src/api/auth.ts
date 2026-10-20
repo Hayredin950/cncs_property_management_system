@@ -74,3 +74,16 @@ export function acceptInvite(payload: {
     payload,
   );
 }
+
+/**
+ * `POST /auth/request-password-reset` — ask for a password-reset link.
+ *
+ * The rule the whole flow rests on: **no administrator ever sees or sets
+ * another person's password.** The link goes to the account's own address and
+ * the account holder chooses the new password. The endpoint answers the same
+ * way whether or not the address is known, so it cannot be used to find out
+ * which addresses have accounts.
+ */
+export function requestPasswordReset(email: string): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>("/auth/request-password-reset", { email });
+}

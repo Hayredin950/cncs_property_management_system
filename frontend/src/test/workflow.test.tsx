@@ -42,7 +42,7 @@ describe("requests queue", () => {
     );
     renderWithProviders({ initialEntries: ["/requests"] });
 
-    expect(await screen.findByText("Transfers and disposals you've filed.")).toBeInTheDocument();
+    expect(await screen.findByText("Transfers, disposals and loans you've filed.")).toBeInTheDocument();
     expect(await screen.findByText("You haven't filed any requests yet")).toBeInTheDocument();
   });
 });

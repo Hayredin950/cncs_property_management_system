@@ -1,0 +1,41 @@
+name: Mobile CI
+
+# The mobile app had no CI at all: `flutter analyze` and `flutter test` were
+# never run automatically, which is how two references to a role that no longer
+# exists (`Role.accountAdmin`, from the 6-role era) survived in the tree and
+# broke the build for anyone who opened it. The same reasoning as the other two
+# workflows applies — no `paths` filter, so a check that is required always
+# reports.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.0"
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      # Zero errors is the bar. `flutter analyze` exits non-zero on errors but
+      # not on infos, so the two style infos below do not fail the job.
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        run: flutter test

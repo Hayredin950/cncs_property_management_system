@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -237,8 +237,6 @@ describe("report exports (F10)", () => {
     // selects addressable (and what a screen-reader user gets instead of two
     // identically-labelled controls).
     const inventoryRegion = screen.getByRole("region", { name: "Inventory" });
-    const disposalsRegion = screen.getByRole("region", { name: "Disposals" });
-    const auditRegion = screen.getByRole("region", { name: "Audit session" });
 
     // Departments are derived from `GET /items`, so they arrive after the card paints.
     const inventoryDepartment = within(inventoryRegion).getByLabelText("Department");
@@ -250,8 +248,15 @@ describe("report exports (F10)", () => {
     await user.selectOptions(inventoryDepartment, "Computer Science");
     await user.selectOptions(within(inventoryRegion).getByLabelText("Category"), "cat-1");
     await user.selectOptions(within(inventoryRegion).getByLabelText("Status"), "ACTIVE");
-    await user.type(within(inventoryRegion).getByLabelText("Registered from"), "2026-09-01");
-    await user.type(within(inventoryRegion).getByLabelText("Registered to"), "2026-09-30");
+    // A date input cannot be filled by typing — the value has to be set
+    // directly, or the range check sees an empty range and (correctly)
+    // refuses the download.
+    fireEvent.change(within(inventoryRegion).getByLabelText("Registered from"), {
+      target: { value: "2026-09-01" },
+    });
+    fireEvent.change(within(inventoryRegion).getByLabelText("Registered to"), {
+      target: { value: "2026-09-30" },
+    });
     await user.click(within(inventoryRegion).getByRole("button", { name: "Download inventory CSV" }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
@@ -267,6 +272,10 @@ describe("report exports (F10)", () => {
     expect(requests[0]!.headers.get("authorization")).toBe("Bearer test-token");
 
     // --- Disposals -------------------------------------------------------
+    // The reports screen is tabbed: only the active tab's card is rendered, so
+    // the disposals card is opened here rather than at the top of the test.
+    await user.click(screen.getByRole("button", { name: "Disposals" }));
+    const disposalsRegion = await screen.findByRole("region", { name: "Disposals" });
     await user.click(within(disposalsRegion).getByRole("button", { name: "Download disposals CSV" }));
     await waitFor(() => expect(requests).toHaveLength(2));
     const disposalsRequest = requests[1]!;
@@ -276,7 +285,14 @@ describe("report exports (F10)", () => {
     expect(disposalsRequest.headers.get("authorization")).toBe("Bearer test-token");
 
     // --- One audit session ----------------------------------------------
-    await user.type(within(auditRegion).getByLabelText("Audit session ID"), "audit-1");
+    // The reports screen is tabbed: only the active tab's card is rendered, so
+    // the audit-session card is opened here (opening it earlier would unmount
+    // the inventory card the assertions above still hold).
+    await user.click(screen.getByRole("button", { name: "Audit session" }));
+    const auditRegion = await screen.findByRole("region", { name: "Audit session" });
+    // The card offers the completed sessions as a list — the administrator
+    // picks one, rather than typing an id they have to know.
+    await user.selectOptions(within(auditRegion).getByLabelText("Session"), "audit-1");
     await user.click(within(auditRegion).getByRole("button", { name: "Download audit CSV" }));
     await waitFor(() => expect(requests).toHaveLength(3));
     const auditRequest = requests[2]!;
@@ -320,11 +336,15 @@ describe("report exports (F10)", () => {
     expect(new URL(requests[0]!.url).searchParams.get("format")).toBe("pdf");
     expect(requests[0]!.headers.get("authorization")).toBe("Bearer test-token");
 
+    // The reports screen is tabbed — only the active tab's card is on screen —
+    // so the disposals card has to be opened before its buttons exist.
+    await user.click(screen.getByRole("button", { name: "Disposals" }));
     await user.click(screen.getByRole("button", { name: "Download disposals PDF" }));
     await waitFor(() => expect(requests).toHaveLength(2));
     expect(new URL(requests[1]!.url).searchParams.get("format")).toBe("pdf");
 
-    await user.type(screen.getByLabelText("Audit session ID"), "audit-1");
+    await user.click(screen.getByRole("button", { name: "Audit session" }));
+    await user.selectOptions(screen.getByLabelText("Session"), "audit-1");
     await user.click(screen.getByRole("button", { name: "Download audit PDF" }));
     await waitFor(() => expect(requests).toHaveLength(3));
     expect(new URL(requests[2]!.url).pathname).toBe("/api/v1/reports/audit/audit-1");
@@ -350,8 +370,12 @@ describe("report exports (F10)", () => {
     const user = userEvent.setup();
 
     const region = await screen.findByRole("region", { name: "Inventory" });
-    await user.type(within(region).getByLabelText("Registered from"), "2026-09-30");
-    await user.type(within(region).getByLabelText("Registered to"), "2026-09-01");
+    fireEvent.change(within(region).getByLabelText("Registered from"), {
+      target: { value: "2026-09-30" },
+    });
+    fireEvent.change(within(region).getByLabelText("Registered to"), {
+      target: { value: "2026-09-01" },
+    });
     await user.click(within(region).getByRole("button", { name: "Download inventory CSV" }));
 
     // The server would 400; the client says why and never sends the request.
@@ -578,8 +602,12 @@ describe("full walkthrough", () => {
     await screen.findByRole("heading", { name: "Reports" });
 
     await user.click(screen.getByRole("button", { name: "Download inventory CSV" }));
+    // The reports screen is tabbed — only the active tab's card is rendered, so
+    // each card is opened before its export is clicked.
+    await user.click(screen.getByRole("button", { name: "Disposals" }));
     await user.click(screen.getByRole("button", { name: "Download disposals CSV" }));
-    await user.type(screen.getByLabelText("Audit session ID"), "audit-1");
+    await user.click(screen.getByRole("button", { name: "Audit session" }));
+    await user.selectOptions(screen.getByLabelText("Session"), "audit-1");
     await user.click(screen.getByRole("button", { name: "Download audit CSV" }));
 
     // Four calls in total: the report page's post-completion export, then the

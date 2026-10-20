@@ -19,6 +19,7 @@ import {
   seesAssetData,
 } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
+import { OverdueLoans } from "./widgets/OverdueLoans";
 import { RecentlyRegisteredItems } from "./widgets/RecentlyRegisteredItems";
 import { HeldItems } from "./widgets/HeldItems";
 import { DepartmentRoster } from "./widgets/DepartmentRoster";
@@ -211,7 +212,15 @@ export function DashboardPage() {
             )}
           </Card>
 
-          {user?.role === "PROPERTY_OFFICER" && <RecentlyRegisteredItems />}
+          {/* The Property Officer's two operational tiles. `OverdueLoans`
+              was written, wired to a hook and an API function, and then never
+              rendered — the whole chain existed and nothing reached it. */}
+          {user?.role === "PROPERTY_OFFICER" && (
+            <>
+              <OverdueLoans />
+              <RecentlyRegisteredItems />
+            </>
+          )}
         </div>
       )}
     </div>

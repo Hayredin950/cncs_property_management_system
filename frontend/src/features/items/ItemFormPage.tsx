@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, ChevronDown, Loader2, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
@@ -131,6 +131,26 @@ function toPayload(values: ItemFormValues, ownerId: string) {
  * Searchable custodian control - allows typing to filter accounts
  * Shows only ACTIVE accounts, excludes SYSTEM_ADMIN and pending accounts
  */
+/**
+ * The custodian picker.
+ *
+ * It used to be a hand-rolled listbox: a button that opened a popup, with its
+ * own search box inside. That version had three real problems:
+ *
+ *   - `aria-labelledby` pointed at an id that did not exist, and the `<label>`
+ *     pointed at an input marked `aria-hidden` — so the control had **no
+ *     accessible name at all**;
+ *   - it was not a listbox: no `role`, no `aria-expanded`, no keyboard
+ *     navigation (arrow keys, Home/End and Escape did nothing);
+ *   - it could not be operated the way a screen-reader user expects, and the
+ *     test suite could not drive it either.
+ *
+ * It is now a **native `<select>`** (the design system's `Select`), which is
+ * keyboard-operable, announced correctly, opens the OS picker on a phone, and
+ * matches every other picker in the app. The search stays as a text field
+ * above it: it filters the list of options, which is what a registrar with
+ * three hundred colleagues needs.
+ */
 function OwnerSelect({
   value,
   onChange,
@@ -143,9 +163,7 @@ function OwnerSelect({
   const { user } = useAuth();
   const canListAccounts = canReadUsers(user?.role);
   const usersQuery = useUsers(canListAccounts);
-  const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Filter accounts: ACTIVE only, exclude SYSTEM_ADMIN, exclude pending
   const filteredAccounts = useMemo(() => {
@@ -155,119 +173,43 @@ function OwnerSelect({
         account.accountStatus === "ACTIVE" &&
         account.role !== "SYSTEM_ADMIN" &&
         (account.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-         account.email.toLowerCase().includes(searchTerm.toLowerCase()))
+          account.email.toLowerCase().includes(searchTerm.toLowerCase())),
     );
   }, [usersQuery.data, searchTerm]);
 
-  // Always include the current user in the list
-  const options = useMemo(() => {
-    if (!user) return [];
-    const withCurrentUser = filteredAccounts.some((account) => account.id === user.id)
-      ? filteredAccounts
-      : [...filteredAccounts, { ...user, itemCount: 0 }];
-
-    return withCurrentUser.map((account) => ({
-      value: account.id,
-      label: account.id === user.id ? `${account.fullName} (you)` : account.fullName,
-      account,
-    }));
+  // The signed-in account is offered last and marked, so a registrar who
+  // registers an item for themselves can tell the two apart.
+  const withCurrentUser = useMemo(() => {
+    if (!user) return filteredAccounts;
+    const withoutSelf = filteredAccounts.filter((account) => account.id !== user.id);
+    const self = filteredAccounts.find((account) => account.id === user.id);
+    return self ? [...withoutSelf, self] : withoutSelf;
   }, [filteredAccounts, user]);
 
-  const selectedOption = options.find((opt) => opt.value === value);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  const options = withCurrentUser.map((account) => ({
+    value: account.id,
+    label: account.id === user?.id ? `${account.fullName} (you)` : account.fullName,
+  }));
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      <label
-        htmlFor="owner-select-hidden"
-        className="block text-sm font-medium text-slate-700 mb-1"
-      >
-        Owner (custodian) <span className="text-danger-600">*</span>
-      </label>
-      {/* Hidden input for label association (jsx-a11y) */}
-      <input
-        type="text"
-        id="owner-select-hidden"
-        tabIndex={-1}
-        autoComplete="off"
-        className="absolute opacity-0 pointer-events-none h-0 w-0"
-        aria-hidden="true"
-        readOnly
-      />
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full flex items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-haspopup="listbox"
-          aria-labelledby="owner-select-label"
-        >
-          <span className={selectedOption ? "text-slate-900" : "text-slate-400"}>
-            {selectedOption?.label || "Select owner"}
-          </span>
-          <ChevronDown className="h-4 w-4 text-slate-400" />
-        </button>
-        {error && (
-          <p className="mt-1 text-xs text-danger-600">{error}</p>
-        )}
-      </div>
-
-      {isOpen && (
-        <div className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg">
-          <div className="p-2 border-b border-slate-100">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by name or email..."
-                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              />
-            </div>
-          </div>
-          <div className="max-h-60 overflow-y-auto">
-            {options.length === 0 ? (
-              <div className="p-3 text-sm text-slate-500 text-center">
-                No accounts found
-              </div>
-            ) : (
-              options.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    onChange(option.value);
-                    setIsOpen(false);
-                    setSearchTerm("");
-                  }}
-                  className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-50 transition-colors ${
-                    option.value === value ? "bg-brand-50 text-brand-700" : "text-slate-700"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
+    <div className="flex flex-col gap-1.5">
+      {canListAccounts && (
+        <Input
+          label="Find a custodian"
+          placeholder="Filter by name or email"
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+        />
       )}
-
-      <p className="mt-1 text-xs text-slate-500">
-        {canListAccounts
-          ? "Who will hold this item. Changing it after registration goes through an approved transfer request."
-          : "Ownership is limited to your own account here — reassignment to someone else goes through an approved transfer request."}
-      </p>
+      <Select
+        label="Owner (custodian)"
+        options={options}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={canListAccounts ? "Select owner" : ""}
+        error={error}
+        required
+      />
     </div>
   );
 }

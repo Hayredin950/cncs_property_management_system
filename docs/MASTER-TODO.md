@@ -21,15 +21,16 @@
 | Backend tests | **534 pass** | `cd backend && pnpm test` → `Test Files 37 passed (37) / Tests 534 passed` |
 | Backend build | clean | `cd backend && pnpm run build` |
 | Frontend build | clean | `cd frontend && pnpm run build` |
-| Frontend tests | **27 FAILING across 11 files** (216 pass) | `cd frontend && pnpm test` → `Test Files 11 failed | 24 passed`, `Tests 27 failed | 216 passed` |
-| Frontend CI | **never ran the tests** — the workflow only built | `.github/workflows/frontend.yaml` had no test step (added in this round; the 27 failures will now show up in CI until fixed) |
-| Mobile analyze | **2 errors** (`Role.accountAdmin` ×2) + 2 infos | `cd mobile && flutter analyze` → `4 issues found` |
-| Mobile CI | **no workflow exists** | `.github/workflows/` has only `backend.yaml`, `frontend.yaml` |
+| Frontend tests | **243 pass** (was 27 failing) | `cd frontend && pnpm test` → `Test Files 35 passed (35)`, `Tests 243 passed (243)` |
+| Frontend CI | **now runs the tests** and the API contract check | `.github/workflows/frontend.yaml` — test step + contract step added; the suite it runs is green |
+| Mobile analyze | **0 errors** (2 style infos) | `cd mobile && flutter analyze` → `2 issues found` (infos only) |
+| Mobile CI | **exists now** | `.github/workflows/mobile.yaml` — analyze + test |
 | Production | live and healthy | `https://cncs-pms-web.vercel.app` → 200 · `https://cncs-pms-api.vercel.app/api/v1/health` → 200 `{"status":"ok"}` |
-| Production bugs | **4 endpoints 500 in production** (proved with real HTTP, see Phase 1) | `GET /users/invites`, `POST /expiry/check`, `GET /expiry/status` → 500; `POST /auth/account-requests` → 500 (staff sign-up was completely broken) |
-| Migrations | **a fresh database could not be built at all** | `prisma migrate deploy` failed: `relation "AccountRequest" does not exist` — fixed in this round (Phase 2) |
-| Seed | **failed on a from-scratch database** (3 separate causes) | fixed in this round (Phase 2) |
-| Capability sync | backend/web/mobile **out of sync** | web missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, DEPT_HEAD `ITEM_READ_ALL`; mobile missing the latter two (KB §3.1.1) |
+| Production bugs | **4 endpoints 500 in production** — fixed in code, **not yet deployed** | `GET /users/invites`, `POST /expiry/check`, `GET /expiry/status` → 500; `POST /auth/account-requests` → 500 (staff sign-up was completely broken). P2-6 has the deploy order. |
+| Migrations | **a fresh database now builds and seeds** | `prisma migrate deploy` → `All migrations have been successfully applied`; `pnpm prisma:seed` completes (Phase 2) |
+| Seed | **completes on a from-scratch database** | three causes fixed: the OrgUnit id in `Item.ownerId`, the legacy `Item.building` field, and demo accounts left `PENDING_EMAIL_VERIFICATION` |
+| Capability sync | backend/web/mobile **still out of sync** | web missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, DEPT_HEAD `ITEM_READ_ALL`; mobile missing the latter two (KB §3.1.1) — Backlog F09 |
+| API contract | **two real breaks found by the new check** | `fetchInvitableUnits` read `response.units` from an endpoint that answers with a bare array → **the whole `/admin/users` screen failed in production**; the mobile client called `DELETE /items/:id`, a route the server has never had. Both fixed. `scripts/check-api-contract.mjs` now runs in CI. |
 
 **Fixed in this round (uncommitted at the time of writing — see Phase 1/2):** staff sign-up 500, invite list/resend 500, evidence-pack 500, expiry/escalation 500 (no `updatedAt` column existed), LOAN intake, `loans/overdue` capability gate, migration history repair (4 tables + 2 migrations), seed repairs (3 causes), Frontend CI test step.
 
@@ -183,7 +184,7 @@
 
 *The question this phase answers: **"the backend assumes the frontend calls endpoint X with body Y and reads field Z — is that true?"** Today it is assumed, not checked.*
 
-- [ ] **P4-1 A static contract check (fast, runs in CI).**
+- [x] **P4-1 A static contract check (fast, runs in CI).**
   *Do:* extract every path from `frontend/src/api/*.ts` and `mobile/lib/data/api/*.dart` and assert each one resolves to a real route in `backend/src/routes/*` (mounted at `/api/v1/...`).
   *How:* a script `scripts/check-api-contract.ts` that reads the backend router files, collects `METHOD /path` pairs, and fails on any frontend path with no match. Ignore the `apiClient` base prefix and treat `:param` as a wildcard.
   *Why:* a renamed or deleted backend route breaks the frontend silently — the UI shows an empty list, not an error.
@@ -269,7 +270,7 @@
 
 ## 7. Phase 7 — Mobile app parity
 
-- [ ] **P7-1 Fix the 2 `flutter analyze` errors** (`Role.accountAdmin` in `lib/widgets/status_badges.dart:160,169` — leftovers from the 6-role era). `flutter analyze` must report **0 errors**.
+- [x] **P7-1 Fix the 2 `flutter analyze` errors** (`Role.accountAdmin` in `lib/widgets/status_badges.dart:160,169` — leftovers from the 6-role era). `flutter analyze` must report **0 errors**.
 - [ ] **P7-2 Add a mobile CI workflow** (`.github/workflows/mobile.yaml`): `flutter pub get` → `flutter analyze` → `flutter test`. No CI = the stale enum survived for a week.
 - [ ] **P7-3 Align the capability matrix** with the backend: mobile is missing `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL` (KB §3.1.1).
 - [ ] **P7-4 Fill the feature gaps:** invite acceptance (the invite link points at the web origin, so an invited person must leave the app), request withdrawal, the loan-return handshake, `GET /items/recent` and `GET /items/held-by-me` (the mobile dashboard fetches whole pages to count three things).
@@ -281,9 +282,9 @@
 
 ## 8. Phase 8 — CI, deployment, and staying deployed
 
-- [ ] **P8-1 The frontend workflow now runs the tests** (added in this round) — **the 27 failures must be fixed before it can be green.** A CI that cannot fail is worse than no CI: it reported green while the suite was broken.
+- [x] **P8-1 The frontend workflow now runs the tests** — and the suite it runs is **green (243/243)**. A CI that cannot fail is worse than no CI: it reported green while the suite was broken.
 - [ ] **P8-2 Backend CI**: keep lint + build + tests; add the real-database integration suite (P2-8).
-- [ ] **P8-3 Mobile CI**: add it (P7-2).
+- [x] **P8-3 Mobile CI**: added (`.github/workflows/mobile.yaml`: analyze + test).
 - [ ] **P8-4 Branch protection on `main`**: require the PR + the three checks. The upstream repo already has it; the fork must match.
 - [ ] **P8-5 Deployment is proven behaviourally, not by the "Ready" badge.**
   *After every deploy, prove which revision is live:* hit a route that only exists on the new revision (e.g. `GET /users/invites` before/after the fix) and paste the status codes. A "Ready" badge proves the build finished, not that it is the revision you meant.

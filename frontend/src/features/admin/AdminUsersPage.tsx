@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, ClipboardCopy, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
+import {Check, ClipboardCopy, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X, KeyRound } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -22,10 +22,10 @@ import {
   useInviteUser,
   usePromoteUser,
   useRejectUser,
-  useResetUserPassword,
   useUpdateUser,
 } from "../../hooks/useAuthMutations";
 import { useApprovals, useInvitableUnits, useUsers } from "../../hooks/useUsers";
+import { requestPasswordReset } from "../../api/auth";
 import { formatDateUTC } from "../../lib/formatters";
 import { ApiError } from "../../types/api";
 import type { InviteAccountResponse, UserSummary } from "../../types/user";
@@ -107,9 +107,13 @@ export function AdminUsersPage() {
   const inviteMutation = useInviteUser();
   const updateMutation = useUpdateUser();
 
-  // Tab state - default to approvals for dept heads
+  // Tab state. A Department Head's job on this screen is the approval queue,
+  // so that is where they land; a System Admin's is the account list, and
+  // landing them on a queue they also own was leaving them one click away
+  // from the work they do most. (Both branches used to be "approvals" — a
+  // leftover from when the screen had no tabs at all.)
   const [activeTab, setActiveTab] = useState<"approvals" | "invite" | "accounts">(
-    isDeptHead ? "approvals" : "approvals"
+    isDeptHead ? "approvals" : "accounts",
   );
 
   // Search and filter state for Existing Accounts tab
@@ -117,7 +121,7 @@ export function AdminUsersPage() {
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const [dateSort, setDateSort] = useState<"newest" | "oldest">("newest");
   const promoteMutation = usePromoteUser();
-  const passwordMutation = useResetUserPassword();
+  const [resetSent, setResetSent] = useState<string | null>(null);
   const deleteMutation = useDeleteUser();
   const approveMutation = useApproveUser();
   const rejectMutation = useRejectUser();
@@ -136,7 +140,6 @@ export function AdminUsersPage() {
   const [editEmail, setEditEmail] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [passwordFor, setPasswordFor] = useState<UserSummary | null>(null);
-  const [newPassword, setNewPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [changingRole, setChangingRole] = useState<UserSummary | null>(null);
   const [nextRole, setNextRole] = useState<Role>("STAFF");
@@ -230,17 +233,27 @@ export function AdminUsersPage() {
     }
   }
 
-  async function onChangePassword() {
+  /**
+   * Send the account holder a password-reset link.
+   *
+   * There is deliberately **no place in this screen where an administrator can
+   * set another person's password**. The rule is absolute (workflow spec
+   * §10.2): nobody — of any role — ever sees or sets a password they do not
+   * own, because a password that an administrator reads is a password that can
+   * be read again, and it also puts the administrator in a position to act as
+   * the account. The recovery path is a single-use link to the account's own
+   * address; the account holder chooses the new password themselves.
+   *
+   * (The old screen had a "Change password" dialog for the administrator that
+   * no button ever opened — dead UI that documented the wrong rule. It is gone.)
+   */
+  async function onSendResetLink() {
     if (!passwordFor) return;
-    if (newPassword.length < 8) {
-      setPasswordError("At least 8 characters");
-      return;
-    }
     setPasswordError(null);
     try {
-      await passwordMutation.mutateAsync({ id: passwordFor.id, password: newPassword });
+      await requestPasswordReset(passwordFor.email);
+      setResetSent(passwordFor.email);
       setPasswordFor(null);
-      setNewPassword("");
     } catch (err) {
       setPasswordError(err instanceof ApiError ? err.message : "Couldn't reach the server.");
     }
@@ -556,6 +569,15 @@ export function AdminUsersPage() {
       {/* Tab 3: Existing Accounts */}
       {showAccountsTab && activeTab === "accounts" && (
         <section>
+          {resetSent && (
+            <p
+              role="status"
+              className="mb-4 rounded-md border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-800"
+            >
+              A password reset link has been sent to {resetSent}. The account holder chooses
+              the new password from that link.
+            </p>
+          )}
           {/* Search and Filter Controls */}
           <div className="mb-4 flex flex-wrap gap-3">
             <div className="flex-1 min-w-[200px]">
@@ -652,6 +674,16 @@ export function AdminUsersPage() {
                       <IconButton
                         size="sm"
                         variant="outline"
+                        icon={<KeyRound className="h-4 w-4" aria-hidden="true" />}
+                        label={`Send a password reset link to ${account.email}`}
+                        onClick={() => {
+                          setPasswordError(null);
+                          setPasswordFor(account);
+                        }}
+                      />
+                      <IconButton
+                        size="sm"
+                        variant="outline"
                         icon={<Trash2 className="h-4 w-4" aria-hidden="true" />}
                         label={isSelf ? "You cannot delete your own account" : `Delete ${account.fullName}`}
                         disabled={isSelf}
@@ -710,39 +742,29 @@ export function AdminUsersPage() {
       <Modal
         open={passwordFor !== null}
         onClose={() => setPasswordFor(null)}
-        title={passwordFor ? `Change password for ${passwordFor.fullName}` : "Change password"}
+        title={passwordFor ? `Reset access for ${passwordFor.fullName}` : "Reset access"}
       >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void onChangePassword();
-          }}
-          className="flex flex-col gap-4"
-        >
-          <Input
-            label="New password"
-            type="password"
-            autoComplete="new-password"
-            value={newPassword}
-            onChange={(event) => setNewPassword(event.target.value)}
-            hint="At least 8 characters. Share it with the account holder securely."
-            error={passwordError ?? undefined}
-            required
-          />
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-neutral-600">
+            Send a single-use reset link to{" "}
+            <span className="font-medium text-neutral-900">{passwordFor?.email}</span>. The
+            account holder chooses the new password themselves — no administrator ever sees
+            or sets another person&apos;s password.
+          </p>
+          {passwordError && (
+            <p role="alert" className="text-sm text-danger-700">
+              {passwordError}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPasswordFor(null)}
-              disabled={passwordMutation.isPending}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPasswordFor(null)}>
               Cancel
             </Button>
-            <Button type="submit" size="sm" loading={passwordMutation.isPending}>
-              Change password
+            <Button type="button" size="sm" onClick={() => void onSendResetLink()}>
+              Send reset link
             </Button>
           </div>
-        </form>
+        </div>
       </Modal>
 
       <Modal

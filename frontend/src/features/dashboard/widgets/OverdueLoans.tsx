@@ -31,8 +31,11 @@ export function OverdueLoans() {
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-slate-900">Overdue loans</h2>
         {!isError && (
+          // There is no `/loans` screen — the loans ARE requests, and the
+          // requests list already filters by type. The old link pointed at a
+          // route that does not exist, so "View all" went nowhere.
           <Link
-            to="/loans?status=OVERDUE"
+            to="/requests?type=LOAN"
             className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
           >
             View all →

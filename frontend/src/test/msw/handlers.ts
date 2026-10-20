@@ -203,6 +203,18 @@ export const handlers = [
     getToken() ? HttpResponse.json([PENDING_ACCOUNT]) : unauthorized(),
   ),
 
+  /**
+   * The badge count behind the Accounts nav item. It is a separate endpoint
+   * (`{ count }`), not the length of the queue, because the count is polled
+   * without downloading the queue.
+   *
+   * It has to be declared before `/users/:id` for the same reason as the queue
+   * above — a literal path must win over a parameterised one.
+   */
+  http.get(`${API}/users/approvals/count`, () =>
+    getToken() ? HttpResponse.json({ count: 1 }) : unauthorized(),
+  ),
+
   http.patch(`${API}/users/:id`, async ({ params, request }) => {
     if (!getToken()) return unauthorized();
     const body = (await request.json()) as { fullName?: string; email?: string };

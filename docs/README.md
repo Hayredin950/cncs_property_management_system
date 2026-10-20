@@ -1,19 +1,20 @@
-# docs/ — the four files that are current
+# docs/ — current files
 
-Everything in this folder is either one of the four files below or history. On
-14 Oct 2026 the folder held 32 documents — three phase plans, two designs of the
-same system, several "plan"/"handoff"/"roadmap" variants — and more than one of
-them described behaviour the code had already moved past. Nobody could tell which
-one to believe. They were read, classified and moved; nothing was deleted.
+On 20 Oct 2026 a full audit resolved all remaining conflicts between the active
+docs and the code. The result is one unified document; it supersedes every other
+file in this folder where they disagree.
 
 ## The active set
 
 | File | What it is | Authority |
 | --- | --- | --- |
-| [`monolithic-system-design.md`](./monolithic-system-design.md) | Roles, capabilities, data model, workflows, security requirements, the wiring map, and a definition of done. Built from the 14 Oct audit — verified `file:line` and live behaviour, not claims. | **The source of truth.** It supersedes every other document where they conflict, and it says so itself. |
-| [`project-task-checklist.md`](./project-task-checklist.md) | Live tracking: what is done, what is broken, what has not been started, each `[x]` with the evidence that proved it. | **The source of truth for status.** Update this as work lands; it is the file §15 expects to be current at the end. |
-| [`cncs-pms-account-approval-authority.md`](./cncs-pms-account-approval-authority.md) | Who authorises which account, the T1–T9 build tasks, and the 20-row live-verification table. | Active, but only as §5's detail. The design's §5 makes the account-approval decision final (finish the `AccountRequest` flow, retire the legacy one) — it is decided, and §5.2 still requires this file's 20 rows run live. |
-| [`deployment.md`](./deployment.md) | The two Vercel projects, every environment variable, migration steps, and three deployment failures worth not rediscovering. | Operational runbook. Read it **with §11**: it documents the projects as configured, not which revision they build. Both projects build `main`, which is not the canonical branch yet — §11.0/§11.2 say what that costs. |
+| [`KNOWLEDGE-BASE.md`](./KNOWLEDGE-BASE.md) | **The one document.** Roles, capability matrix, entity/DB schema, canonical state machines (with explicit rulings on former conflicts C1–C19), full API surface with wiring status, per-role navigation/UI, security and visibility rules, verified feature matrix, bug list, prioritised checkbox backlog, and definition of done. | **The source of truth.** Supersedes everything below where they conflict. |
+| [`deployment.md`](./deployment.md) | The two Vercel projects, every environment variable, migration steps, and recorded deployment failures. | Operational runbook, referenced by KB §6. |
+| [`monolithic-system-design.md`](./monolithic-system-design.md) | The 14 Oct audit the KB was built from — kept for the file:line audit trail. | Superseded wherever the KB rules on a conflict. |
+| [`project-task-checklist.md`](./project-task-checklist.md) | The 14 Oct status audit; superseded by KB §14's backlog going forward. | Superseded by the KB backlog. |
+| [`cncs-pms-account-approval-authority.md`](./cncs-pms-account-approval-authority.md) | The D1 authority decision and 20-row live-verification table. | Superseded by KB §3.2/§14; D1 ruling preserved verbatim. |
+| [`workflow-completeness-spec.md`](./workflow-completeness-spec.md) | The INITIATE → APPROVE → CONFIRM handshake spec. | Superseded by KB §5's canonical state machines, which encode its rules plus rulings. |
+| [`db-connection-resilience.md`](./db-connection-resilience.md) | Incident record for the for Neon TCP failure and its fix. | Incident history; fix already in code. |
 
 ## The rules
 
@@ -27,7 +28,7 @@ one to believe. They were read, classified and moved; nothing was deleted.
    superseded it. Read one for history, never as a specification.
 4. **Nothing is deleted.** Archive and git history are the record; if a later
    decision needs something out of an archived doc, take it back into
-   `monolithic-system-design.md` rather than reviving the file.
+   `KNOWLEDGE-BASE.md` rather than reviving the file.
 
 ## What was archived, and why (summary)
 

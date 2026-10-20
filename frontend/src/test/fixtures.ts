@@ -539,6 +539,10 @@ export const REQUEST_DETAIL_FIXTURE: RequestDetail = {
   withdrawnAt: null,
   invalidatedAt: null,
   invalidatedReason: null,
+  // The loan's own bookkeeping — null on everything that is not a loan.
+  loanDueDate: null,
+  loanReturnedAt: null,
+  loanReturnedBy: null,
 };
 
 /** `GET /system/status` — the build facts the System Admin's dashboard shows. */

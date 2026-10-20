@@ -32,6 +32,9 @@ const requestSchema = z
     newLocationFloor: z.string().trim().max(200).optional(),
     newLocationRoom: z.string().trim().max(200).optional(),
     newOwnerId: z.string().trim().max(200).optional(),
+    // A loan names when the item is due back; the server refuses a loan with
+    // no due date, and refuses a date in the past.
+    loanDueDate: z.string().trim().optional(),
   })
   .superRefine((value, ctx) => {
     const namesLocation = Boolean(
@@ -51,6 +54,35 @@ const requestSchema = z
         code: "custom",
         message: "A disposal must not include transfer fields",
         path: ["type"],
+      });
+    }
+    if (value.type === "LOAN") {
+      if (namesLocation || namesOwner) {
+        ctx.addIssue({
+          code: "custom",
+          message: "A loan must not include transfer fields",
+          path: ["type"],
+        });
+      }
+      if (!value.loanDueDate) {
+        ctx.addIssue({
+          code: "custom",
+          message: "A loan must say when the item is due back",
+          path: ["loanDueDate"],
+        });
+      } else if (Number.isNaN(Date.parse(value.loanDueDate)) || Date.parse(value.loanDueDate) <= Date.now()) {
+        ctx.addIssue({
+          code: "custom",
+          message: "The due date must be in the future",
+          path: ["loanDueDate"],
+        });
+      }
+    }
+    if (value.type !== "LOAN" && value.loanDueDate) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Only a loan has a due date",
+        path: ["loanDueDate"],
       });
     }
   });
@@ -128,6 +160,10 @@ export function RequestFormPage() {
               ...(values.newOwnerId?.trim() ? { newOwnerId: values.newOwnerId.trim() } : {}),
             }
           : {}),
+        // A loan names when the item is due back.
+        ...(values.type === "LOAN" && values.loanDueDate?.trim()
+          ? { loanDueDate: values.loanDueDate.trim() }
+          : {}),
       };
       await createMutation.mutateAsync(payload);
       navigate("/requests");
@@ -168,6 +204,31 @@ export function RequestFormPage() {
             {...register("itemId")}
             required
           />
+
+          {/* A loan asks a different question: not where it is going, but until
+              when it is out. The due date is required, and the server refuses a
+              date in the past. */}
+          {type === "LOAN" && (
+            <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-4">
+              <label htmlFor="loanDueDate" className="text-sm font-medium text-slate-700">
+                Due back on
+              </label>
+              <input
+                id="loanDueDate"
+                type="date"
+                className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-base text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                {...register("loanDueDate")}
+              />
+              <p className="text-xs text-slate-500">
+                The loan clock starts when the borrower claims the item, not when it is approved.
+              </p>
+              {errors.loanDueDate?.message && (
+                <p role="alert" className="text-xs text-danger-700">
+                  {errors.loanDueDate.message}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Rendered for *both* types on purpose. The server rejects a DISPOSAL
               that names any transfer field with a 400, so the client mirrors that

@@ -263,6 +263,12 @@ const REQUEST_DETAIL_SELECT = {
   withdrawnAt: true,
   invalidatedAt: true,
   invalidatedReason: true,
+  // The loan's own bookkeeping. Without these the client cannot tell a
+  // borrower that the item is due back, nor show that it has been returned —
+  // the loan return handshake had no way to say anything about the loan.
+  loanDueDate: true,
+  loanReturnedAt: true,
+  loanReturnedBy: { select: { id: true, fullName: true, email: true } },
 } as const;
 
 /*

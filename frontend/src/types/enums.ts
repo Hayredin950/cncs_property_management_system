@@ -58,7 +58,15 @@ export const ITEM_STATUSES = [
 ] as const;
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
-export const REQUEST_TYPES = ["TRANSFER", "DISPOSAL"] as const;
+/**
+ * The request types the server accepts.
+ *
+ * `LOAN` was missing here while the server had supported it for weeks — the
+ * backend's approve, return and overdue paths all handled loans, but the client
+ * could not name one, so the type of request that could never be filed was
+ * also the type the client did not know about.
+ */
+export const REQUEST_TYPES = ["TRANSFER", "DISPOSAL", "LOAN"] as const;
 export type RequestType = (typeof REQUEST_TYPES)[number];
 
 export const REQUEST_STATUSES = ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2", "APPROVED", "REJECTED", "WAITLISTED", "WITHDRAWN", "INVALIDATED", "RETURN_PENDING_CONFIRMATION"] as const;
@@ -111,6 +119,7 @@ export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {
 export const REQUEST_TYPE_LABELS: Record<RequestType, string> = {
   TRANSFER: "Transfer",
   DISPOSAL: "Disposal",
+  LOAN: "Loan",
 };
 
 export const AUDIT_RESULT_LABELS: Record<AuditItemResult, string> = {

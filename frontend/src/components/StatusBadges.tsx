@@ -1,5 +1,4 @@
-import {
-  Archive,
+import {Archive,
   AlertTriangle,
   ArrowLeftRight,
   Ban,
@@ -15,8 +14,7 @@ import {
   Trash2,
   Users,
   Wrench,
-  XCircle,
-} from "lucide-react";
+  XCircle, Handshake } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   CONDITION_LABELS,
@@ -138,11 +136,13 @@ export function RequestStatusBadge({ status, className }: { status: RequestStatu
 const REQUEST_TYPE_TONE: Record<RequestType, BadgeTone> = {
   TRANSFER: "info",
   DISPOSAL: "orange",
+  LOAN: "brand",
 };
 
 const REQUEST_TYPE_ICON: Record<RequestType, ReactNode> = {
   TRANSFER: <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />,
   DISPOSAL: <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />,
+  LOAN: <Handshake className="h-3.5 w-3.5" aria-hidden="true" />,
 };
 
 export function RequestTypeBadge({ type, className }: { type: RequestType; className?: string }) {

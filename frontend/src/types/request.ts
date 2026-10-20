@@ -75,6 +75,11 @@ export interface RequestDetail extends Omit<RequestSummary, "item"> {
   withdrawnAt: string | null;
   invalidatedAt: string | null;
   invalidatedReason: string | null;
+  /** When the borrowed item is due back — the loan's own clock. */
+  loanDueDate: string | null;
+  /** When the lender confirmed the item came back. */
+  loanReturnedAt: string | null;
+  loanReturnedBy: RequestUserSummary | null;
 }
 
 /**
@@ -104,6 +109,9 @@ export interface CreateRequestPayload {
   newLocationFloor?: string;
   newLocationRoom?: string;
   newOwnerId?: string;
+  /** A loan names when the item is due back. The server refuses a loan with no
+   *  due date, and refuses a due date in the past. */
+  loanDueDate?: string;
 }
 
 export interface CreateRequestResponse {

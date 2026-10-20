@@ -14,7 +14,6 @@ import { useAuth } from "../../app/AuthContext";
 import { useCategories } from "../../hooks/useCategories";
 import { useDepartments } from "../../hooks/useDepartments";
 import { useItems } from "../../hooks/useItems";
-import { seesAllItems } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
 
 /**
@@ -28,14 +27,37 @@ export function ItemsBrowsePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
 
-  const isScoped = !seesAllItems(user?.role);
 
   const page = Number(searchParams.get("page") ?? "1") || 1;
   const search = searchParams.get("search") ?? "";
   const categoryId = searchParams.get("categoryId") ?? "";
   const orgUnitId = searchParams.get("orgUnitId") ?? "";
   const mine = searchParams.get("mine") === "true";
-  const scope = searchParams.get("scope") ?? (mine ? "mine" : "all");
+  /**
+   * The scope the list is showing.
+   *
+   * A staff member's default is **"mine"**: their own holdings are what the
+   * screen is for, and that is where their nav item points. A staff member can
+   * still switch to "All departments" — the register, in its restricted form,
+   * so that they can find something to request — but the page they land on is
+   * their own.
+   */
+  const requestedScope = searchParams.get("scope");
+  const defaultScope = user?.role === "STAFF" ? "mine" : "all";
+  const scope = requestedScope ?? (mine ? "mine" : defaultScope);
+
+  /**
+   * Is the list narrowed to the viewer?
+   *
+   * The answer comes from the **scope**, not from a capability: a Department
+   * Head looking at "All departments" is looking at the register (not scoped),
+   * and a Property Officer looking at "My items" is looking at their own
+   * holdings (scoped). Deriving it from `ITEM_READ_ALL` mixed the two — a
+   * capability says what a role *may* read, the scope says what this list
+   * *is* — and the empty-state copy followed the wrong one.
+   */
+  const isScoped = scope === "mine" || scope === "department";
+
   /**
    * Whether the viewer narrowed the list themselves.
    *

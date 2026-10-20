@@ -86,7 +86,7 @@ AUDITOR          — read-only asset role. Runs and completes audit sessions, re
 | `ITEM_EDIT_CUSTODY` | — | ✔ | ✔ (own dept only) | ✔ (self-held only) | — |
 | `ITEM_CLAIM` | — | ✔ | ✔ | ✔ | — |
 | `ITEM_VOID` | — | ✔ | — | — | — |
-| `ITEM_READ_ALL` | **—** | ✔ | ✔ (server grants it; the web/mobile mirrors are missing it — see §3.1.1) | — | ✔ |
+| `ITEM_READ_ALL` | **—** | ✔ | ✔ (granted; the field rule limits a head to their own department — §3.1.2) | — | ✔ |
 | `DISPOSAL_REVERSE` | — | ✔ | — | — | — |
 | `BUILDING_MANAGE` | — | ✔ | — | — | — |
 | `TAG_MANAGE` | — | ✔ | — | — | — |
@@ -121,12 +121,12 @@ The backend matrix is authoritative (27 capability strings). The clients are han
 
 | Drift | Backend | Web (`frontend/src/lib/permissions.ts`) | Mobile (`mobile/lib/models/permissions.dart`) | Effect |
 |---|---|---|---|---|
-| `SYSTEM_CONFIG` | SYSTEM_ADMIN ✔ | **missing** | SYSTEM_ADMIN ✔ | web has no constant to gate the System Status screen on — it is gated by route/role instead |
-| `DISPOSAL_REVERSE` | PROPERTY_OFFICER ✔ | **missing** | **missing** | no client can express "may reverse a disposal" — the reverse-disposal UI has no predicate to check |
-| `ITEM_READ_ALL` for DEPARTMENT_HEAD | ✔ (capability) | **missing** | **missing** | the server grants the capability, but the *field-level* full-detail rule (`FULL_DETAIL_ROLES` in `utils/filterItemFields.ts`) only contains PROPERTY_OFFICER and AUDITOR — a Department Head still gets a scoped view, so the capability is effectively dead. **Decision needed:** add DEPARTMENT_HEAD to `FULL_DETAIL_ROLES`, or drop `ITEM_READ_ALL` from the head's grant. (See §3.1.2.) |
+| `SYSTEM_CONFIG` | SYSTEM_ADMIN ✔ | **missing** → now added | SYSTEM_ADMIN ✔ | the web client had no constant to gate the System Status screen on |
+| `DISPOSAL_REVERSE` | PROPERTY_OFFICER ✔ | **missing** → now added | **missing** → now added | no client could express "may reverse a disposal" — the reverse-disposal UI had no predicate to check |
+| `ITEM_READ_ALL` for DEPARTMENT_HEAD | ✔ | **missing** → now added | **missing** → now added | the server grants it and it is **not** dead: it is the route gate on `GET /items/recent` and `GET /items/:id/history`. What it must not be is *unscoped* — see §3.1.2. |
 
 Everything else matches exactly (STAFF, AUDITOR, PROPERTY_OFFICER sets are identical across all three; the 6-role `ACCOUNT_ADMIN` residue is mobile-only, §3).
-**Ruling:** the backend matrix is the single source; the clients must be regenerated from it, and an automated three-way comparison test must fail CI on drift (Backlog F09).
+**Ruling:** the backend matrix is the single source; the clients mirror it exactly, and **`frontend/src/test/capabilityParity.test.ts` fails the build on any drift** (it reads all three files and compares them role by role; it was verified to fail when a grant is removed by hand).
 
 ### 3.1.1a The API contract check (new, and it earns its keep)
 
@@ -144,7 +144,12 @@ The second one is the shape of bug that hides best: the method existed, was neve
 ### 3.1.2 Two custody-field rulings (measured, not inferred)
 
 1. **`ownerId` is legacy but still returned to privileged callers.** `utils/filterItemFields.ts` strips `ownerId`/`owner` for restricted (public/anonymous) views, but the privileged payload keeps it alongside the holder pair — so a Property Officer/Auditor payload carries **two sources of truth for custody** (`ownerId` and `holderType`/`holderId`), both dual-written by `services/holder.ts`. Cleanup item: stop returning `ownerId` to clients once the contract migration drops the column (it is a schema-column decision, not a leak).
-2. **`ITEM_READ_ALL` for DEPARTMENT_HEAD is currently a dead capability.** `services/permissions.ts::seesFullItemDetail()` says "has ITEM_READ_ALL → full detail", but the field-level rule uses its own list, `FULL_DETAIL_ROLES = {PROPERTY_OFFICER, AUDITOR}`, plus a custodian check and a department-head branch. So a Department Head never gets the "full detail" the capability implies. **Ruling to make (one of two, do not leave both):** either add DEPARTMENT_HEAD to `FULL_DETAIL_ROLES` (heads see every field of their own department's items) or remove `ITEM_READ_ALL` from the head's grant and delete the dead mirror entries in web/mobile. The current state is two rules disagreeing — the exact class of conflict §21 exists to end.
+2. **`ITEM_READ_ALL` for DEPARTMENT_HEAD: granted, and it must stay scoped.**
+   The grant is real — it is the route gate on `GET /items/recent` and `GET /items/:id/history` — but the *field* rule is deliberately finer: `utils/filterItemFields.ts` gives full detail to a role in `FULL_DETAIL_ROLES` (PROPERTY_OFFICER, AUDITOR), to the custodian, and to a Department Head **for their own department's items only**. That per-item rule is the correct behaviour for a head, and it is what the web and mobile mirrors now reflect (both grant the capability, because it is what opens the read routes).
+
+   What was wrong was the **route**, not the grant: `GET /items/recent` applied no scope at all, so a Department Head received the names and tag ids of items registered in **other departments** — the one item read in the app that did not go through the scope rules. It now goes through `itemListScope`, like every other read.
+
+   **Still open (a question for the supervisor, not a bug):** `GET /items/:id/history` lets a Department Head read the edit history of a cross-department item (the code calls it out deliberately: "their department items, cross-department items (from catalog), and items they personally hold"). The catalog is a *restricted* view of another department's items, so a head can see that an item exists — but its **edit log** (who changed what, old and new values) is more than the catalog exposes. Decide whether to keep it.
 
 ### 3.2 Approval authority (the D1 decision, FINAL — no re-opening)
 
@@ -542,7 +547,7 @@ An endpoint is `[DONE]` only when it appears with **Wired=Yes** in this file AND
 - backend `GET /loans/overdue` — comment says "Property Officer only", but the chain has no capability check beyond `authenticate` (Backlog B07)
 - backend `users.ts` GET /users — no pagination on the full listing (the approval queue does paginate)
 - backend `test-utils/index.ts` — uses `"ACCOUNT_ADMIN"` legacy maps
-- **capability mirror drift (measured 20 Oct, see §3.1.1)** — web is missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, and DEPARTMENT_HEAD's `ITEM_READ_ALL`; mobile is missing `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL`
+- **capability mirror drift — FIXED 20 Oct.** The web client was missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL`; the mobile client was missing `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL`. All three matrices now agree, and `frontend/src/test/capabilityParity.test.ts` fails the build if they ever drift again (§3.1.1).
 - backend `prisma/schema.prisma` no `updatedAt` — and migrate drift as per §4.2
 - backend two divergent expiry services (expiry.ts vs expiryEscalation.ts) — same job, different config windows; consolidate
 - frontend `frontend/api/preview.ts:87` — the social-preview function calls `GET /api/v1/items/:tagId` **anonymously**, with a comment asserting the route is public. It is not: `GET /items/:tagId` requires `authenticate` since 15 Oct, so the call returns 401 and **every shared tag link silently degrades to the generic card**. Fix: either give the preview function a server-side credential for a deliberately narrow public read, or drop the per-item preview and keep the generic card (decide, don't leave it silently broken).
@@ -591,7 +596,7 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 - [ ] **F06:** Invite resend + revoke + an invite status list (SENT/RESENT/ACCEPTED/EXPIRED) with the escalation-window mechanics.
 - [ ] **F07:** Deactivation (T7): head deactivates own-unit STAFF with cause + trail — deactivate must move the person's held items to `REVERTED_UNVERIFIED`, write a custody `HOLDER_DEACTIVATED` event, bump `tokenVersion`, log to AdminActionLog. SYSTEM_ADMIN deactivates privileged accounts; another SYSTEM_ADMIN for a SYSTEM_ADMIN; self-deactivation blocked everywhere.
 - [ ] **F08:** Out-of-scope tag lookup message: "Not assigned to you, contact Property Office" (spec F2).
-- [ ] **F09:** Three-way capability sync: regenerate the web + mobile matrices from `backend/src/services/permissions.ts` and add an automated test that fails CI on any drift (today's measured drift: web missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, DEPARTMENT_HEAD `ITEM_READ_ALL`; mobile missing `DISPOSAL_REVERSE`, DEPARTMENT_HEAD `ITEM_READ_ALL` — §3.1.1).
+- [x] **F09:** Three-way capability sync — the web and mobile matrices now match the backend exactly, and `frontend/src/test/capabilityParity.test.ts` fails the build on any drift (it was verified to fail when a grant is removed by hand).
 - [ ] **F10:** Strip remaining location leak (`building/floor/room`) from anonymous responses (last open S1 gap).
 - [ ] **F11:** Consolidate the two divergent expiry services into ONE file; one configurable window framework everywhere (see §5.1 windows).
 - [ ] **F12:** Buildings page — backend route exists; build the screen + nav row (PO only).
@@ -727,27 +732,38 @@ Run these against a real deployment after the P0/P1 fixes. Paste the actual resp
 
 ---
 
-## 20. Seed data reference (verified from `backend/prisma/seed.ts`)
+## 20. Seed data reference (verified against the seeded database, 20 Oct)
 
-`cd backend && pnpm prisma:seed` (idempotent — resets demo rows to a known state without wiping `ItemEditLog` history).
+`cd backend && pnpm prisma:seed` — **idempotent**: running it twice leaves every row count identical, and it converges (a demo account forced back to `PENDING_EMAIL_VERIFICATION` comes back `ACTIVE` with a working password).
 
-| Role | Email | Password |
-|---|---|---|
-| SYSTEM_ADMIN | `admin@cncs.aau.edu.et` | `Admin123!` |
-| PROPERTY_OFFICER | `officer@cncs.aau.edu.et` | `Officer123!` |
-| DEPARTMENT_HEAD (CS) | `head.cs@cncs.aau.edu.et` | `HeadCS123!` |
-| DEPARTMENT_HEAD (Biology) | `head.bio@cncs.aau.edu.et` | `HeadBIO123!` |
-| DEPARTMENT_HEAD (Chemistry) | `head.chem@cncs.aau.edu.et` | `HeadCHEM123!` |
-| STAFF (CS 1 / CS 2) | `staff.cs1@` / `staff.cs2@cncs.aau.edu.et` | `StaffCS123!` |
-| STAFF (Biology 1 / 2) | `staff.bio1@` / `staff.bio2@cncs.aau.edu.et` | `StaffBIO123!` |
-| STAFF (Chemistry 1) | `staff.chem1@cncs.aau.edu.et` | `StaffCHEM123!` |
-| STAFF (generic) | `staff@cncs.aau.edu.et` | `Staff123!` |
-| DEPARTMENT_HEAD (generic) | `dept.head@cncs.aau.edu.et` | `DeptHead123!` |
-| AUDITOR | `auditor@cncs.aau.edu.et` | `Auditor123!` |
-| PENDING (CS / Bio / Physics) | `pending.cs@` / `pending.bio@` / `pending.phys@cncs.aau.edu.et` | `Pending123!` |
+**Every individual has enough data to exercise their role:** each staff member holds 5–8 items and has 5–7 requests of their own; each department head holds 6 and has 4. The seeded state covers all nine request states, seven item statuses, and the account-approval states.
 
-Departments: Computer Science (head), Biology (head), Chemistry (head), **Physics (no head — exercises the fallback)**.
-Demo items: `CNCS-DEMO-0001` laptop · `-0002` office desk · `-0003` microscope · `-0004` charger (accessory of the laptop) · `-0005` · plus `CNCS-STAFF-0001..0010` staff items across the three departments.
+| Role | Email | Password | Notes |
+|---|---|---|---|
+| SYSTEM_ADMIN | `admin@cncs.aau.edu.et` | `Admin123!` | holds nothing, by design |
+| PROPERTY_OFFICER | `officer@cncs.aau.edu.et` | `Officer123!` | holds the college pool |
+| DEPARTMENT_HEAD (CS) | `head.cs@cncs.aau.edu.et` | `HeadCS123!` | |
+| DEPARTMENT_HEAD (Biology) | `head.bio@cncs.aau.edu.et` | `HeadBIO123!` | |
+| DEPARTMENT_HEAD (Chemistry) | `head.chem@cncs.aau.edu.et` | `HeadCHEM123!` | |
+| STAFF (CS) | `staff.cs1@` / `staff.cs2@` / `staff.cs3@cncs.aau.edu.et` | `StaffCS123!` | |
+| STAFF (Biology) | `staff.bio1@` / `staff.bio2@cncs.aau.edu.et` | `StaffBIO123!` | |
+| STAFF (Chemistry) | `staff.chem1@cncs.aau.edu.et` | `StaffCHEM123!` | |
+| AUDITOR | `auditor@cncs.aau.edu.et` | `Auditor123!` | |
+| AUDITOR (invited, not yet accepted) | `auditor2@cncs.aau.edu.et` | — | `PENDING_EMAIL_VERIFICATION` + an outstanding invite token — exercises the invite list, resend and accept flows |
+| PENDING (CS) | `pending.cs@cncs.aau.edu.et` | `Pending123!` | in the CS head's queue |
+| PENDING (Biology) | `pending.bio@cncs.aau.edu.et` | `Pending123!` | in the Biology head's queue |
+| PENDING (Physics — no head) | `pending.phys@cncs.aau.edu.et` | `Pending123!` | visible only to SYSTEM_ADMIN |
+| PENDING (new) | `newstaff.cs@cncs.aau.edu.et` | `Pending123!` | a second CS request, so the queue has more than one row |
+| ESCALATED | `escalated.cs@cncs.aau.edu.et` | `Pending123!` | escalated by the CS head — only SYSTEM_ADMIN sees it |
+| REJECTED | `rejected.chem@cncs.aau.edu.et` | `Pending123!` | declined with a readable reason |
+
+> The generic `staff@cncs.aau.edu.et` and `dept.head@cncs.aau.edu.et` accounts are **not** created by the seed (they were listed in an earlier version of this table — they never existed). Use the real accounts above.
+
+**Departments:** Computer Science (head), Biology (head), Chemistry (head), **Physics (no head — exercises the vacant-head fallback to SYSTEM_ADMIN)**.
+
+**Seeded shape** (from a real seeded database): 19 users · 99 items · 79 requests across all nine states · 13 audit result rows (FOUND / MISSING / LOCATION_MISMATCH / PENDING) · 2 audit sessions (one completed with a report number, one active) · 45 notifications of several kinds · 7 account requests · 1 outstanding invite · 4 buildings · 5 categories · 5 org units.
+
+**Item tag series:** `CNCS-DEMO-0001…0020` (the college pool) and `CNCS-STAFF-0001…0079` (per-individual holdings) — every tag matches `^CNCS-(DEMO|STAFF)-\d{4}$`.
 
 ---
 

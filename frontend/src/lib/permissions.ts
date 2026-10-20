@@ -16,6 +16,8 @@ export type Capability =
   | "ITEM_CLAIM"
   | "ITEM_VOID"
   | "ITEM_READ_ALL"
+  | "DISPOSAL_REVERSE"
+  | "SYSTEM_CONFIG"
   | "BUILDING_MANAGE"
   | "TAG_MANAGE"
   | "CATEGORY_MANAGE"
@@ -66,6 +68,7 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "ACCOUNT_APPROVE_ANY",
     "ACCOUNT_INVITE",
     "ACCOUNT_DEACTIVATE_PRIVILEGED",
+    "SYSTEM_CONFIG",
     "USER_READ",
   ],
   PROPERTY_OFFICER: [
@@ -82,6 +85,7 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
     "DISPOSAL_APPROVE",
+    "DISPOSAL_REVERSE",
     "LOAN_APPROVE",
     "REQUEST_READ_ALL",
     "REPORT_VIEW_ALL",
@@ -91,6 +95,11 @@ const GRANTS: Record<Role, readonly Capability[]> = {
   DEPARTMENT_HEAD: [
     "ITEM_EDIT_CUSTODY",
     "ITEM_CLAIM",
+    // A head reads the items of their own department in full — the field
+    // filtering is per-item on the server, so the grant is what opens the
+    // read routes (`/items/recent`, `/items/:id/history`) and the row scope is
+    // what limits them to their unit.
+    "ITEM_READ_ALL",
     "REQUEST_DECIDE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",

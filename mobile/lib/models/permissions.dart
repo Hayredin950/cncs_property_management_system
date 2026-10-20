@@ -24,6 +24,7 @@ enum Capability {
   transferApproveStage1,
   transferApproveStage2,
   disposalApprove,
+  disposalReverse,
   loanApprove,
   requestReadAll,
   reportViewAll,
@@ -60,6 +61,7 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.transferApproveStage1,
     Capability.transferApproveStage2,
     Capability.disposalApprove,
+    Capability.disposalReverse,
     Capability.loanApprove,
     Capability.requestReadAll,
     Capability.reportViewAll,
@@ -69,6 +71,10 @@ const Map<Role, Set<Capability>> _grants = {
   Role.departmentHead: {
     Capability.itemEditCustody,
     Capability.itemClaim,
+    // The server grants a head `ITEM_READ_ALL`; the field filtering is
+    // per-item there, so it opens the read routes and the row scope limits
+    // them to the head's own unit.
+    Capability.itemReadAll,
     Capability.requestDecide,
     Capability.transferApproveStage1,
     Capability.transferApproveStage2,

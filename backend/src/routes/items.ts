@@ -450,8 +450,15 @@ itemsRouter.get(
     try {
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 5));
 
+      // Scoped like every other item read. The tile asks "what was registered
+      // recently?" — for a Property Officer that is the college, and for a
+      // Department Head it is their own department. It used to answer for the
+      // whole college to anyone holding `ITEM_READ_ALL`, which handed a head
+      // the names and tag ids of items registered in other departments — the
+      // one item read in the app that did not go through the scope rules.
+      const scope = itemListScope(req.user);
       const items = await prisma.item.findMany({
-        where: { status: "ACTIVE" },
+        where: { status: "ACTIVE", ...(scope ?? {}) },
         take: limit,
         orderBy: { registeredAt: "desc" },
         select: {

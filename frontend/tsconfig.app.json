@@ -5,7 +5,10 @@
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
-    "types": ["vite/client"],
+    // `node` is here for the one test that reads the *other* packages' source
+    // files off disk (the capability-parity check). Nothing in the application
+    // bundle imports a node builtin; this only affects the type-check.
+    "types": ["vite/client", "node"],
     "skipLibCheck": true,
 
     "moduleResolution": "bundler",

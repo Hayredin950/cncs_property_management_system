@@ -49,10 +49,12 @@ describe("/items tells the viewer which list they are looking at", () => {
     await screen.findByRole("navigation", { name: "Primary" });
     const main = screen.getByRole("main");
 
-    expect(within(main).getByRole("heading", { name: "My items" })).toBeInTheDocument();
+    // The page is scoped to the viewer, and which scope that is depends on who
+    // is signed in — so the assertion waits for the authenticated render.
+    expect(await within(main).findByRole("heading", { name: "My items" })).toBeInTheDocument();
     // The lie the new copy replaced: "the register is empty" is not what an empty
     // scoped list means, and it is not what the user was being shown.
-    expect(within(main).getByText(/Nothing is assigned to you yet/)).toBeInTheDocument();
+    expect(await within(main).findByText(/Nothing is assigned to you yet/)).toBeInTheDocument();
     expect(within(main).queryByText("No items registered yet")).not.toBeInTheDocument();
     expect(within(main).queryByRole("heading", { name: "Browse items" })).not.toBeInTheDocument();
   });

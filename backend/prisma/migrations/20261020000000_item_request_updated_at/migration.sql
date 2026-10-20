@@ -24,9 +24,26 @@
 -- created, and dating it to the migration would silently reset every window
 -- and make stale rows look fresh.
 --
--- The column is NOT NULL with a default so the backfill can run in one
--- statement; the default is then dropped, because from here on Prisma writes
--- the value on every create and update.
+-- The column is NOT NULL with a default, so the backfill can run in one
+-- statement.
+--
+-- **The default stays.** It is the bridge that makes the rollout safe:
+--
+--   * the OLD deployed Prisma client does not know the column exists, so it
+--     does not send a value for it. If the column had no default, the moment
+--     this migration ran, every insert of an item or a request on the live
+--     database would fail with "null value in column updatedAt violates
+--     not-null constraint" — the production app would break between the
+--     migration and the deploy;
+--   * the NEW client writes the value itself on every create and update
+--     (`@updatedAt` is client-side), so the default is only ever used by a
+--     writer that predates the column.
+--
+-- The end state is to drop the default, once no deployed client can write
+-- without the column — that is a separate, deliberately scheduled contract
+-- migration (MASTER-TODO P2-9), not something to do in the same breath as
+-- adding the column. `prisma migrate dev` will keep proposing the drop; the
+-- deviation is intentional and documented in KNOWLEDGE-BASE §4.2.
 
 ALTER TABLE "Item" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3);
 UPDATE "Item" SET "updatedAt" = "registeredAt" WHERE "updatedAt" IS NULL;
@@ -37,10 +54,3 @@ ALTER TABLE "Request" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3);
 UPDATE "Request" SET "updatedAt" = "createdAt" WHERE "updatedAt" IS NULL;
 ALTER TABLE "Request" ALTER COLUMN "updatedAt" SET NOT NULL;
 ALTER TABLE "Request" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
-
--- Prisma writes `updatedAt` itself on every create and update, so the column
--- must not carry a database default: a default would make the value "whenever
--- the row was touched by anything at all", including a raw SQL write that never
--- went through the application.
-ALTER TABLE "Item" ALTER COLUMN "updatedAt" DROP DEFAULT;
-ALTER TABLE "Request" ALTER COLUMN "updatedAt" DROP DEFAULT;

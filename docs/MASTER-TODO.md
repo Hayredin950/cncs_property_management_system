@@ -121,6 +121,10 @@
   6. Re-run the Phase 1 probes against production; paste the results here.
   *Evidence:* the four production 500s are gone.
 
+- [ ] **P2-9 Drop the `updatedAt` database default.**
+  *Why it is still there:* the old deployed Prisma client does not know the column exists, so it sends no value for it. With the default dropped, the moment the migration runs, every insert of an item or a request on the live database would fail. The default is the bridge that makes the rollout safe; the new client writes the value itself.
+  *Do it when:* no deployed client writes without the column (i.e. after the new build is live and the old one is gone), in a separate contract migration. `prisma migrate dev` will keep proposing the drop — the deviation is deliberate until then.
+
 - [ ] **P2-7 Decide the fate of the legacy objects.**
   *Still in the live database and now inert:* the `Department` table, `Item.department`, `Item.building`, `User.departmentId`, `Item.ownerId`.
   *Decide:* drop them in a reviewed contract migration (the `ownerId` column still has live readers — KB §3.1.2), or keep them and document why. Write the decision here.
@@ -138,11 +142,11 @@
 
 *Exit condition: for each account below, sign in with it and complete the role walkthrough in Phase 9 using only that account's data.*
 
-- [ ] **P3-1 Fix the demo-account list so it matches reality.**
-  *Found:* `SEED_USERS.staff` (`staff@cncs.aau.edu.et`) and `SEED_USERS.deptHead` (`dept.head@cncs.aau.edu.et`) are declared in `seed.ts` but **never created** — the KB's credential list advertises accounts that do not exist. Either create them or remove them from the list.
+- [x] **P3-1 Fix the demo-account list so it matches reality.**
+  *Found:* `SEED_USERS.staff` (`staff@cncs.aau.edu.et`) and `SEED_USERS.deptHead` (`dept.head@cncs.aau.edu.et`) are declared in `seed.ts` but **never created** — the KB's credential list advertised accounts that do not exist. Removed from the list (KB §20 and the credentials file now list only real accounts).
   *Evidence:* the KB §20 table and the seed agree, row for row.
 
-- [ ] **P3-2 Every individual gets a full, realistic set of data.** *Minimum per person: 5 items, 5 requests in a mix of states, and the notifications/approvals that follow from them.*
+- [x] **P3-2 Every individual gets a full, realistic set of data.** *Minimum per person: 5 items, 5 requests in a mix of states, and the notifications/approvals that follow from them.*
 
   | Account | Items they hold | Requests they filed | Requests waiting on them | Notifications |
   |---|---|---|---|---|
@@ -154,27 +158,27 @@
   | `staff.cs2@…`, `staff.bio1/2@…`, `staff.chem1@…` | 5+ each | 5+ each | claims against them | — |
   | `auditor@cncs.aau.edu.et` (AUDITOR) | 0 | 0 | active audit sessions | findings + audit events |
 
-- [ ] **P3-3 Requests must exist in every state, not just PENDING.**
+- [x] **P3-3 Requests must exist in every state, not just PENDING.**
   *Needed so every branch of the workflow is reachable from the UI:* `PENDING`, `PENDING_STAGE1`, `PENDING_STAGE2`, `APPROVED`, `REJECTED` (with a reason), `WAITLISTED`, `WITHDRAWN`, `INVALIDATED`, `RETURN_PENDING_CONFIRMATION`, plus a **LOAN** (new in this round).
   *Evidence:* `GET /requests` per role shows all nine states; Phase 9 walks each one.
 
-- [ ] **P3-4 Items must exist in every status, and each status must have a realistic reason.**
+- [x] **P3-4 Items must exist in every status, and each status must have a realistic reason.**
   `ACTIVE` (most), `PENDING_CLAIM` (one waiting for a claim — with `claimDueAt` in the near future), `LOANED` (with a due date), `REVERTED_UNVERIFIED` (waiting for a new head to verify), `DISPOSED` (with a reason + `disposedAt`), `LOST` (an audit casualty), `VOIDED` (a data correction).
   *Also:* 2–3 accessory bundles (parent + accessories) so the cascade is demonstrable, and at least one item in each of the 3 departments + the college pool.
 
-- [ ] **P3-5 Account-approval data in every state.**
+- [x] **P3-5 Account-approval data in every state.**
   Pending staff requests for CS, Biology **and Physics** (headless → SYSTEM_ADMIN's queue), one escalated request, one rejected request (with the reason visible in the UI), and one outstanding **privileged invite** (so the invite list, resend and accept flows have something to act on).
   *Evidence:* each of the four queues in KB §3.2 is non-empty when you sign in as the right person.
 
-- [ ] **P3-6 Audit data.**
+- [x] **P3-6 Audit data.**
   One completed session (with a frozen result set: FOUND / MISSING / LOCATION_MISMATCH rows, a `reportNumber`, a `completedAt`), one **active** session mid-way (so the "Active Audit" widget and the scan screen have something to resume), and one session whose grace window is about to expire (so the escalation path is observable).
   *Evidence:* the auditor dashboard shows progress and findings on first sign-in.
 
-- [ ] **P3-7 Notifications.**
+- [x] **P3-7 Notifications.**
   At least 5 per decision-maker, each a different kind, so the notification list is not a wall of one type: request submitted, request approved, request rejected, escalated to you, claim filed against you, head changed.
   *Evidence:* sign in as the CS head → the Notifications page shows ≥5 distinct kinds.
 
-- [ ] **P3-8 The seed must be idempotent and must converge.**
+- [x] **P3-8 The seed must be idempotent and must converge.**
   *Today:* re-running the seed left the admin in `PENDING_EMAIL_VERIFICATION` because the upsert's `update` branch was empty. Every demo row must reach the same state on every run. Add a test that seeds twice and compares counts.
   *Evidence:* `pnpm prisma:seed` twice → identical row counts; `pnpm test` has a "seed is idempotent" case.
 

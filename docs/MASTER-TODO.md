@@ -21,7 +21,7 @@
 | Backend tests | **535 pass** | `cd backend && pnpm test` → `Test Files 37 passed (37) / Tests 535 passed` |
 | Backend build | clean | `cd backend && pnpm run build` |
 | Frontend build | clean | `cd frontend && pnpm run build` |
-| Frontend tests | **250 pass** (was 27 failing) | `cd frontend && pnpm test` → `Test Files 37 passed (37)`, `Tests 250 passed (250)` |
+| Frontend tests | **255 pass** (was 27 failing) | `cd frontend && pnpm test` → `Test Files 38 passed (38)`, `Tests 255 passed (255)` |
 | Frontend CI | **now runs the tests** and the API contract check | `.github/workflows/frontend.yaml` — test step + contract step added; the suite it runs is green |
 | E2E CI | **new** — builds a real database, seeds it, drives the real flows | `.github/workflows/e2e.yaml` → `scripts/e2e-flows.sh` — 42 checks, green |
 | Mobile analyze | **0 errors** (2 style infos) | `cd mobile && flutter analyze` → `2 issues found` (infos only) |
@@ -239,9 +239,11 @@
   One source of truth (`navConfig.ts`) that matches the router, is role-filtered, and keeps the badge counts honest. `navRoutes.test.tsx` must pass for all 5 roles. Mobile bottom-bar overflow must carry the same items and badges as the sidebar.
   *Evidence:* the nav test green + a manual pass on both layouts.
 
-- [x] **P5-4 Requests: file, decide, withdraw, return.** — done 20 Oct: the form accepts **LOAN** (with a required future due date, validated the way the server validates it), the approval is **stage-aware** (stage 1 says "releasing — this does not move the item", stage 2 says "receiving — this moves the item"), and the **loan-return handshake** has a screen: the borrower says "I am handing it back", the lender confirms it came back (with the condition recorded) or reports that it has not. Four new tests cover it. Still missing: the **claim-with-correction / verify-confirm / verify-flag / reverse-disposal** controls (all exist server-side with no UI at all).
+- [x] **P5-4 Requests: file, decide, withdraw, return.** — done 20 Oct: the form accepts **LOAN** (with a required future due date, validated the way the server validates it), the approval is **stage-aware** (stage 1 says "releasing — this does not move the item", stage 2 says "receiving — this moves the item"), and the **loan-return handshake** has a screen: the borrower says "I am handing it back", the lender confirms it came back (with the condition recorded) or reports that it has not. Four new tests cover it. The **claim-with-correction / verify-confirm / verify-flag / reverse-disposal** controls are now on the item page as well (P5.4b, below).
   The request form must support **LOAN** (with the due date) — the backend accepts it now. The decision surface must distinguish **stage 1** from **stage 2** (today one Approve button serves both). Add the **loan-return** handshake UI (initiate / confirm / dispute) — the endpoints exist and have no UI. Add the **claim-with-correction**, **verify-confirm/verify-flag** and **reverse-disposal** controls — all three exist server-side with no UI.
   *Evidence:* one test per action; the flow walkthrough in Phase 9 uses only the UI.
+
+- [x] **P5-4b The custody actions, on the item page.** — `ItemCustodyActions` gives the six endpoints that had **no screen at all** one: a holder can claim an item, **accept it with a corrected condition** (the register said one thing, the item is another — keeping the difference on the record is what makes it auditable), or **refuse it** with a reason; a head can **verify** an item that changed hands without a handover check, or **flag** it for review; a Property Officer can **reverse a disposal**, with a reason, and the item returns to the pool to be registered again. Five new tests.
 
 - [ ] **P5-5 Fix the known dead/broken UI.**
   * `AuditListPage` "Abandon audit" → fake success toast (needs `POST /audits/:id/abandon`).

@@ -8,6 +8,7 @@ import { Skeleton, SkeletonText } from "../../components/Skeleton";
 import { useItemById } from "../../hooks/useItems";
 import { NetworkError } from "../../types/api";
 import { ConditionBadge, ItemStatusBadge } from "../../components/StatusBadges";
+import { ItemCustodyActions } from "./ItemCustodyActions";
 import { ItemHistorySection } from "./ItemHistorySection";
 import { AccessoriesSection, TagRegenerateSection } from "./ItemStaffSections";
 
@@ -112,6 +113,11 @@ export function ItemStaffPage() {
       </div>
 
       <ItemDetailView item={item} />
+
+      {/* The custody actions for whatever the item is waiting for — a claim, a
+          handover verification, a disposal to reverse. Every one of these
+          endpoints existed with no screen to reach them. */}
+      <ItemCustodyActions item={item} />
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <TagRegenerateSection itemId={item.id} tagId={item.tagId} itemName={item.name} disposed={item.status === "DISPOSED"} />

@@ -176,7 +176,23 @@ usersRouter.get(
           role: "STAFF",
           orgUnitId: { in: unitScope },
           // Exclude escalated requests
-          reviewNote: { not: { contains: "[ESCALATED]" } },
+          // "Not escalated" must include the rows that have **no** note at
+          // all. `reviewNote NOT LIKE '%[ESCALATED]%'` is NULL (not TRUE) for
+          // a NULL note, and SQL drops NULL from a WHERE clause — so every
+          // **newly submitted** account request, which has no note yet, was
+          // invisible in the head's own queue. The seeded rows were visible
+          // only because the seed writes a note on them.
+          //
+          // The effect: a Department Head never saw a staff request unless
+          // something else had written a note on it, and only a SYSTEM_ADMIN
+          // could approve one. That silently undid D1 (the unit head approves
+          // own-unit staff) while everything looked green: the mocked unit
+          // tests never execute this WHERE clause, and the live queue looked
+          // plausible because the seeded rows were in it.
+          OR: [
+            { reviewNote: null },
+            { reviewNote: { not: { contains: "[ESCALATED]" } } },
+          ],
         };
       } else {
         // Other roles with ACCOUNT_APPROVE_ANY (should not happen)
@@ -225,7 +241,23 @@ usersRouter.get(
           role: "STAFF",
           orgUnitId: { in: unitScope },
           // Exclude escalated requests
-          reviewNote: { not: { contains: "[ESCALATED]" } },
+          // "Not escalated" must include the rows that have **no** note at
+          // all. `reviewNote NOT LIKE '%[ESCALATED]%'` is NULL (not TRUE) for
+          // a NULL note, and SQL drops NULL from a WHERE clause — so every
+          // **newly submitted** account request, which has no note yet, was
+          // invisible in the head's own queue. The seeded rows were visible
+          // only because the seed writes a note on them.
+          //
+          // The effect: a Department Head never saw a staff request unless
+          // something else had written a note on it, and only a SYSTEM_ADMIN
+          // could approve one. That silently undid D1 (the unit head approves
+          // own-unit staff) while everything looked green: the mocked unit
+          // tests never execute this WHERE clause, and the live queue looked
+          // plausible because the seeded rows were in it.
+          OR: [
+            { reviewNote: null },
+            { reviewNote: { not: { contains: "[ESCALATED]" } } },
+          ],
         };
       } else {
         // Other roles with ACCOUNT_APPROVE_ANY (should not happen)

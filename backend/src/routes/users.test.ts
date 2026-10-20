@@ -19,7 +19,10 @@ vi.mock("../lib/prisma.js", () => {
     notification: { deleteMany: vi.fn() },
     request: { count: vi.fn() },
     adminActionLog: { create: vi.fn() },
-    orgUnit: { findUnique: vi.fn(), update: vi.fn() },
+    // `findMany` is how the head's unit scope is read (the unit and its
+    // children) — without it, the approvals query for a DEPARTMENT_HEAD
+    // cannot be built.
+    orgUnit: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(async (arg: unknown) =>
       typeof arg === "function"
         ? await (arg as (tx: unknown) => Promise<unknown>)(client)
@@ -431,6 +434,42 @@ describe("GET /users/approvals", () => {
     // waiting to join the system is nobody else's list.
     expect(res.status).toBe(403);
     expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it("shows a Department Head the requests that have no note yet, and still hides the escalated ones", async () => {
+    // The shape of the filter, and the reason it is written this way.
+    //
+    // `reviewNote NOT LIKE '%[ESCALATED]%'` is NULL — not TRUE — for a row
+    // with no note, and SQL drops NULL from a WHERE clause. A **newly
+    // submitted** account request has no note, so it was invisible in the
+    // head's own queue: a Department Head never saw a staff request, and
+    // only a SYSTEM_ADMIN could approve one. That quietly undid D1 (the unit
+    // head approves own-unit staff) while every test stayed green — the
+    // mocked suite never executes this WHERE clause.
+    //
+    // The fix is the `OR` below: "no note" counts as "not escalated". The
+    // e2e script (scripts/e2e-flows.sh) proves it against a real database;
+    // this test pins the shape so the branch cannot be "simplified" away.
+    // The head needs a unit: without one the route answers 403 ("You are not
+    // assigned to a department") and never reaches the query.
+    const headToken = createToken({
+      id: "head-1",
+      role: "DEPARTMENT_HEAD",
+      orgUnitId: "unit-cs",
+    });
+    vi.mocked(prisma.orgUnit.findMany).mockResolvedValueOnce([] as never);
+    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([] as never);
+
+    await request(app)
+      .get("/users/approvals")
+      .set("Authorization", `Bearer ${headToken}`);
+
+    const where = vi.mocked(prisma.user.findMany).mock.calls[0]?.[0]?.where as {
+      OR?: Array<Record<string, unknown>>;
+    };
+    expect(where.OR).toBeDefined();
+    expect(where.OR).toContainEqual({ reviewNote: null });
+    expect(where.OR).toContainEqual({ reviewNote: { not: { contains: "[ESCALATED]" } } });
   });
 
   it("lists only the pending accounts, oldest first", async () => {

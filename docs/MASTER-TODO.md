@@ -199,7 +199,7 @@
   *How:* a shared fixture per endpoint + a test per client that renders the component with the **real backend response body** (captured from the running server) and asserts it does not fall into an error/empty branch.
   *Evidence:* a fixture directory `frontend/src/test/fixtures/api-responses/*.json` generated from the live API.
 
-- [ ] **P4-3 A live end-to-end flow test against a real database.**
+- [x] **P4-3 A live end-to-end flow test against a real database.** — `scripts/e2e-flows.sh` (42 checks) builds a database from the migrations, seeds it, starts the real server and drives the real flows over HTTP. It runs in CI (`e2e.yaml`) with its own throwaway Postgres, so it can never touch a developer's data. **It found a serious bug on its first run**: the approvals queue filtered on `reviewNote NOT LIKE '%[ESCALATED]%'`, which is NULL for a row with no note — so a Department Head never saw a newly submitted account request, and only a SYSTEM_ADMIN could approve one. D1 was silently not happening.
   *Do:* run the built backend against a real Postgres and drive the flows over HTTP — exactly the way the browser does:
   1. staff signs up → head sees it in the queue → head approves → staff signs in;
   2. staff files a transfer → stage 1 → stage 2 → recipient claims → the holder changed;
@@ -208,7 +208,7 @@
   5. an audit is opened, items are scanned, the session is completed, the report downloads.
   *Evidence:* a script `scripts/e2e-flows.sh` (or vitest) that prints each step's HTTP status; it must run against a fresh database every time.
 
-- [ ] **P4-4 Assert the security assumptions, not just the happy path.**
+- [~] **P4-4 Assert the security assumptions, not just the happy path.** — the e2e script now covers: anonymous → 401, SYSTEM_ADMIN → zero asset rows, a wrong-capability call → 403 (`/loans/overdue` for an admin), the head's queue scoping, and the two refusals (unknown unit, address outside the institution). Still to add: a per-endpoint table of the four observed status codes (anonymous / wrong role / wrong scope / correct).
   For every endpoint: anonymous → 401; a wrong-role token → 403 or **404** (out of scope, per KB ground rule 3); a SYSTEM_ADMIN token → **zero asset rows**; a staff token → no other staff's data.
   *Evidence:* a table in this file, one row per endpoint, with the four observed status codes.
 

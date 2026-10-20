@@ -128,6 +128,15 @@ The backend matrix is authoritative (27 capability strings). The clients are han
 Everything else matches exactly (STAFF, AUDITOR, PROPERTY_OFFICER sets are identical across all three; the 6-role `ACCOUNT_ADMIN` residue is mobile-only, §3).
 **Ruling:** the backend matrix is the single source; the clients mirror it exactly, and **`frontend/src/test/capabilityParity.test.ts` fails the build on any drift** (it reads all three files and compares them role by role; it was verified to fail when a grant is removed by hand).
 
+### 3.1.0 The two checks that catch what the unit tests cannot
+
+| Check | What it does | Where |
+|---|---|---|
+| `scripts/check-api-contract.mjs` | compares every client call with every server route; fails the build on a mismatch | `frontend.yaml` |
+| `scripts/e2e-flows.sh` | builds a real database from the migrations, seeds it, starts the real server against it and drives the real flows over HTTP | `e2e.yaml` |
+
+Both exist because the unit suites **mock Prisma**: they cannot see a query that is wrong in SQL, a column that does not exist, or a route that was renamed. The e2e script found the approvals-queue bug above on its first run — a bug that had been silently breaking the core "unit head approves own-unit staff" flow while every test, and the CI badge, stayed green.
+
 ### 3.1.1a The API contract check (new, and it earns its keep)
 
 `scripts/check-api-contract.mjs` compares every call the web and mobile clients make with every route the server declares, and fails the build when a client calls something that does not exist. It runs in `frontend.yaml`.
@@ -509,6 +518,7 @@ Legend: `[DONE]` = built, wired, tested + live behavior proof · `[PARTIAL]` = b
 | Optimistic locking `version` CAS on item write | [DONE] |
 | Lifetime `pin` uniqueness + audit-result uniqueness | [DONE] |
 | Session invalidation on role change (`tokenVersion` bump) | [DONE] |
+| A Department Head sees the staff requests of their own unit | [DONE — fixed 20 Oct] | the queue's "not escalated" filter dropped every row with **no** note, which is every **newly submitted** request (§13). The e2e flow now proves it against a real database. |
 | Login rate-limit | [PARTIAL] (in-process only) |
 | Upload cap 5 MB + MIME allow-list + Cloudinary streaming | [DONE] — reject path test missing for 5MB/MIME (Backlog) |
 | DB-enforced prohibited UPDATE on log tables | [BUILD] (intense DB-role work; append-only "by convention" now) |
@@ -546,6 +556,7 @@ An endpoint is `[DONE]` only when it appears with **Wired=Yes** in this file AND
 - backend `REQUEST_TYPES` (requests.ts:64) — excludes LOAN — loan intake broken
 - backend `GET /loans/overdue` — comment says "Property Officer only", but the chain has no capability check beyond `authenticate` (Backlog B07)
 - backend `users.ts` GET /users — no pagination on the full listing (the approval queue does paginate)
+- backend **`GET /users/approvals` hid every newly submitted account request from the Department Head** (fixed 20 Oct). The filter was `reviewNote: { not: { contains: "[ESCALATED]" } }`, which Prisma renders as `reviewNote NOT LIKE '%[ESCALATED]%'` — **NULL** for a row with no note, and SQL drops NULL from a WHERE clause. A freshly submitted request has no note, so it never appeared in the head's own queue; only a SYSTEM_ADMIN could approve one. D1 (the unit head approves own-unit staff) was silently not happening, and every test was green because the mocked suite never executes the WHERE clause. Fixed with an explicit `OR: [{ reviewNote: null }, { reviewNote: { not: { contains: "[ESCALATED]" } } }]`. **The general rule this exposes: a `not: { contains }` filter on a nullable column hides the null rows — always write the null case explicitly.**
 - backend `test-utils/index.ts` — uses `"ACCOUNT_ADMIN"` legacy maps
 - **capability mirror drift — FIXED 20 Oct.** The web client was missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL`; the mobile client was missing `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL`. All three matrices now agree, and `frontend/src/test/capabilityParity.test.ts` fails the build if they ever drift again (§3.1.1).
 - backend `prisma/schema.prisma` no `updatedAt` — and migrate drift as per §4.2
@@ -827,6 +838,7 @@ The 20 Oct audit found 19 places where two "current" documents disagreed. Each i
 | 20 Oct | Initial KB issued | Consolidated from 37 docs + 4 code audits (backend, frontend, mobile, docs). C1–C19 conflicts ruled in §21. Capability drift measured in §3.1.1. Backlog in §14. |
 | 20 Oct | `docs/README.md` active set rewritten | KB is now the single authority; the other 6 files are detail/incident history. |
 | 20 Oct | `backend-audit-2026-10-20.md` (was root `BACKEND_AUDIT.md`) | Moved into `docs/`; referenced from §4 and §6. |
+| 20 Oct | **End-to-end flow check** (`scripts/e2e-flows.sh`, 42 checks, run in `e2e.yaml`) added — and it found the approvals-queue bug on its first run: `reviewNote NOT LIKE '%[ESCALATED]%'` is NULL for a row with no note, so a Department Head never saw a newly submitted account request and only a SYSTEM_ADMIN could approve one. D1 was silently not happening. The general rule is now written down: **a `not: { contains }` filter on a nullable column hides the null rows**. |
 | 20 Oct | Cross-checked against the **external** `MASTER_KNOWLEDGE_BASE.md` (a parallel knowledge base produced by another agent, kept at `~/Documents/`) | Its **migration-order table** was correct → merged (§4.2). Its **20-row live-verification table** → merged as §17. Its route inventory was used to cross-check §6, which caught one error in *this* file (`GET /export/holdings` was wrongly recorded as "no route" — it exists and is mounted, just without a UI caller). Claims that did **not** survive verification were rejected: `POST /expiry/run` (real: `/expiry/check`), "mobile missing all `ACCOUNT_*`" (mobile has them), "frontend mirror verified" (it is **not** — §3.1.1), "transfer/loan handshakes still missing" (both are implemented in code now). Two findings it surfaced that were not previously recorded: the broken social-preview call (§13) and the missing mobile CI workflow (U14). |
 
 **How to use this file:** §3–§9 are the *rules* (don't change them without a ruling), §10–§13 are the *measured state* (refresh after each change), §14 is the *work list* (tick with evidence), §21 is the *conflict ledger* (append a row when a new conflict appears), §22 is *operations*.

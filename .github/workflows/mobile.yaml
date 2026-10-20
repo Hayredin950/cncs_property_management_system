@@ -25,7 +25,12 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.24.0"
+          # The app requires Dart ^3.13.5 (pubspec.yaml), so the SDK has to
+          # be a recent one. Flutter 3.24 ships Dart 3.5 and the dependency
+          # solver refuses it outright:
+          #   "Because cncs_pms_mobile requires SDK version ^3.13.5, version
+          #    solving failed."
+          flutter-version: "3.47.6"
           channel: stable
           cache: true
 

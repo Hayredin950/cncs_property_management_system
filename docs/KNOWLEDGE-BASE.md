@@ -123,10 +123,15 @@ The backend matrix is authoritative (27 capability strings). The clients are han
 |---|---|---|---|---|
 | `SYSTEM_CONFIG` | SYSTEM_ADMIN ✔ | **missing** | SYSTEM_ADMIN ✔ | web has no constant to gate the System Status screen on — it is gated by route/role instead |
 | `DISPOSAL_REVERSE` | PROPERTY_OFFICER ✔ | **missing** | **missing** | no client can express "may reverse a disposal" — the reverse-disposal UI has no predicate to check |
-| `ITEM_READ_ALL` for DEPARTMENT_HEAD | ✔ | **missing** | **missing** | the server grants full item detail to a Department Head, but the web `seesAllItems()` mirror says no → the UI hides detail the API allows (mirror decides what to *render*; it is not a control, so this is a UX mismatch, not a leak) |
+| `ITEM_READ_ALL` for DEPARTMENT_HEAD | ✔ (capability) | **missing** | **missing** | the server grants the capability, but the *field-level* full-detail rule (`FULL_DETAIL_ROLES` in `utils/filterItemFields.ts`) only contains PROPERTY_OFFICER and AUDITOR — a Department Head still gets a scoped view, so the capability is effectively dead. **Decision needed:** add DEPARTMENT_HEAD to `FULL_DETAIL_ROLES`, or drop `ITEM_READ_ALL` from the head's grant. (See §3.1.2.) |
 
 Everything else matches exactly (STAFF, AUDITOR, PROPERTY_OFFICER sets are identical across all three; the 6-role `ACCOUNT_ADMIN` residue is mobile-only, §3).
 **Ruling:** the backend matrix is the single source; the clients must be regenerated from it, and an automated three-way comparison test must fail CI on drift (Backlog F09).
+
+### 3.1.2 Two custody-field rulings (measured, not inferred)
+
+1. **`ownerId` is legacy but still returned to privileged callers.** `utils/filterItemFields.ts` strips `ownerId`/`owner` for restricted (public/anonymous) views, but the privileged payload keeps it alongside the holder pair — so a Property Officer/Auditor payload carries **two sources of truth for custody** (`ownerId` and `holderType`/`holderId`), both dual-written by `services/holder.ts`. Cleanup item: stop returning `ownerId` to clients once the contract migration drops the column (it is a schema-column decision, not a leak).
+2. **`ITEM_READ_ALL` for DEPARTMENT_HEAD is currently a dead capability.** `services/permissions.ts::seesFullItemDetail()` says "has ITEM_READ_ALL → full detail", but the field-level rule uses its own list, `FULL_DETAIL_ROLES = {PROPERTY_OFFICER, AUDITOR}`, plus a custodian check and a department-head branch. So a Department Head never gets the "full detail" the capability implies. **Ruling to make (one of two, do not leave both):** either add DEPARTMENT_HEAD to `FULL_DETAIL_ROLES` (heads see every field of their own department's items) or remove `ITEM_READ_ALL` from the head's grant and delete the dead mirror entries in web/mobile. The current state is two rules disagreeing — the exact class of conflict §21 exists to end.
 
 ### 3.2 Approval authority (the D1 decision, FINAL — no re-opening)
 
@@ -183,7 +188,22 @@ Condition             NEW | GOOD | FAIR | DAMAGED | BEYOND_REPAIR
 
 ### 4.2 **Schema/migration drift (blocking, fix first)**
 
-- `20261012000000_phase_a_expand` adds `User.departmentId`/`Item.departmentId` FKs to a `"Department"` model that **does not exist in the current schema** (OrgUnit replacement).
+**Migration history on disk, in order** (`backend/prisma/migrations/`):
+
+| # | Migration | What it does | State |
+|---|---|---|---|
+| 1 | `20260901115514_init` | initial schema | applied |
+| 2 | `20260924000000_add_token_version_and_password_reset` | `tokenVersion`, `mustChangePassword` | applied |
+| 3 | `20261012000000_phase_a_expand` | expands the schema for phase A | **FAILED row in `_prisma_migrations` → P3009 blocker** |
+| 4 | `20261012010000_role_five_role_enum` | 5-role enum | applied |
+| 5 | `20261012020000_backfill_holder_fields` | `holderType`/`holderId` | applied |
+| 6 | `20261012030000_account_approval_queue` | `AccountRequest`/`EmailToken`/`AdminActionLog` | **the tables were created outside migration history — no migration actually creates them** |
+| 7 | `20261014000000_account_invite_fields` | 7 invite columns + `invitedById` FK | **on disk, NOT applied to the live DB** |
+| 8 | `20261017102500_delete_system_admin_item_notifications` | filters notifications | applied |
+
+**The drift, item by item:**
+
+- `20261012000000_phase_a_expand` adds `User.departmentId`/`Item.departmentId` FKs to a `"Department"` model that **does not exist in the current schema** (OrgUnit replaced it).
 - `20261012020000_backfill_holder_fields` documents drops that happened outside `migrations/` (free-text `Item.department/User.department`), while `Item.ownerId` still live.
 - `AccountRequest`, `EmailToken`, `AdminActionLog` exist in the live DB but **no migration on disk creates them** (created via `prisma db push`).
 - **FAILED row for `20261012000000_phase_a_expand` + applied row** = PR `P3009` blocker until `prisma migrate resolve --rolled-back 20261012000000_phase_a_expand` (NOT `prisma migrate resolve --applied ...` — see backend-audit-2026-10-20.md §1.3, NOT DB row surgery) is resolved.
@@ -413,7 +433,7 @@ Legend: `[DONE]` = built, wired, tested + live behavior proof · `[PARTIAL]` = b
 | Expiry/escalation (claim, revert, loan grace) | [BROKEN] | ALL 3 of `expiry.ts`-surface and `expiryEscalation.ts`-reference `Item.updatedAt`/`Request.updatedAt`, not in schema. Also there are two divergent services doing the same job — merge the two |
 | Audits (open, scan, complete) | [DONE + 12 tests] | frozen PENDING rows compute MISSING/LOCATION_MISMATCH at completion — backend solid |
 | Reports (inventory/disposals/audit/evidence-pack) | [PARTIAL — evidence-pack BROKEN] | `GET /reports/audit-evidence-pack` queries `sessionNumber/type/scope/itemCount` — fields DON'T exist on AuditSession — guaranteed 500 |
-| Holdings export `GET /export/holdings` | [BUILD] | no route |
+| Holdings export `GET /export/holdings` | [DONE route, no UI] | the route exists and is mounted (at `/api/v1/export` and `/export`) but nothing in either client calls it — spec §9.2 wants it as a dated personal-holdings CSV |
 | Notifications + email stub | [PARTIAL] | in-app + `[CODE]-prefix` approach; email transport stub (console only); anything users "look for email" (reset link, invite) won't arrive |
 
 ### 10.2 Frontend (web)
@@ -512,8 +532,11 @@ An endpoint is `[DONE]` only when it appears with **Wired=Yes** in this file AND
 - **capability mirror drift (measured 20 Oct, see §3.1.1)** — web is missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, and DEPARTMENT_HEAD's `ITEM_READ_ALL`; mobile is missing `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL`
 - backend `prisma/schema.prisma` no `updatedAt` — and migrate drift as per §4.2
 - backend two divergent expiry services (expiry.ts vs expiryEscalation.ts) — same job, different config windows; consolidate
-- frontend `features/departments/DepartmentDetailPage` — hardcoded `Electronics`/`Furniture`/`Lab Equipment` fake category ID options ("1","2","3"); "Department Head" summary card shows the department name not a person; emerald/amber colors off-theme
+- frontend `frontend/api/preview.ts:87` — the social-preview function calls `GET /api/v1/items/:tagId` **anonymously**, with a comment asserting the route is public. It is not: `GET /items/:tagId` requires `authenticate` since 15 Oct, so the call returns 401 and **every shared tag link silently degrades to the generic card**. Fix: either give the preview function a server-side credential for a deliberately narrow public read, or drop the per-item preview and keep the generic card (decide, don't leave it silently broken).
+- frontend `frontend/src/features/departments/DepartmentDetailPage` — hardcoded `Electronics`/`Furniture`/`Lab Equipment` fake category ID options ("1","2","3"); "Department Head" summary card shows the department name not a person; emerald/amber colors off-theme
 - frontend `/catalog` orphan route + bogus card links; `DepartmentCatalogPage` unrouted dead page
+- frontend **`/admin/system` is reachable by DEPARTMENT_HEAD** (`router.tsx` guards both `/admin/users` and `/admin/system` with `roles={["SYSTEM_ADMIN","DEPARTMENT_HEAD"]}`) but its data endpoint `GET /system/status` requires the `SYSTEM_CONFIG` capability (SYSTEM_ADMIN only) → a Department Head opening it gets a bare "Couldn't load system status" error page. Either restrict the route to SYSTEM_ADMIN or give the page a proper capability-aware state.
+- frontend `/catalog` sits inside the all-roles shell → any signed-in role (including SYSTEM_ADMIN, who has no asset data) can reach it by URL, and it has no nav entry (orphan)
 - frontend OverdueLoans widget + `useLoans` hooks + `api/loans.ts` never rendered (dead trio — re-wire to the PO dashboard to make overdue loans useful)
 - frontend `AuditListPage` Abandon audit = fake success toast (line 90)
 - frontend `MapPage` caption "Showing up to 100 items" — stale; paged whole register now
@@ -522,7 +545,7 @@ An endpoint is `[DONE]` only when it appears with **Wired=Yes** in this file AND
 - frontend `SystemStatusPage` minimal with no retry / OfflineState
 - frontend `AppLayout` stray odd formatting/`JSX` blocks outdented — works but sloppy
 - frontend `.env.local` contains a live Vercel OIDC token sitting in an untracked local file — hygiene
-- mobile `mobile/lib/widgets/status_badges.dart:160,169` — 2 stale `Role.accountAdmin` references (analyze errors)
+- mobile `mobile/lib/widgets/status_badges.dart:160,169` — 2 stale `Role.accountAdmin` references (6-role era) → `flutter analyze` errors; the enum itself is correct 5-role
 - mobile `mobile/lib/features/items/item_detail_view.dart:281` — hardcoded clipboard shared-link `https://cncs-pms.aau.edu.et/item/<tagId>` doesn't resolve (prod is vercel.app)
 
 ---
@@ -576,6 +599,9 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 - [ ] **U09:** `RequireAuth` — `loading` renders null (full-page blank); show a shared skeleton instead.
 - [ ] **U10:** Mobile — fix the hardcoded shared-link origin in `item_detail_view.dart:281`; derive it from the configured API/env value.
 - [ ] **U11:** Mobile — add an invite-acceptance screen (`POST /auth/accept-invite`) or explicitly document web-only acceptance for invited privileged users.
+- [ ] **U12:** `/admin/system` route — either restrict it to SYSTEM_ADMIN in the router, or make the page capability-aware so a DEPARTMENT_HEAD gets a clear "not available for your role" state instead of a failed fetch. (`/admin/users` correctly stays shared: approvals tab for heads, invite/accounts tabs for admins.)
+- [ ] **U13:** Social preview — `frontend/api/preview.ts` calls the now-auth-required `GET /items/:tagId` anonymously → every shared tag link degrades to the generic card. Decide: a server-side credential for a narrow public read, or drop the per-item preview deliberately.
+- [ ] **U14:** Mobile CI workflow (`.github/workflows/mobile.yaml` does not exist — `flutter analyze` + `flutter test` are unrun in CI today, which is how the 2 stale `Role.accountAdmin` references survived).
 
 ### 14.3 P3 — growth (post-cutover)
 
@@ -616,7 +642,36 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 
 ---
 
-## 17. Schema design decisions — do NOT re-open without a written reason
+## 17. Live-verification checklist (20 rows — the account-approval acceptance suite)
+
+Run these against a real deployment after the P0/P1 fixes. Paste the actual responses; a tick requires evidence. This is the table from `cncs-pms-account-approval-authority.md` §4 — the canonical acceptance set.
+
+| # | Scenario | Expected |
+|---|---|---|
+| 1 | Biology applicant registers (+ verifies email once F02 lands) | Appears **only** in the Biology head's queue |
+| 2 | CS head approves a Biology request | **404**, status unchanged |
+| 3 | CS head lists approvals | CS requests only |
+| 4 | Biology head approves | ACTIVE, unit = Biology, role = STAFF, AdminActionLog row written |
+| 5 | Registration body contains `role: "SYSTEM_ADMIN"` | Ignored — created as STAFF |
+| 6 | Register into Physics (no head) | Visible only to SYSTEM_ADMIN |
+| 7 | CS head clicks "Not in my department" | Leaves the head queue; SYSTEM_ADMIN sees it |
+| 8 | Pending user signs in | No session; pending message shown |
+| 9 | Rejected user signs in | Rejection reason shown |
+| 10 | STAFF calls any approvals endpoint | 404 |
+| 11 | SYSTEM_ADMIN invites a head without `authorizationRef` | 400, nothing created |
+| 12 | SYSTEM_ADMIN invites a head with a valid authorization | Invite created; AdminActionLog carries `authorizedBy` + ref |
+| 13 | Invite a second head for a unit that has one | 400 |
+| 14 | Invite the same person as Property Officer + Auditor | 409 |
+| 15 | SYSTEM_ADMIN approves their own account | Rejected |
+| 16 | Head deactivates staff; the old token is reused | 401; the staff's items become `REVERTED_UNVERIFIED` |
+| 17 | Head tries to deactivate another head | 404/403, no change |
+| 18 | A request stays pending past the escalation threshold | SYSTEM_ADMIN notified and able to decide |
+| 19 | Invitee opens an expired/used link | Clean error, no account created |
+| 20 | Click every nav item for all 5 roles | No "Page not found" anywhere |
+
+---
+
+## 18. Schema design decisions — do NOT re-open without a written reason
 
 | Decision | Rationale |
 |---|---|
@@ -634,7 +689,7 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 | JWT 1-day expiry, no refresh token | Accepted limitation, mitigated by `tokenVersion` bumps on credential/role change |
 | QR tag URL = `${PUBLIC_BASE_URL}/item/:tagId` | Baked in at print time — changing `PUBLIC_BASE_URL` after printing dead-ends every existing sticker, and CI cannot detect it |
 
-## 18. Code conventions (follow these — they keep the three clients in step)
+## 19. Code conventions (follow these — they keep the three clients in step)
 
 **Backend**
 - Every route handler gates with `requireCapability` / `requireAnyCapability` — never branch on role names inside handlers.
@@ -659,7 +714,7 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 
 ---
 
-## 19. Seed data reference (verified from `backend/prisma/seed.ts`)
+## 20. Seed data reference (verified from `backend/prisma/seed.ts`)
 
 `cd backend && pnpm prisma:seed` (idempotent — resets demo rows to a known state without wiping `ItemEditLog` history).
 
@@ -683,7 +738,7 @@ Demo items: `CNCS-DEMO-0001` laptop · `-0002` office desk · `-0003` microscope
 
 ---
 
-## 20. Conflict rulings ledger (every known doc conflict, resolved once)
+## 21. Conflict rulings ledger (every known doc conflict, resolved once)
 
 The 20 Oct audit found 19 places where two "current" documents disagreed. Each is ruled here; the losing statement is not repeated anywhere else in this file.
 
@@ -711,7 +766,7 @@ The 20 Oct audit found 19 places where two "current" documents disagreed. Each i
 
 ---
 
-## 21. Branch reconciliation & deployment plan (Yanet's `lalu-branch` vs our `main`)
+## 22. Branch reconciliation & deployment plan (Yanet's `lalu-branch` vs our `main`)
 
 **Situation:** `Hayredin950/main` (verified, 531 backend tests green, frontend build green) carries the whole workflow-completeness spec and the UI fixes. `yanetgeleta/lalu-branch` carries Yanet's "new master plan 3, staff signup, phase one" work, which is not in `main`, so a PR from `lalu-branch` → `main` is not mergeable (both sides moved).
 
@@ -729,19 +784,20 @@ The 20 Oct audit found 19 places where two "current" documents disagreed. Each i
 3. `pnpm prisma:seed` (idempotent; prints demo credentials).
 4. Deploy API → verify `GET /health` and one authenticated endpoint by real HTTP.
 5. Deploy web → verify `/login`, then the 5-role walkthrough.
-6. Record the deployed commit SHA in this file's §22 log.
+6. Record the deployed commit SHA in this file's §23 log.
 
 **Environment variables** (backend): `DATABASE_URL` (Neon pooled), `DIRECT_URL` (Neon unpooled), `JWT_SECRET`, `PUBLIC_BASE_URL` (**the FRONTEND origin — it is baked into every printed QR sticker; changing it after printing dead-ends every sticker and CI cannot detect it**), `UPLOADS_DIR=/tmp/uploads`, `NOTIFY_EMAIL=false` (stub transport), `CLOUDINARY_CLOUD_NAME/ API_KEY/ API_SECRET` (omit → uploads 503 and the form falls back to a pasted URL), `CORS_ORIGINS` (**required in production; fails closed without it**).
 **Frontend**: `VITE_API_BASE_URL` (inlined at BUILD time), `API_BASE_URL` (runtime, for the social-preview function), optional `VITE_SITE_ORIGIN`.
 
 ---
 
-## 22. Doc-changes log
+## 23. Doc-changes log
 
 | Date | Change | Ruling |
 |---|---|---|
-| 20 Oct | Initial KB issued | Consolidated from 37 docs + 4 code audits (backend, frontend, mobile, docs). C1–C19 conflicts ruled in §20. Capability drift measured in §3.1.1. Backlog in §14. |
+| 20 Oct | Initial KB issued | Consolidated from 37 docs + 4 code audits (backend, frontend, mobile, docs). C1–C19 conflicts ruled in §21. Capability drift measured in §3.1.1. Backlog in §14. |
 | 20 Oct | `docs/README.md` active set rewritten | KB is now the single authority; the other 6 files are detail/incident history. |
 | 20 Oct | `backend-audit-2026-10-20.md` (was root `BACKEND_AUDIT.md`) | Moved into `docs/`; referenced from §4 and §6. |
+| 20 Oct | Cross-checked against the **external** `MASTER_KNOWLEDGE_BASE.md` (a parallel knowledge base produced by another agent, kept at `~/Documents/`) | Its **migration-order table** was correct → merged (§4.2). Its **20-row live-verification table** → merged as §17. Its route inventory was used to cross-check §6, which caught one error in *this* file (`GET /export/holdings` was wrongly recorded as "no route" — it exists and is mounted, just without a UI caller). Claims that did **not** survive verification were rejected: `POST /expiry/run` (real: `/expiry/check`), "mobile missing all `ACCOUNT_*`" (mobile has them), "frontend mirror verified" (it is **not** — §3.1.1), "transfer/loan handshakes still missing" (both are implemented in code now). Two findings it surfaced that were not previously recorded: the broken social-preview call (§13) and the missing mobile CI workflow (U14). |
 
-**How to use this file:** §3–§9 are the *rules* (don't change them without a ruling), §10–§13 are the *measured state* (refresh after each change), §14 is the *work list* (tick with evidence), §20 is the *conflict ledger* (append a row when a new conflict appears), §21 is *operations*.
+**How to use this file:** §3–§9 are the *rules* (don't change them without a ruling), §10–§13 are the *measured state* (refresh after each change), §14 is the *work list* (tick with evidence), §21 is the *conflict ledger* (append a row when a new conflict appears), §22 is *operations*.

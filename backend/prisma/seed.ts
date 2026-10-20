@@ -159,23 +159,31 @@ async function main() {
   console.log("Seeding users...");
   await prisma.user.upsert({
     where: { email: SEED_USERS.admin.email },
-    update: {},
+    // Re-seeding must converge to a usable account: the schema default for
+    // `accountStatus` is PENDING_EMAIL_VERIFICATION, so a row that exists from
+    // an earlier run would keep that status and nobody could sign in with it.
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "System Admin",
       email: SEED_USERS.admin.email,
       passwordHash: await argon2.hash(SEED_USERS.admin.password, { type: argon2.argon2id }),
       role: Role.SYSTEM_ADMIN,
+      accountStatus: "ACTIVE",
     },
   });
 
   const officer = await prisma.user.upsert({
     where: { email: SEED_USERS.officer.email },
-    update: {},
+    // Re-seeding must converge to a usable account: the schema default for
+    // `accountStatus` is PENDING_EMAIL_VERIFICATION, so a row that exists from
+    // an earlier run would keep that status and nobody could sign in with it.
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "Property Officer",
       email: SEED_USERS.officer.email,
       passwordHash: await argon2.hash(SEED_USERS.officer.password, { type: argon2.argon2id }),
       role: Role.PROPERTY_OFFICER,
+      accountStatus: "ACTIVE",
     },
   });
 
@@ -298,12 +306,13 @@ async function main() {
 
   const auditor = await prisma.user.upsert({
     where: { email: SEED_USERS.auditor.email },
-    update: {},
+    update: { accountStatus: "ACTIVE" },
     create: {
       fullName: "Auditor Test",
       email: SEED_USERS.auditor.email,
       passwordHash: await argon2.hash(SEED_USERS.auditor.password, { type: argon2.argon2id }),
       role: Role.AUDITOR,
+      accountStatus: "ACTIVE",
     },
   });
 
@@ -395,7 +404,15 @@ async function main() {
       buildingId: physBuilding.id,
       floor: "1",
       room: "101",
-      ownerId: physDept.id, // Department-held
+      // `ownerId` is the LEGACY column and still carries a foreign key to
+      // `User`. The department is not a user, so it cannot be written here —
+      // the old code did, and it only went unnoticed because the live database
+      // was pushed from a schema state where the constraint was not enforced.
+      // On a database built from the migrations, that insert fails with a
+      // foreign-key violation. The real custody is in the holder pair below;
+      // the legacy column points at the Property Officer, who is the college
+      // pool behind the department.
+      ownerId: officer.id,
       holderType: "DEPARTMENT",
       holderId: physDept.id,
       purchaseCost: 50000,
@@ -430,7 +447,7 @@ async function main() {
       name: "Dell 65W Charger",
       categoryId: byName["Electronics"].id,
       orgUnitId: csDept.id,
-      building: "CNCS Building",
+      buildingId: cncsBuilding.id,
       floor: "3",
       room: "312",
       ownerId: csStaff1.id,
@@ -448,7 +465,7 @@ async function main() {
   await prisma.item.updateMany({
     where: { tagId: { in: [LAPTOP_TAG_ID, CHARGER_TAG_ID] } },
     data: {
-      building: "CNCS Building",
+      buildingId: cncsBuilding.id,
       floor: "3",
       room: "312",
       ownerId: csStaff1.id,

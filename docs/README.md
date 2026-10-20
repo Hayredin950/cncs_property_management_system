@@ -8,6 +8,7 @@ file in this folder where they disagree.
 
 | File | What it is | Authority |
 | --- | --- | --- |
+| [`MASTER-TODO.md`](./MASTER-TODO.md) | **The work list.** Every phase, every task, with the evidence each one demands before it can be ticked — backend correctness, database reproducibility, realistic per-individual seed data, frontend↔backend contract tests, per-role UI/UX, responsive (mobile + desktop) checks, mobile parity, CI & deployment, and the role walkthroughs that decide whether the app is ready. | **Start here for work.** Read the KB first, then this. |
 | [`KNOWLEDGE-BASE.md`](./KNOWLEDGE-BASE.md) | **The one document.** Roles, capability matrix, entity/DB schema, canonical state machines (with explicit rulings on former conflicts C1–C19), full API surface with wiring status, per-role navigation/UI, security and visibility rules, verified feature matrix, bug list, prioritised checkbox backlog, and definition of done. | **The source of truth.** Supersedes everything below where they conflict. |
 | [`deployment.md`](./deployment.md) | The two Vercel projects, every environment variable, migration steps, and recorded deployment failures. | Operational runbook, referenced by KB §6. |
 | [`monolithic-system-design.md`](./monolithic-system-design.md) | The 14 Oct audit the KB was built from — kept for the file:line audit trail. | Superseded wherever the KB rules on a conflict. |

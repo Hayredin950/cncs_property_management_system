@@ -71,8 +71,27 @@ const accountRequestSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
   email: z.string().trim().email("Enter a valid email"),
   password: z.string().min(8, "At least 8 characters"),
-  department: z.string().trim().min(1, "Department is required"),
+  // The unit the applicant belongs to. `departmentId` (an OrgUnit id) is the
+  // canonical form; `department` (a unit name) is accepted so a client that
+  // only has the name can still ask for an account. Exactly one is required and
+  // the name is resolved against OrgUnit below — a request that names no real
+  // unit cannot be scoped to a head, so it is refused rather than orphaned.
+  departmentId: z.string().trim().uuid("Select your department").optional(),
+  department: z.string().trim().min(1, "Department is required").optional(),
+  staffId: z.string().trim().min(1, "Staff ID is required").optional(),
 });
+
+/**
+ * The institution's own domain, so a request cannot be filed from a personal
+ * mailbox. Both the college subdomain and the university domain are accepted;
+ * anything else is refused before a row is written.
+ */
+const ALLOWED_EMAIL_DOMAINS = ["cncs.aau.edu.et", "aau.edu.et"];
+
+function emailDomainAllowed(email: string): boolean {
+  const domain = email.split("@")[1]?.toLowerCase() ?? "";
+  return ALLOWED_EMAIL_DOMAINS.some((allowed) => domain === allowed || domain.endsWith(`.${allowed}`));
+}
 
 /**
  * `POST /auth/account-requests` — ask for an account (spec 3.1.2).
@@ -107,6 +126,17 @@ router.post(
     }
 
     const email = normalizeEmail(parseResult.data.email);
+    const { departmentId, department, staffId } = parseResult.data;
+
+    if (!departmentId && !department) {
+      return res.status(400).json({ error: "Department is required" });
+    }
+
+    if (!emailDomainAllowed(email)) {
+      return res.status(400).json({
+        error: "Use your AAU email address (for example name@cncs.aau.edu.et)",
+      });
+    }
 
     try {
       const existing = await prisma.user.findFirst({
@@ -117,20 +147,65 @@ router.post(
         return res.status(409).json({ error: "User with this email or ID already exists" });
       }
 
+      if (staffId) {
+        const staffIdTaken = await prisma.user.findFirst({
+          where: { staffId: { equals: staffId, mode: "insensitive" } },
+          select: { id: true },
+        });
+        if (staffIdTaken) {
+          return res.status(409).json({ error: "User with this email or ID already exists" });
+        }
+      }
+
+      // Resolve the unit. A request has to land in a real unit or the queue has
+      // no way to scope it to a head — a request naming a unit that does not
+      // exist is refused, not filed as orphaned.
+      const unit = await prisma.orgUnit.findFirst({
+        where: departmentId
+          ? { id: departmentId }
+          : { name: { equals: department!, mode: "insensitive" } },
+        select: { id: true, name: true, isActive: true, acceptsSelfReg: true },
+      });
+      if (!unit || !unit.isActive) {
+        return res.status(400).json({ error: "Unknown department. Pick one from the list." });
+      }
+      if (!unit.acceptsSelfReg) {
+        return res.status(400).json({
+          error: "This department does not accept online account requests. Ask the property office.",
+        });
+      }
+
       const passwordHash = await argon2.hash(parseResult.data.password, {
         type: argon2.argon2id,
       });
 
-      const requested = await prisma.user.create({
-        data: {
-          fullName: parseResult.data.fullName,
-          email,
-          passwordHash,
-          role: "STAFF",
-          accountStatus: "PENDING_APPROVAL",
-          department: parseResult.data.department,
-        },
-        select: { id: true, fullName: true, email: true, accountStatus: true, createdAt: true },
+      // The User row and its AccountRequest row are written together: the user
+      // carries the credential and the status the login gate reads, the request
+      // carries the unit and the decision trail. A half-written request (user
+      // without a request) would be invisible to the queue.
+      const requested = await prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            fullName: parseResult.data.fullName,
+            email,
+            passwordHash,
+            role: "STAFF",
+            accountStatus: "PENDING_APPROVAL",
+            orgUnitId: unit.id,
+            ...(staffId ? { staffId } : {}),
+          },
+          select: { id: true, fullName: true, email: true, accountStatus: true, createdAt: true },
+        });
+
+        await tx.accountRequest.create({
+          data: {
+            userId: user.id,
+            requestedUnitId: unit.id,
+            status: "PENDING_APPROVAL",
+          },
+        });
+
+        return user;
       });
 
       // No token. There is nothing this request may do until it is approved —
@@ -142,6 +217,7 @@ router.post(
           fullName: requested.fullName,
           email: requested.email,
           accountStatus: requested.accountStatus,
+          department: unit.name,
           requestedAt: requested.createdAt,
         },
       });

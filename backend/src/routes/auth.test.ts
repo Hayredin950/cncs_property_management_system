@@ -15,6 +15,18 @@ vi.mock("../lib/prisma.js", () => {
         findUnique: vi.fn(),
         create: vi.fn(),
       },
+      // The account-request intake resolves the applicant's unit before it can
+      // write anything — a request that names no real unit cannot be scoped to
+      // a head, so it is refused rather than filed as an orphan.
+      orgUnit: {
+        findFirst: vi.fn(),
+      },
+      accountRequest: {
+        create: vi.fn(),
+      },
+      // The user row and its request row are written together, in one
+      // transaction, so a request can never exist without its queue row.
+      $transaction: vi.fn(),
     },
   };
 });
@@ -328,8 +340,20 @@ describe("POST /auth/account-requests", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a pending account, normalises the email, and issues no token", async () => {
-    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+  /**
+   * The unit the applicant asked for. The intake resolves it before writing
+   * anything — a request has to land in a real unit or the approval queue has
+   * no way to scope it to a head.
+   */
+  const CS_UNIT = {
+    id: "unit-cs",
+    name: "Computer Science",
+    isActive: true,
+    acceptsSelfReg: true,
+  };
+
+  /** The transaction callback the route runs, with both writes mocked. */
+  function mockTransaction() {
     vi.mocked(prisma.user.create).mockResolvedValueOnce({
       id: "pending-1",
       fullName: REQUEST_BODY.fullName,
@@ -337,6 +361,20 @@ describe("POST /auth/account-requests", () => {
       accountStatus: "PENDING_APPROVAL",
       createdAt: new Date("2026-10-12T10:00:00.000Z"),
     } as never);
+    vi.mocked(prisma.accountRequest.create).mockResolvedValueOnce({} as never);
+    vi.mocked(prisma.$transaction).mockImplementationOnce(
+      (async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          user: prisma.user,
+          accountRequest: prisma.accountRequest,
+        })) as never,
+    );
+  }
+
+  it("creates a pending account, normalises the email, and issues no token", async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+    vi.mocked(prisma.orgUnit.findFirst).mockResolvedValueOnce(CS_UNIT as never);
+    mockTransaction();
 
     const res = await request(app).post("/auth/account-requests").send(REQUEST_BODY);
 
@@ -359,17 +397,56 @@ describe("POST /auth/account-requests", () => {
     // The person chose this password (spec 3.3.7/12.5), so there is no shared
     // secret to replace and nothing to force a change of.
     expect(call.data.mustChangePassword).toBeUndefined();
+    // The request is filed against a REAL unit — this is what makes it visible
+    // to that unit's head and nobody else's.
+    expect(call.data.orgUnitId).toBe("unit-cs");
+    // The legacy `department` free-text column is gone from the schema; writing
+    // it was what made every sign-up fail with a Prisma validation error.
+    expect(call.data.department).toBeUndefined();
+  });
+
+  it("files the queue row in the same transaction, so a request cannot exist without one", async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+    vi.mocked(prisma.orgUnit.findFirst).mockResolvedValueOnce(CS_UNIT as never);
+    mockTransaction();
+
+    const res = await request(app).post("/auth/account-requests").send(REQUEST_BODY);
+
+    expect(res.status).toBe(201);
+    expect(prisma.$transaction).toHaveBeenCalled();
+    const requestCall = vi.mocked(prisma.accountRequest.create).mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(requestCall.data.userId).toBe("pending-1");
+    expect(requestCall.data.requestedUnitId).toBe("unit-cs");
+    expect(requestCall.data.status).toBe("PENDING_APPROVAL");
+  });
+
+  it("refuses a request that names a department the college does not have", async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+    vi.mocked(prisma.orgUnit.findFirst).mockResolvedValueOnce(null);
+
+    const res = await request(app)
+      .post("/auth/account-requests")
+      .send({ ...REQUEST_BODY, department: "Astrology" });
+
+    expect(res.status).toBe(400);
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a request from an address outside the institution", async () => {
+    const res = await request(app)
+      .post("/auth/account-requests")
+      .send({ ...REQUEST_BODY, email: "hanna@gmail.com" });
+
+    expect(res.status).toBe(400);
+    expect(prisma.user.create).not.toHaveBeenCalled();
   });
 
   it("does not require a token — asking is public, approving is not", async () => {
     vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
-    vi.mocked(prisma.user.create).mockResolvedValueOnce({
-      id: "pending-1",
-      fullName: REQUEST_BODY.fullName,
-      email: "hanna@cncs.aau.edu.et",
-      accountStatus: "PENDING_APPROVAL",
-      createdAt: new Date(),
-    } as never);
+    vi.mocked(prisma.orgUnit.findFirst).mockResolvedValueOnce(CS_UNIT as never);
+    mockTransaction();
 
     const res = await request(app).post("/auth/account-requests").send(REQUEST_BODY);
 

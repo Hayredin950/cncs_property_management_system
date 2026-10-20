@@ -627,13 +627,18 @@ reportsRouter.get(
         },
         select: {
           id: true,
-          sessionNumber: true,
-          type: true,
+          // The schema names these `reportNumber` / `sessionType` / `scopeType`
+          // / `scopeValue` and keeps the item tally in the `results` relation.
+          // The old names (`sessionNumber`, `type`, `scope`, `itemCount`) do not
+          // exist on AuditSession, so this select made the endpoint 500.
+          reportNumber: true,
+          sessionType: true,
           startedAt: true,
           completedAt: true,
           runBy: { select: { fullName: true, email: true } },
-          scope: true,
-          itemCount: true,
+          scopeType: true,
+          scopeValue: true,
+          results: { select: { id: true } },
         },
       });
 
@@ -648,14 +653,14 @@ reportsRouter.get(
         "Item Count",
       ];
       const rows: Array<Record<string, CsvValue>> = sessions.map((s) => ({
-        sessionNumber: s.sessionNumber,
-        type: s.type,
+        sessionNumber: s.reportNumber ?? "",
+        type: s.sessionType,
         auditorName: s.runBy.fullName,
         auditorEmail: s.runBy.email,
-        scope: s.scope,
+        scope: s.scopeValue ?? s.scopeType,
         startedAt: s.startedAt.toISOString(),
         completedAt: s.completedAt?.toISOString() ?? "",
-        itemCount: s.itemCount,
+        itemCount: s.results.length,
       }));
 
       if (query.format === "pdf") {

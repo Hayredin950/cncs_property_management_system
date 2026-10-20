@@ -237,3 +237,7 @@ generated
 .obsidian/
 .vercel
 .env*
+
+# Credentials file — holds a live DB password, a Vercel token and a git identity.
+# It is meant for this machine only; it must never be published.
+docs/LOCAL-CREDENTIALS.md

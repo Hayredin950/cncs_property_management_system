@@ -35,21 +35,33 @@
 -- and they keep null invite fields, the same way `24fb728`'s queue migration left
 -- `reviewedById` null on every row it did not apply to.
 
-ALTER TABLE "AccountRequest" ADD COLUMN "authorizedBy" TEXT;
-ALTER TABLE "AccountRequest" ADD COLUMN "authorizationRef" TEXT;
-ALTER TABLE "AccountRequest" ADD COLUMN "authorizationNote" TEXT;
-ALTER TABLE "AccountRequest" ADD COLUMN "invitedById" TEXT;
-ALTER TABLE "AccountRequest" ADD COLUMN "invitedAt" TIMESTAMP(3);
+-- `IF NOT EXISTS` throughout: the repair migration
+-- `20261013000000_materialize_account_tables` creates these tables already
+-- carrying the invite columns, and the live database has them too (it was
+-- pushed from a later schema state). A plain ADD COLUMN fails on both paths
+-- with "column already exists", which is how this migration could never
+-- complete anywhere. Adding an existing column is a no-op; adding a missing one
+-- is the point.
+ALTER TABLE "AccountRequest" ADD COLUMN IF NOT EXISTS "authorizedBy" TEXT;
+ALTER TABLE "AccountRequest" ADD COLUMN IF NOT EXISTS "authorizationRef" TEXT;
+ALTER TABLE "AccountRequest" ADD COLUMN IF NOT EXISTS "authorizationNote" TEXT;
+ALTER TABLE "AccountRequest" ADD COLUMN IF NOT EXISTS "invitedById" TEXT;
+ALTER TABLE "AccountRequest" ADD COLUMN IF NOT EXISTS "invitedAt" TIMESTAMP(3);
 
-ALTER TABLE "AdminActionLog" ADD COLUMN "authorizedBy" TEXT;
-ALTER TABLE "AdminActionLog" ADD COLUMN "authorizationRef" TEXT;
+ALTER TABLE "AdminActionLog" ADD COLUMN IF NOT EXISTS "authorizedBy" TEXT;
+ALTER TABLE "AdminActionLog" ADD COLUMN IF NOT EXISTS "authorizationRef" TEXT;
 
 -- ON DELETE SET NULL on the inviter, for the same reason the reviewer is: removing
 -- an administrator's account must not be blocked by — nor cascade into — the
 -- accounts they invited. The invitation stands; only the name on it goes.
-ALTER TABLE "AccountRequest"
-  ADD CONSTRAINT "AccountRequest_invitedById_fkey"
-  FOREIGN KEY ("invitedById") REFERENCES "User"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'AccountRequest_invitedById_fkey') THEN
+    ALTER TABLE "AccountRequest"
+      ADD CONSTRAINT "AccountRequest_invitedById_fkey"
+      FOREIGN KEY ("invitedById") REFERENCES "User"("id")
+      ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END$$;
 
-CREATE INDEX "AccountRequest_invitedById_idx" ON "AccountRequest"("invitedById");
+CREATE INDEX IF NOT EXISTS "AccountRequest_invitedById_idx" ON "AccountRequest"("invitedById");

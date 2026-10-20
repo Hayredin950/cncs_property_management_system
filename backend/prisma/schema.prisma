@@ -419,6 +419,14 @@ model Item {
   /// mismatch instead of silently overwriting another officer's edit.
   version Int @default(0)
 
+  /// When this row last changed. The expiry and escalation windows ask "how long
+  /// has this been waiting?" — a claim that has never been answered, a request
+  /// stuck in RETURN_PENDING_CONFIRMATION, an item still awaiting a new head's
+  /// verification. Without a timestamp for "last changed", those questions could
+  /// not be asked at all: the columns did not exist, and the services that
+  /// filtered on them failed at runtime instead of answering.
+  updatedAt DateTime @updatedAt
+
   accessories    Item[]      @relation("ItemAccessories")
   parentItem     Item?       @relation("ItemAccessories", fields: [parentItemId], references: [id])
   parentItemId   String?
@@ -504,6 +512,11 @@ model Request {
 
   createdAt DateTime  @default(now())
   decidedAt DateTime?
+
+  /// When this row last changed — the same reason as `Item.updatedAt`: the
+  /// return-confirmation window asks how long a loan has been waiting for the
+  /// lender to check it back in.
+  updatedAt DateTime @updatedAt
 }
 
 model ItemEditLog {

@@ -38,3 +38,10 @@ jobs:
 
       - name: Type check / build
         run: pnpm run build
+
+      # The tests were missing from this workflow entirely: it only built, so a
+      # broken suite reported a green check and the failures were invisible
+      # until someone ran them locally. 27 tests were failing on a branch whose
+      # CI was green — that is what this step is for.
+      - name: Run tests
+        run: pnpm test

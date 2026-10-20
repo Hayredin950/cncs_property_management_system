@@ -1313,6 +1313,13 @@ usersRouter.post(
 
 /**
  * `GET /users/invites` — list outstanding invites with status (T8)
+ *
+ * An invite is a `User` row in `PENDING_EMAIL_VERIFICATION` plus an
+ * `EmailToken` of type `INVITE` carrying the hash and the expiry. The expiry
+ * lives on the token, not on the user — `User` has no `expiresAt` column, and
+ * the earlier version of this route selected one, which made the endpoint fail
+ * with a Prisma validation error (a 500 on the screen an administrator uses to
+ * see who has not accepted yet).
  */
 usersRouter.get(
   "/invites",
@@ -1320,30 +1327,47 @@ usersRouter.get(
   requireCapability("ACCOUNT_MANAGE"),
   async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const invites = await prisma.user.findMany({
-        where: { accountStatus: "PENDING_EMAIL_VERIFICATION" },
+      const tokens = await prisma.emailToken.findMany({
+        where: { type: "INVITE", usedAt: null },
         orderBy: { createdAt: "desc" },
         select: {
           id: true,
-          fullName: true,
-          email: true,
-          role: true,
-          orgUnitId: true,
           createdAt: true,
           expiresAt: true,
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              role: true,
+              orgUnitId: true,
+              accountStatus: true,
+              accountRequest: {
+                select: { authorizedBy: true, authorizationRef: true, invitedAt: true },
+              },
+            },
+          },
         },
       });
 
       const now = new Date();
-      const withStatus = invites.map((invite) => ({
-        id: invite.id,
-        fullName: invite.fullName,
-        email: invite.email,
-        role: invite.role,
-        orgUnitId: invite.orgUnitId,
-        createdAt: invite.createdAt,
-        expiresAt: invite.expiresAt,
-        status: invite.expiresAt && new Date(invite.expiresAt) < now ? "EXPIRED" : "SENT",
+      const withStatus = tokens.map((token) => ({
+        id: token.user.id,
+        tokenId: token.id,
+        fullName: token.user.fullName,
+        email: token.user.email,
+        role: token.user.role,
+        orgUnitId: token.user.orgUnitId,
+        createdAt: token.user.accountRequest?.invitedAt ?? token.createdAt,
+        expiresAt: token.expiresAt,
+        authorizedBy: token.user.accountRequest?.authorizedBy ?? null,
+        authorizationRef: token.user.accountRequest?.authorizationRef ?? null,
+        status:
+          token.expiresAt.getTime() < now.getTime()
+            ? "EXPIRED"
+            : token.user.accountStatus === "PENDING_EMAIL_VERIFICATION"
+              ? "SENT"
+              : "ACCEPTED",
       }));
 
       res.status(200).json(withStatus);
@@ -1355,6 +1379,11 @@ usersRouter.get(
 
 /**
  * `POST /users/invites/:id/resend` — resend an invite email (T8)
+ *
+ * Reissues the single-use token: the old token row is deleted and a new one
+ * created with a fresh hash and expiry, so a link that leaked cannot be used
+ * after a resend. The account row is reused (a lapsed invite is not a
+ * duplicate), exactly as the invite service does when it renews one.
  */
 usersRouter.post(
   "/invites/:id/resend",
@@ -1370,7 +1399,14 @@ usersRouter.post(
 
       const invite = await prisma.user.findUnique({
         where: { id },
-        select: { id: true, email: true, fullName: true, role: true, accountStatus: true },
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          role: true,
+          accountStatus: true,
+          accountRequest: { select: { id: true, authorizedBy: true, authorizationRef: true } },
+        },
       });
 
       if (!invite || invite.accountStatus !== "PENDING_EMAIL_VERIFICATION") {
@@ -1381,9 +1417,21 @@ usersRouter.post(
       const { token, tokenHash } = newInviteToken();
       const newExpiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000);
 
-      await prisma.user.update({
-        where: { id },
-        data: { passwordHash: tokenHash, expiresAt: newExpiresAt },
+      await prisma.$transaction(async (tx) => {
+        await tx.emailToken.deleteMany({ where: { userId: id, type: "INVITE", usedAt: null } });
+        await tx.emailToken.create({
+          data: { userId: id, type: "INVITE", tokenHash, expiresAt: newExpiresAt },
+        });
+        await tx.adminActionLog.create({
+          data: {
+            actorId: req.user!.id,
+            action: "ACCOUNT_INVITE_RESENT",
+            targetUserId: id,
+            after: { email: invite.email, role: invite.role, expiresAt: newExpiresAt.toISOString() },
+            authorizedBy: invite.accountRequest?.authorizedBy ?? null,
+            authorizationRef: invite.accountRequest?.authorizationRef ?? null,
+          },
+        });
       });
 
       const inviteUrl = `${process.env.SITE_ORIGIN || "https://cncs-pms-web.vercel.app"}/accept-invite?token=${token}`;

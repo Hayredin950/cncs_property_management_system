@@ -61,7 +61,16 @@ export const requestsRouter: ExpressRouter = Router();
  */
 const TRANSACTION_OPTIONS = { maxWait: 5000, timeout: 15000 } as const;
 
-const REQUEST_TYPES = ["TRANSFER", "DISPOSAL"] as const;
+/**
+ * The three request types the app understands.
+ *
+ * `LOAN` was missing from this list while the rest of the loan workflow — the
+ * approval branch, the return handshake, the overdue report — was fully built.
+ * The result was a loan that could be approved, returned and reported on, but
+ * never asked for: the intake refused the one request that starts it. The
+ * schema below now accepts it, and a loan names the date it is due back.
+ */
+const REQUEST_TYPES = ["TRANSFER", "DISPOSAL", "LOAN"] as const;
 
 /**
  * A transfer names at least one thing to change; a disposal names none. The
@@ -81,6 +90,11 @@ const createRequestSchema = z
     newLocationFloor: z.string().trim().min(1).optional(),
     newLocationRoom: z.string().trim().min(1).optional(),
     newOwnerId: z.string().trim().min(1).optional(),
+    // A loan names when it is due back. The due date the item ends up with is
+    // calculated from the CLAIM (the moment the borrower actually collects it),
+    // not from the approval — but the request needs a target date, and a loan
+    // without one is a loan with no end.
+    loanDueDate: z.coerce.date().optional(),
   })
   .superRefine((value, ctx) => {
     const namesLocation = Boolean(
@@ -100,6 +114,35 @@ const createRequestSchema = z
         code: "custom",
         message: "A disposal request must not include transfer fields",
         path: ["type"],
+      });
+    }
+    if (value.type === "LOAN") {
+      if (namesLocation || namesOwner) {
+        ctx.addIssue({
+          code: "custom",
+          message: "A loan request must not include transfer fields",
+          path: ["type"],
+        });
+      }
+      if (!value.loanDueDate) {
+        ctx.addIssue({
+          code: "custom",
+          message: "A loan request must say when the item is due back",
+          path: ["loanDueDate"],
+        });
+      } else if (value.loanDueDate.getTime() <= Date.now()) {
+        ctx.addIssue({
+          code: "custom",
+          message: "The due date must be in the future",
+          path: ["loanDueDate"],
+        });
+      }
+    }
+    if (value.type !== "LOAN" && value.loanDueDate) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Only a loan request has a due date",
+        path: ["loanDueDate"],
       });
     }
   });
@@ -437,6 +480,12 @@ requestsRouter.post(
                   ...(body.newLocationRoom ? { newLocationRoom: body.newLocationRoom } : {}),
                   ...(body.newOwnerId ? { newOwnerId: body.newOwnerId } : {}),
                 }
+              : {}),
+            // A loan names when it is due back. The date the item actually
+            // carries is calculated from the claim (when the borrower collects
+            // it) by the workflow; this is the date that was asked for.
+            ...(body.type === "LOAN" && body.loanDueDate
+              ? { loanDueDate: body.loanDueDate }
               : {}),
           },
           select: REQUEST_DETAIL_SELECT,

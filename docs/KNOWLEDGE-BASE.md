@@ -19,6 +19,25 @@
 | Deploy | **Two Vercel projects** — `cncs-pms-web` (static Vite), `cncs-pms-api` (one serverless fn exporting Express); Neon `CNCS PMS` Postgres (pooled DB + unpooled DIRECT_URL); Cloudinary for photos |
 | Docs authority | **This file.** Anything in `docs/archive/` is history only, effective 20 Oct |
 
+### 1.1 Tech stack (verified)
+
+| Layer | Stack |
+|---|---|
+| Backend | Node.js 22 · Express 5 · TypeScript (strict) · Prisma 7 (datasource URL in `prisma.config.ts`, not in `schema.prisma`) · Postgres on Neon · JWT (1-day) + argon2id · pnpm · Docker |
+| Backend libs | zod validation · `@prisma/adapter-pg` with a custom retry wrapper (`lib/dbRetry.ts`) · multer → Cloudinary (cloud `r3rzw77s`, no disk on Vercel) · hand-rolled CSV/PDF (no deps) |
+| Frontend | React 19 · Vite · TypeScript (strict) · Tailwind v4 (CSS-first `@theme`) · React Router v7 (data router) · TanStack Query v5 · react-hook-form + zod · html5-qrcode · lucide-react · sonner · Vitest + RTL + MSW |
+| Mobile | Flutter · go_router · flutter_riverpod · dio · flutter_secure_storage · mobile_scanner · flutter test (13 test files; **no CI workflow for mobile**) |
+| Infra | Vercel (2 projects) · Neon Postgres (pooled `DATABASE_URL` + unpooled `DIRECT_URL`) · Cloudinary · GitHub Actions (backend + frontend CI) |
+
+### 1.2 Org hierarchy
+
+```
+College (CNCS — one college in scope)
+  └── Department (CS · Biology · Chemistry · Physics)
+        └── Individual (staff / head holding assets personally)
+```
+`OrgUnit` is self-referencing (`parentId`, `type` = COLLEGE | DEPARTMENT | LAB_GROUP). **Physics deliberately has no head** — it exercises the vacant-head fallback to SYSTEM_ADMIN. One active head per unit; a user heads at most one unit; `acceptsSelfReg` gates which units accept self-registration.
+
 > Branch consolidation: the branch gulf in Yanet's repo and stale-branch archiving (list in `monolithic-system-design.md` §11.0) still stands as an open sys-admin task — archive-checked before any new work begins.
 
 ---
@@ -245,6 +264,22 @@ PO/AUDITOR opens a session(scope=DEPARTMENT OR BUILDING)
 
 - Physics always has `acceptsSelfReg` but no active head (by design, tests the vacant-head fallback). Only SYSTEM_ADMIN sees headless-unit requests in the queue.
 
+### 5.5 Handshake summary matrix (one pattern, applied everywhere)
+
+| Action | Initiate | Approve | Confirm / claim | Decline path |
+|---|---|---|---|---|
+| Registration | Property Officer (registers an item) | — | Assigned holder claims | `refuse-claim` (reverts to COLLEGE pool) |
+| Transfer → individual | Requester | Stage 1 (releasing head) + Stage 2 (receiving head) | Recipient claims | `refuse-claim` → reverts to prior holder, both heads notified |
+| Transfer → department | Requester | Stage 1 + Stage 2 heads | — (stage-2 approval **is** the department's acceptance) | reject at either stage |
+| Loan start | Borrower files | Approving head / officer | Borrower claims → then `LOANED`, due date from the **claim** time | claim expiry → loan auto-cancels, approver notified |
+| Loan return | Borrower (`return-initiate`) | — | Lender/officer (`return-confirm`) | `return-dispute` → escalates to Property Officer, stays `LOANED` |
+| Disposal | Requester | Property Officer | — (terminal) | reject; later `reverse-disposal` (logged correction) |
+| Handover | SYSTEM_ADMIN activates the new head | — | New head verifies each item (`verify-confirm` / `verify-flag`) | FLAG follows the audit-MISSING path (confirmed LOST or re-check) |
+| Account request | Applicant | Unit head → (parent head) → SYSTEM_ADMIN | — (activation **is** the confirmation) | reject with a reason |
+| Privileged invite | SYSTEM_ADMIN | — (`authorizedBy` + `authorizationRef` **are** the approval record) | Invitee sets their own password | link expires unused; revoke/resend not built yet |
+
+Verified in code: transfer-to-individual sets `PENDING_CLAIM` (`services/requestWorkflow.ts:501`); loan approval sets `PENDING_CLAIM` before `LOANED` (`requestWorkflow.ts:514-518`).
+
 ---
 
 ## 6. Full API surface (live inventory read from code — mirrored from `backend-audit-2026-10-20.md` §2, trimmed to current line numbers)
@@ -364,7 +399,7 @@ Legend: `[DONE]` = built, wired, tested + live behavior proof · `[PARTIAL]` = b
 | Privileged invite + accept | [DONE unit-tested, BLOCKED from live verify] | T6, 41 tests; blocked by `AccountRequest.authorizedBy` column missing on live DB (§4.2) |
 | AdminActionLog on approval decisions | [DONE] | approved/reject/escalate + invite/resend/accept logged; **append-only not DB-enforced** |
 | Staff self-registration intake | [BROKEN] | `POST /auth/account-requests` writes `User.department` descriptor not in schema (auth.ts:131) — **always 500**; never sets `orgUnitId`/`staffId`; no verify-email endpoint at all |
-| Approval queue scoped (HEAD own unit / SYS_ADMIN fallback) | [DONE] | queue patrol live; escalate-by-approver fallback = str `[ESCALATED]`|reviewNote marker hack (Backlog) |
+| Approval queue scoped (HEAD own unit / SYS_ADMIN fallback) | [DONE] | queue works live; the escalation fallback is currently a `[ESCALATED]` marker string inside `reviewNote` (Backlog F03) |
 | `resolveApprover` head→parent→SYSTEM_ADMIN fallback | [BROKEN] | function exists with tests (`approvers.ts`) but **never wired to any queue/approval route** (grep: only defined in `approvers.ts:11`) |
 | Item registration + claim-due stamp | [DONE] | items.ts POST /; custody CREATED |
 | Claim handshake (claim / refuse / correction) | [PARTIAL] | refuse-claim works; **claim-with-correction has no UI wiring on either frontend** |
@@ -581,7 +616,74 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 
 ---
 
-## 17. Conflict rulings ledger (every known doc conflict, resolved once)
+## 17. Schema design decisions — do NOT re-open without a written reason
+
+| Decision | Rationale |
+|---|---|
+| 5 roles (`ACCOUNT_ADMIN` merged into `SYSTEM_ADMIN`) | Decided 12 Oct; the whole permission matrix and 500+ tests are built on it |
+| Staff self-registration approved by the **unit head** (D1) | Decided & final (§3.2) |
+| Privileged roles are **invite-only** (D2) | The appointing authority sits outside the system; we record it, we don't replace it |
+| Every privileged invite records `authorizedBy` + `authorizationRef` (D3) | The college office / Office of Auditors authorizes; the app is the record, not the authority |
+| A SYSTEM_ADMIN account is created/approved by a **different** SYSTEM_ADMIN (D4) | No self-approval anywhere |
+| Holder model (`holderType`/`holderId`) over `ownerId` | `ownerId` is legacy, still dual-written during the expand→contract migration; the holder pair is the truth |
+| Disposal = **single** approver (Property Officer) for phase 1 | Two-approver threshold is a finance-policy decision (open, §16) |
+| **No public item routes** | All item reads require auth; anonymous sees only category/building |
+| `POST /auth/register` removed | Replaced by self-request + invite; no admin ever sets a password |
+| Audit scope is **frozen at session start** (PENDING rows) | Completion computes against the frozen set, never a fresh query |
+| Append-only logs (`AdminActionLog`, `CustodyEvent`, `ItemEditLog`) | Never UPDATE/DELETE; DB-level enforcement is still open (G08) |
+| JWT 1-day expiry, no refresh token | Accepted limitation, mitigated by `tokenVersion` bumps on credential/role change |
+| QR tag URL = `${PUBLIC_BASE_URL}/item/:tagId` | Baked in at print time — changing `PUBLIC_BASE_URL` after printing dead-ends every existing sticker, and CI cannot detect it |
+
+## 18. Code conventions (follow these — they keep the three clients in step)
+
+**Backend**
+- Every route handler gates with `requireCapability` / `requireAnyCapability` — never branch on role names inside handlers.
+- Field filtering happens server-side via `sanitizeItem` (`utils/filterItemFields.ts`) — never in the client.
+- Every state-changing route writes its append-only log row **in the same transaction** as the mutation.
+- `HttpError` for predictable error shapes; zod `validate(schema)` middleware for body/query/params.
+- Dual-mount pattern `app.use(["/api/v1/X", "/X"], router)` — keep until clients are canonical, then drop the alias.
+
+**Frontend**
+- All API calls go through `lib/apiClient.ts` — never a bare `fetch` (it guarantees the Bearer token, error normalization, and the single 401 handler).
+- `lib/permissions.ts` decides what to **render**; the server decides what is **allowed**. Never render a field the server did not send — its absence is the access control.
+- `ASSET_ROLES` = everyone except SYSTEM_ADMIN; use it rather than re-deriving the rule.
+- Wrong role → the shared 404 page (no separate 403 page).
+- Every mutation invalidates the affected TanStack Query keys and toasts the outcome.
+- Dates are UTC; label date-range inputs as UTC.
+- Photos are URLs until `POST /uploads/photo` is called; `PhotoField` handles camera / file / pasted URL.
+
+**Mobile**
+- All calls through `lib/core/api/api_client.dart` (dio + Bearer interceptor + 401 handling).
+- `lib/models/permissions.dart` mirrors the backend matrix exactly (§3.1.1 — today it is 2 capabilities behind).
+- `lib/app/router.dart` uses go_router; capability-gated routes 404 instead of 403.
+
+---
+
+## 19. Seed data reference (verified from `backend/prisma/seed.ts`)
+
+`cd backend && pnpm prisma:seed` (idempotent — resets demo rows to a known state without wiping `ItemEditLog` history).
+
+| Role | Email | Password |
+|---|---|---|
+| SYSTEM_ADMIN | `admin@cncs.aau.edu.et` | `Admin123!` |
+| PROPERTY_OFFICER | `officer@cncs.aau.edu.et` | `Officer123!` |
+| DEPARTMENT_HEAD (CS) | `head.cs@cncs.aau.edu.et` | `HeadCS123!` |
+| DEPARTMENT_HEAD (Biology) | `head.bio@cncs.aau.edu.et` | `HeadBIO123!` |
+| DEPARTMENT_HEAD (Chemistry) | `head.chem@cncs.aau.edu.et` | `HeadCHEM123!` |
+| STAFF (CS 1 / CS 2) | `staff.cs1@` / `staff.cs2@cncs.aau.edu.et` | `StaffCS123!` |
+| STAFF (Biology 1 / 2) | `staff.bio1@` / `staff.bio2@cncs.aau.edu.et` | `StaffBIO123!` |
+| STAFF (Chemistry 1) | `staff.chem1@cncs.aau.edu.et` | `StaffCHEM123!` |
+| STAFF (generic) | `staff@cncs.aau.edu.et` | `Staff123!` |
+| DEPARTMENT_HEAD (generic) | `dept.head@cncs.aau.edu.et` | `DeptHead123!` |
+| AUDITOR | `auditor@cncs.aau.edu.et` | `Auditor123!` |
+| PENDING (CS / Bio / Physics) | `pending.cs@` / `pending.bio@` / `pending.phys@cncs.aau.edu.et` | `Pending123!` |
+
+Departments: Computer Science (head), Biology (head), Chemistry (head), **Physics (no head — exercises the fallback)**.
+Demo items: `CNCS-DEMO-0001` laptop · `-0002` office desk · `-0003` microscope · `-0004` charger (accessory of the laptop) · `-0005` · plus `CNCS-STAFF-0001..0010` staff items across the three departments.
+
+---
+
+## 20. Conflict rulings ledger (every known doc conflict, resolved once)
 
 The 20 Oct audit found 19 places where two "current" documents disagreed. Each is ruled here; the losing statement is not repeated anywhere else in this file.
 
@@ -598,7 +700,7 @@ The 20 Oct audit found 19 places where two "current" documents disagreed. Each i
 | C9 | Must pending approvals be reassigned to a new head? | **No per-approver queue exists** — the queue is derived from status + unit on read, so a head change is automatically reflected. Reassignment is therefore unnecessary; only a log line is meaningful. |
 | C10 | May an admin set/reset another user's password? | **No.** The workflow-spec rule wins: no admin of any role ever sees or sets a password. The dead admin-reset UI is removed; the only path back in is a token-based reset (F15). |
 | C11 | Item state names (`REGISTERED/ASSIGNED/IN_USE/IN_STORE/UNDER_REPAIR`) vs the schema enum | **The schema enum is canonical** (§4). The old names do not exist and must not be reintroduced. |
-| C12 | Single-step loan return vs three-endpoint handshake | **The handshake wins** (`return-initiate` → `return-confirm` | `return-dispute`); the old single-step endpoint is superseded (and is now unused). |
+| C12 | Single-step loan return vs three-endpoint handshake | **The handshake wins** (`return-initiate` → `return-confirm` or `return-dispute`); the old single-step endpoint is superseded and now unused |
 | C13 | `WAITLISTED` vs `INVALIDATED` | **Both, with distinct triggers**: `WAITLISTED` = a competing request lost to one that was granted; `INVALIDATED` = the request's premise disappeared (the item's status changed outside the request). §5.2. |
 | C14 | Deployment facts (auto-deploy vs manual CLI; which revision is live) | **Personal repo `main` is the deploy source**; production state is whatever Vercel last built from it. Never infer the live revision from a "Ready" badge — prove it behaviourally (§14 B10). |
 | C15 | Does `POST /auth/register` exist? | **No — removed** 14 Oct. Registration is: self-request (STAFF) or invite (privileged). |
@@ -609,7 +711,7 @@ The 20 Oct audit found 19 places where two "current" documents disagreed. Each i
 
 ---
 
-## 18. Branch reconciliation & deployment plan (Yanet's `lalu-branch` vs our `main`)
+## 21. Branch reconciliation & deployment plan (Yanet's `lalu-branch` vs our `main`)
 
 **Situation:** `Hayredin950/main` (verified, 531 backend tests green, frontend build green) carries the whole workflow-completeness spec and the UI fixes. `yanetgeleta/lalu-branch` carries Yanet's "new master plan 3, staff signup, phase one" work, which is not in `main`, so a PR from `lalu-branch` → `main` is not mergeable (both sides moved).
 
@@ -627,19 +729,19 @@ The 20 Oct audit found 19 places where two "current" documents disagreed. Each i
 3. `pnpm prisma:seed` (idempotent; prints demo credentials).
 4. Deploy API → verify `GET /health` and one authenticated endpoint by real HTTP.
 5. Deploy web → verify `/login`, then the 5-role walkthrough.
-6. Record the deployed commit SHA in this file's §17 log.
+6. Record the deployed commit SHA in this file's §22 log.
 
 **Environment variables** (backend): `DATABASE_URL` (Neon pooled), `DIRECT_URL` (Neon unpooled), `JWT_SECRET`, `PUBLIC_BASE_URL` (**the FRONTEND origin — it is baked into every printed QR sticker; changing it after printing dead-ends every sticker and CI cannot detect it**), `UPLOADS_DIR=/tmp/uploads`, `NOTIFY_EMAIL=false` (stub transport), `CLOUDINARY_CLOUD_NAME/ API_KEY/ API_SECRET` (omit → uploads 503 and the form falls back to a pasted URL), `CORS_ORIGINS` (**required in production; fails closed without it**).
 **Frontend**: `VITE_API_BASE_URL` (inlined at BUILD time), `API_BASE_URL` (runtime, for the social-preview function), optional `VITE_SITE_ORIGIN`.
 
 ---
 
-## 19. Doc-changes log
+## 22. Doc-changes log
 
 | Date | Change | Ruling |
 |---|---|---|
-| 20 Oct | Initial KB issued | Consolidated from 37 docs + 4 code audits (backend, frontend, mobile, docs). C1–C19 conflicts ruled in §17. Capability drift measured in §3.1.1. Backlog in §14. |
+| 20 Oct | Initial KB issued | Consolidated from 37 docs + 4 code audits (backend, frontend, mobile, docs). C1–C19 conflicts ruled in §20. Capability drift measured in §3.1.1. Backlog in §14. |
 | 20 Oct | `docs/README.md` active set rewritten | KB is now the single authority; the other 6 files are detail/incident history. |
 | 20 Oct | `backend-audit-2026-10-20.md` (was root `BACKEND_AUDIT.md`) | Moved into `docs/`; referenced from §4 and §6. |
 
-**How to use this file:** §3–§9 are the *rules* (don't change them without a ruling), §10–§13 are the *measured state* (refresh after each change), §14 is the *work list* (tick with evidence), §17 is the *conflict ledger* (append a row when a new conflict appears), §18 is *operations*.
+**How to use this file:** §3–§9 are the *rules* (don't change them without a ruling), §10–§13 are the *measured state* (refresh after each change), §14 is the *work list* (tick with evidence), §20 is the *conflict ledger* (append a row when a new conflict appears), §21 is *operations*.

@@ -14,7 +14,9 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
 
 /** Square, always ≥44px below `lg` (§8/§12) — the icon alone is never the accessible name. */
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: "h-9 w-9",
+  /** 44px square on a phone, 36px from `sm` up — the same rule the text
+   *  button follows, for the same reason: a thumb, on a phone. */
+  sm: "h-11 w-11 sm:h-9 sm:w-9",
   md: "h-11 w-11",
   lg: "h-14 w-14",
 };

@@ -289,7 +289,7 @@ export function RequestsListPage() {
             <li key={request.id}>
               <Link
                 to={`/requests/${request.id}`}
-                className="flex flex-row items-center gap-4 rounded-md border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
+                className="flex flex-col items-stretch gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 sm:flex-row sm:items-center sm:gap-4"
               >
                 <div className="flex-1 min-w-0">
                   <p className="truncate font-semibold text-slate-900">{request.item.name}</p>
@@ -299,7 +299,11 @@ export function RequestsListPage() {
                   <RequestTypeBadge type={request.type} />
                   <RequestStatusBadge status={request.status} />
                 </div>
-                <div className="text-right shrink-0 w-48">
+                {/* A fixed 12rem column does not fit a phone: the row
+                    overflowed by 94px at 390px wide and the page scrolled
+                    sideways. The column now gives up its width on a small
+                    screen and stacks under the row instead. */}
+                <div className="text-right w-full shrink-0 sm:w-48">
                   <p className="line-clamp-1 text-sm text-slate-600 truncate">{request.reason}</p>
                   <p className="text-xs text-slate-400">
                     {request.requestedBy.fullName} · {formatRelativeTime(request.createdAt)}

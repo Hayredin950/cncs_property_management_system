@@ -46,7 +46,10 @@ export function AauLogo({ className }: { className?: string }) {
         /* The mark is decorative here: the wrapping link already carries the
            accessible name, so a second announcement of "Addis Ababa University"
            would just be noise. */
-        className="h-10 w-auto shrink-0 sm:h-12 md:h-[52px]"
+        /* 44px on the smallest phone, not 40: the crest is the tap target for
+           the home link, and the design system sets 44px as the minimum for
+           anything a thumb has to hit. */
+        className="h-11 w-auto shrink-0 sm:h-12 md:h-[52px]"
       />
 
       <div className="flex min-h-8 shrink-0 flex-col justify-center border-l-2 border-brand-600 pl-2 sm:min-h-12 sm:pl-4">

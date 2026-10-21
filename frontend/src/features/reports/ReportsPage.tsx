@@ -192,10 +192,12 @@ export function ReportsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-200">
+      {/* Four tabs in a row overflowed a 390px phone by 22px, so the bar
+          scrolls sideways on a small screen rather than pushing the page wide. */}
+      <div className="flex gap-2 overflow-x-auto border-b border-slate-200">
         <button
           onClick={() => setTab("inventory")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "inventory"
               ? "border-brand-600 text-brand-600"
               : "border-transparent text-slate-600 hover:text-slate-900"
@@ -205,7 +207,7 @@ export function ReportsPage() {
         </button>
         <button
           onClick={() => setTab("disposals")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "disposals"
               ? "border-brand-600 text-brand-600"
               : "border-transparent text-slate-600 hover:text-slate-900"
@@ -215,7 +217,7 @@ export function ReportsPage() {
         </button>
         <button
           onClick={() => setTab("audit")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "audit"
               ? "border-brand-600 text-brand-600"
               : "border-transparent text-slate-600 hover:text-slate-900"
@@ -225,7 +227,7 @@ export function ReportsPage() {
         </button>
         <button
           onClick={() => setTab("evidence")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "evidence"
               ? "border-brand-600 text-brand-600"
               : "border-transparent text-slate-600 hover:text-slate-900"

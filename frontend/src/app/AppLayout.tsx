@@ -11,7 +11,11 @@ import { useUnreadNotificationCount } from "../hooks/useNotifications";
 import { usePendingCount } from "../hooks/useRequests";
 import { useApprovalsCount } from "../hooks/useUsers";
 import { cn } from "../lib/cn";
-import { canDecideRequests } from "../lib/permissions";
+import {
+  canApproveAnyAccount,
+  canApproveOwnUnitAccounts,
+  canDecideRequests,
+} from "../lib/permissions";
 import { getSidebarCollapsed, setSidebarCollapsed } from "../lib/storage";
 import { staffNav } from "./aauNav";
 import { AppErrorBoundary } from "./AppErrorBoundary";
@@ -137,7 +141,15 @@ export function AppLayout() {
     clearing the inbox invalidates `["notifications"]` and this follows.
   */
   const unreadNotifications = useUnreadNotificationCount();
-  const approvalsQuery = useApprovalsCount(canDecideRequests(user?.role) || user?.role === "DEPARTMENT_HEAD");
+  // The badge counts the **account** approvals queue, so it is asked for by the
+  // two roles that can act on it: the System Admin (any account) and a
+  // Department Head (their own unit's staff). It used to be gated on
+  // `canDecideRequests`, which is the *request* decision capability — the
+  // Property Officer has that and not this one, so every page the officer
+  // opened asked a question the server answers with 403.
+  const approvalsQuery = useApprovalsCount(
+    canApproveAnyAccount(user?.role) || canApproveOwnUnitAccounts(user?.role),
+  );
   const approvalsCount = approvalsQuery.data?.count ?? 0;
 
   // Update browser tab title with badge when there are pending requests or unread notifications
@@ -416,7 +428,11 @@ export function AppLayout() {
               to={item.to}
               className={({ isActive }) =>
                 cn(
-                  "flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium",
+                  // The bottom bar is the phone's primary navigation, and a
+                  // tap target under 44px is under the size the design system
+                  // sets for itself. The icon is 32px; the *target* is the
+                  // whole button, and it now clears 44.
+                  "flex min-h-11 flex-1 flex-col items-center justify-center gap-1 py-2.5 text-xs font-medium",
                   isActive ? "text-brand-700" : "text-aau-gray-500",
                 )
               }

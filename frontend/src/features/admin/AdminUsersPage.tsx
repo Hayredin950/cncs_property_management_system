@@ -101,7 +101,11 @@ export function AdminUsersPage() {
   const showInviteTab = isSystemAdmin;
   const showAccountsTab = isSystemAdmin;
 
-  const usersQuery = useUsers(isSystemAdmin || isDeptHead);
+  // The full account list is `GET /users`, which needs USER_READ — a System
+  // Admin and a Property Officer have it, a Department Head does not. The
+  // head's screen shows the approvals queue (which they may act on), so asking
+  // for the list they may not read only earned a 403 on every visit.
+  const usersQuery = useUsers(isSystemAdmin);
   const approvalsQuery = useApprovals(isSystemAdmin || isDeptHead);
   const unitsQuery = useInvitableUnits(isSystemAdmin);
   const inviteMutation = useInviteUser();

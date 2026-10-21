@@ -29,10 +29,21 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-BASE = (sys.argv[1] if len(sys.argv) > 1 else "https://cncs-pms-web.vercel.app").rstrip("/")
+_arg1 = sys.argv[1] if len(sys.argv) > 1 else ""
+BASE = (_arg1 if _arg1.startswith("http") else "https://cncs-pms-web.vercel.app").rstrip("/")
 API = "https://cncs-pms-api.vercel.app/api/v1"
 
-PHONE = {"width": 390, "height": 844}   # iPhone 14
+# `scripts/responsive-check.py [base-url] [role ...]`
+#
+# The login endpoint is rate limited (10 attempts per IP per 15 minutes), and
+# each role signs in once, so a full run of five roles uses five of the ten. Run
+# it in two halves if it starts failing to sign in — or pass the roles you
+# want: `responsive-check.py "" staff head`.
+ROLES_FILTER = [a for a in sys.argv[2:] if a]
+
+PHONE = {"width": 390, "height": 844}      # iPhone 14
+TABLET = {"width": 768, "height": 1024}     # the breakpoint where the sidebar gives way
+SMALL_DESKTOP = {"width": 1024, "height": 768}
 DESKTOP = {"width": 1440, "height": 900}
 
 ACCOUNTS = [
@@ -111,8 +122,12 @@ def check_touch_targets(page):
 
 def main():
     with sync_playwright() as p:
-        browser = p.chromium.launch()
         for role, email, password in ACCOUNTS:
+            if ROLES_FILTER and role not in ROLES_FILTER:
+                continue
+            # A browser per role: a crash on one role then cannot take the
+            # rest of the run with it.
+            browser = p.chromium.launch()
             context = browser.new_context(viewport=PHONE, device_scale_factor=2)
             page = context.new_page()
             console_errors = []
@@ -135,7 +150,12 @@ def main():
                 continue
 
             for screen in SCREENS[role]:
-                for label, viewport in (("PHONE", PHONE), ("DESKTOP", DESKTOP)):
+                for label, viewport in (
+                    ("PHONE", PHONE),
+                    ("TABLET", TABLET),
+                    ("SMALL", SMALL_DESKTOP),
+                    ("DESKTOP", DESKTOP),
+                ):
                     page.set_viewport_size(viewport)
                     console_errors.clear()
                     failed_requests.clear()
@@ -188,7 +208,7 @@ def main():
                     except Exception as exc:  # noqa: BLE001
                         results.append((role, screen, label, "FAIL", str(exc)[:100]))
             context.close()
-        browser.close()
+            browser.close()
 
     failures = [r for r in results if r[3] == "FAIL"]
     warnings = [r for r in results if r[3] == "WARN"]

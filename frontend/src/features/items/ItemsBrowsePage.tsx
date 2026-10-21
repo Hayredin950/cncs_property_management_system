@@ -239,7 +239,7 @@ export function ItemsBrowsePage() {
         <p className="mt-1 text-sm text-slate-500">{getDescription()}</p>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
         <SearchBar value={search} onChange={(value) => updateParam("search", value)} className="sm:flex-1" />
         {/* Unified scope dropdown */}
         {showScopeDropdown && (

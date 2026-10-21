@@ -177,7 +177,7 @@ export function RequestsListPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Requests</h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -186,7 +186,7 @@ export function RequestsListPage() {
               : "Transfers, disposals and loans you've filed."}
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
           {canDecide && (
             <button
               onClick={() => updateStatus("PENDING")}
@@ -230,7 +230,7 @@ export function RequestsListPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
         <div className="flex-1">
           <Input
             label="Search"

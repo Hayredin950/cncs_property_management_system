@@ -196,16 +196,18 @@ describe("GET /items/:id/history", () => {
       .set("Authorization", `Bearer ${staffToken}`);
     expect(own.status).toBe(200);
 
-    // ...but a colleague's item is not theirs to read, and the answer is the
-    // same as "it does not exist".
+    // ...and the history of an item in **another department's pool** is not
+    // theirs to read: the answer is the same as "it does not exist". A
+    // colleague's *staff-held* item is readable (the register is the
+    // college's) — what nobody may read is another department's own pool.
     vi.mocked(prisma.item.findFirst).mockResolvedValueOnce({
       id: "item-2",
       tagId: "CNCS-DEMO-0002",
-      name: "Someone else's laptop",
+      name: "Another department's pool",
       status: "ACTIVE",
-      orgUnitId: "unit-cs",
-      holderType: "STAFF",
-      holderId: "staff-9",
+      orgUnitId: "unit-bio",
+      holderType: "DEPARTMENT",
+      holderId: "unit-bio",
       ownerId: "staff-9",
     } as never);
 

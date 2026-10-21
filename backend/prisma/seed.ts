@@ -439,8 +439,31 @@ const CATEGORY_PHOTOS: Record<string, string> = {
   "Office Supplies": "/photos/desk.jpg",
 };
 
+/**
+ * The photographs the app actually ships.
+ *
+ * The seed names a picture for nearly every item, and most of those names were
+ * files that never existed — so the item pointed at a picture that 404s and the
+ * frame answered "Image unavailable". A picture of the wrong thing is still a
+ * picture; a picture of nothing is a hole in the register.
+ *
+ * So: a named picture is used when it is one of these, and otherwise the item
+ * gets the picture of its **category** — a laptop for electronics, a desk for
+ * furniture, a microscope for laboratory equipment.
+ */
+const DEMO_PHOTOS = new Set([
+  "/photos/charger.jpg",
+  "/photos/desk.jpg",
+  "/photos/laptop.jpg",
+  "/photos/microscope.jpg",
+]);
+
 function photoForCategory(category: string): string {
   return CATEGORY_PHOTOS[category] ?? "/photos/desk.jpg";
+}
+
+function photoFor(item: { photo?: string; category: string }): string {
+  return item.photo && DEMO_PHOTOS.has(item.photo) ? item.photo : photoForCategory(item.category);
 }
 
 interface ItemSpec {
@@ -3656,7 +3679,7 @@ async function main() {
       // a person recognises the thing they are looking for. The demo photos are
       // a small set, so they repeat — the alternative is an item with no
       // picture at all, and the picture is the point.
-      photoUrl: spec.photo ?? photoForCategory(spec.category),
+      photoUrl: photoFor(spec),
       notes: spec.notes ?? null,
       status: spec.status ?? ItemStatus.ACTIVE,
       disposalReason: spec.disposalReason ?? null,

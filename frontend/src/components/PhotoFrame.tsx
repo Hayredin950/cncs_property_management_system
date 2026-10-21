@@ -9,6 +9,16 @@ export interface PhotoFrameProps {
   src?: string | null | undefined;
   alt: string;
   className?: string | undefined;
+  /**
+   * A picture to show when the item's own will not load.
+   *
+   * A dead link is common: an upload that was made against a previous
+   * deployment, a photo that was deleted from the bucket, a path from an older
+   * seed. The frame showed "Image unavailable" — a grey box that says nothing
+   * about the item. With a fallback the reader gets a picture of *something*
+   * like it, which is what a person looking for a laptop needs.
+   */
+  fallbackSrc?: string | null | undefined;
 }
 
 /**
@@ -22,8 +32,9 @@ export interface PhotoFrameProps {
  * categories are open-ended, admin-created strings (`POST /categories`), not a
  * fixed enum this component could map reliably.
  */
-export function PhotoFrame({ src, alt, className }: PhotoFrameProps) {
+export function PhotoFrame({ src, alt, className, fallbackSrc }: PhotoFrameProps) {
   const [failed, setFailed] = useState(false);
+  const [fallbackFailed, setFallbackFailed] = useState(false);
   
   /**
    * A site-relative path is resolved against **this app's** origin, not the
@@ -41,7 +52,13 @@ export function PhotoFrame({ src, alt, className }: PhotoFrameProps) {
       ? `${typeof window === "undefined" ? "" : window.location.origin}${src.startsWith("/") ? "" : "/"}${src}`
       : src;
   
-  const showPlaceholder = !resolvedSrc || failed;
+  // The fallback is a site-relative path too — the same origin rule.
+  const resolvedFallback =
+    fallbackSrc && !fallbackSrc.startsWith("http")
+      ? `${typeof window === "undefined" ? "" : window.location.origin}${fallbackSrc.startsWith("/") ? "" : "/"}${fallbackSrc}`
+      : fallbackSrc;
+
+  const showPlaceholder = !resolvedSrc || (failed && (fallbackFailed || !resolvedFallback));
 
   return (
     <div
@@ -50,7 +67,15 @@ export function PhotoFrame({ src, alt, className }: PhotoFrameProps) {
         className,
       )}
     >
-      {showPlaceholder ? (
+      {failed && !fallbackFailed && resolvedFallback ? (
+        <img
+          src={resolvedFallback}
+          alt={alt}
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={() => setFallbackFailed(true)}
+        />
+      ) : showPlaceholder ? (
         <div className="flex flex-col items-center gap-1.5 text-slate-400" aria-hidden="true">
           {resolvedSrc ? <ImageOff className="h-8 w-8" /> : <Package className="h-8 w-8" />}
           <span className="text-xs">{resolvedSrc ? "Image unavailable" : "No photo"}</span>

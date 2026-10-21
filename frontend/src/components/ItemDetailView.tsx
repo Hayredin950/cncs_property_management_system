@@ -1,5 +1,6 @@
 import { MapPin } from "lucide-react";
 import type { ReactNode } from "react";
+import { categoryFallbackPhoto } from "../lib/categoryPhotos";
 import { formatCurrencyETB, formatDateUTC } from "../lib/formatters";
 import { isPrivilegedItemView, type Item } from "../types/item";
 import { CopyableTagId } from "./CopyableTagId";
@@ -22,7 +23,8 @@ export function ItemDetailView({ item }: { item: Item }) {
   return (
     <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
       <div>
-        <PhotoFrame src={item.photoUrl} alt={item.name} />
+        <PhotoFrame src={item.photoUrl}
+      fallbackSrc={categoryFallbackPhoto(item.category?.name)} alt={item.name} />
       </div>
 
       <div className="flex flex-col gap-6">

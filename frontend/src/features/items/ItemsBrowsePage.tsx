@@ -8,7 +8,6 @@ import { ItemActions } from "../../components/ItemActions";
 import { ItemCard } from "../../components/ItemCard";
 import { Pagination } from "../../components/Pagination";
 import { SearchBar } from "../../components/SearchBar";
-import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
 import { SkeletonCard } from "../../components/Skeleton";
 import { useAuth } from "../../app/AuthContext";
@@ -291,17 +290,6 @@ export function ItemsBrowsePage() {
           ]}
           value={sort}
           onChange={(event) => updateParam("sort", event.target.value)}
-          className="sm:w-48"
-        />
-        {/* Which building. The register is everybody's to read, so the filter
-            is the building's name — the list of buildings is a Property
-            Officer's to manage, and asking "what is in the Science Complex?"
-            must not need an office's permission. */}
-        <Input
-          label="Building"
-          placeholder="Any building"
-          value={building}
-          onChange={(event) => updateParam("building", event.target.value)}
           className="sm:w-48"
         />
         <Select

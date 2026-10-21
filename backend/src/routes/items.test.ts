@@ -318,15 +318,13 @@ describe("GET /items/:tagId", () => {
     expect(guest.status).toBe(401);
     expect(vi.mocked(prisma.item.findUnique)).not.toHaveBeenCalled();
 
-    // A staff member may open any item in the register — it is the college's,
-    // and the browse list shows them all — but the row is **field-filtered**:
-    // the operational detail, not the make and serial of a colleague's laptop.
+    // The caller is the item's **holder**, so the full row is theirs.
     const staff = await request(app)
       .get("/items/CNCS-DEMO-0001")
       .set("Authorization", `Bearer ${staffToken}`);
     expect(staff.status).toBe(200);
     expect(staff.body.tagId).toBe("CNCS-DEMO-0001");
-    expect(staff.body.serialNumber).toBeUndefined();
+    expect(staff.body.serialNumber).toBe("SN-998822");
     expect(JSON.stringify(staff.body)).not.toContain("passwordHash");
   });
 
@@ -339,6 +337,9 @@ describe("GET /items/:tagId", () => {
    * `FULL_ITEM` is held by `staff-1` in `org-unit-cs`.
    */
   it("404s a row the caller may not see at all instead of serving it", async () => {
+    // An item held by a **staff member** of another department. The register
+    // is the college's, so it opens — field-filtered, so the colleague's
+    // serial number is not in the answer.
     vi.mocked(prisma.item.findUnique).mockResolvedValue({
       ...FULL_ITEM,
       ownerId: "staff-2",
@@ -348,16 +349,33 @@ describe("GET /items/:tagId", () => {
       orgUnitId: "org-unit-bio",
     } as never);
 
-    // A staff member naming somebody else's item by tag id. The register is the
+    // A staff member naming an item in another department's **pool**. The register is the
     // college's and the browse list shows them all, so opening one by tag has
     // to agree with the list — but the row is field-filtered, and the answer
-    // is never the colleague's serial number.
+    // is never the colleague's serial number. (The 404 below is for a row in
+    // **another department's pool**, which is not a catalogue.)
     const otherStaff = await request(app)
       .get("/items/CNCS-DEMO-0001")
       .set("Authorization", `Bearer ${createToken({ id: "staff-9", role: "STAFF" })}`);
     expect(otherStaff.status).toBe(200);
     expect(otherStaff.body.serialNumber).toBeUndefined();
     expect(otherStaff.body.purchaseCost).toBeUndefined();
+
+    // Another department's **pool** is the one thing nobody may open: it is the
+    // department's own business, not a catalogue of things you may request.
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({
+      ...FULL_ITEM,
+      ownerId: "staff-2",
+      holderType: "DEPARTMENT",
+      holderId: "org-unit-bio",
+      owner: { id: "staff-2", fullName: "Somebody Else", email: "other@cncs.aau.edu.et" },
+      orgUnitId: "org-unit-bio",
+    } as never);
+
+    const pooled = await request(app)
+      .get("/items/CNCS-DEMO-0001")
+      .set("Authorization", `Bearer ${createToken({ id: "staff-9", role: "STAFF" })}`);
+    expect(pooled.status).toBe(404);
 
     // An account role sees no asset data, by the same rule as the listing.
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
@@ -372,10 +390,18 @@ describe("GET /items/:tagId", () => {
       .set("Authorization", `Bearer ${createToken({ id: "admin-1", role: "SYSTEM_ADMIN", ver: 0 })}`);
     expect(admin.status).toBe(404);
 
-    // A head from another unit is out of scope for this item too. The item sits in
-    // `org-unit-bio`, so this head is from Chemistry — using the item's own unit
-    // here would be asserting that head *can* read it.
-    // Department Heads CAN now view cross-department items (with restricted fields per §9.1)
+    // A head from another unit may open it too — the register is the college's
+    // — and gets the **operational detail**: the photo, the location, the
+    // condition, the make and model. What they do not get is the money.
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({
+      ...FULL_ITEM,
+      ownerId: "staff-2",
+      holderType: "STAFF",
+      holderId: "staff-2",
+      owner: { id: "staff-2", fullName: "Somebody Else", email: "other@cncs.aau.edu.et" },
+      orgUnitId: "org-unit-bio",
+    } as never);
+
     const otherHead = await request(app)
       .get("/items/CNCS-DEMO-0001")
       .set(
@@ -383,19 +409,19 @@ describe("GET /items/:tagId", () => {
         `Bearer ${createToken({ id: "head-chem", role: "DEPARTMENT_HEAD", orgUnitId: "org-unit-chem" })}`,
       );
     expect(otherHead.status).toBe(200);
-    // Verify restricted fields only for cross-department view
     expect(otherHead.body).toHaveProperty("id");
     expect(otherHead.body).toHaveProperty("tagId");
     expect(otherHead.body).toHaveProperty("name");
     expect(otherHead.body).toHaveProperty("category");
-    expect(otherHead.body).toHaveProperty("buildingRef");
     expect(otherHead.body).toHaveProperty("status");
     expect(otherHead.body).toHaveProperty("orgUnitId");
-    // Should NOT have full detail fields
-    expect(otherHead.body).not.toHaveProperty("floor");
-    expect(otherHead.body).not.toHaveProperty("room");
-    expect(otherHead.body).not.toHaveProperty("ownerId");
+    // The operational detail a head needs to see where the thing is.
+    expect(otherHead.body).toHaveProperty("floor");
+    expect(otherHead.body).toHaveProperty("room");
+    // ...and not the money, and not the custodian's record.
     expect(otherHead.body).not.toHaveProperty("purchaseCost");
+    expect(otherHead.body).not.toHaveProperty("currentValue");
+    expect(otherHead.body).not.toHaveProperty("owner");
   });
 
   it("still serves a row the caller holds, and every row to an officer", async () => {

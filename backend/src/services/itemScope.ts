@@ -132,6 +132,41 @@ function matchesScope(where: Prisma.ItemWhereInput, item: ScopedItem): boolean {
  * An out-of-scope row is reported as *not found* by the caller, not as forbidden:
  * a 403 would confirm the item exists (ground rule 3 of the design doc).
  */
+/**
+ * May this viewer **open** this item?
+ *
+ * The register is the college's, and "what does the rest of the college have?"
+ * is the question a person asks when they need to request something. So a
+ * staff member and a department head may open an item that is **not** in their
+ * own scope, and the response is field-filtered accordingly (the restricted
+ * tier for a staff member, the operational detail for a head).
+ *
+ * The one thing nobody may open is **another department's pool** — the items a
+ * department holds for itself. That is the department's own business, and it is
+ * not a catalogue of things you may request.
+ *
+ * Every item route uses this one rule: the by-tag read, the by-id read, the
+ * tag image and the edit history. They used to disagree — the read allowed a
+ * cross-department item while the tag image and the history did not — so a
+ * person could open an item and then be told "Insufficient permissions" about
+ * the picture and the record on the same page.
+ */
+export function canOpenItem(
+  user: ScopedUser | null | undefined,
+  item: ScopedItem,
+): boolean {
+  if (!user) return false;
+  if (itemInScope(user, item)) return true;
+
+  const isReader = user.role === "STAFF" || user.role === "DEPARTMENT_HEAD";
+  if (!isReader) return false;
+
+  // Another department's pool is not a catalogue.
+  if (item.holderType === "DEPARTMENT" && item.holderId !== user.orgUnitId) return false;
+
+  return true;
+}
+
 export function itemInScope(user: ScopedUser | null | undefined, item: ScopedItem): boolean {
   const scope = itemListScope(user);
   if (!scope) return true;

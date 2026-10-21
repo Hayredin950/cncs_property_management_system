@@ -71,7 +71,11 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Scan a Tag", to: "/scan", icon: ScanLine, roles: ["PROPERTY_OFFICER"], phase: 1, emphasized: true },
   { label: "Browse Items", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER"], phase: 1 },
   { label: "Browse Items", to: "/items?scope=all", icon: Package, roles: ["DEPARTMENT_HEAD"], phase: 1 },
-  { label: "Browse Items", to: "/items?scope=mine", icon: Package, roles: ["STAFF"], phase: 1 },
+  // The register, not "my things": the screen is called "Browse Items" and
+  // the register is the college's. "My items" is one click away in the scope
+  // dropdown, and the nav item pointed at it — so a staff member never saw
+  // the college's assets at all.
+  { label: "Browse Items", to: "/items", icon: Package, roles: ["STAFF"], phase: 1 },
   { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["PROPERTY_OFFICER"], phase: 2, badge: "pending-count" },
   { label: "Department Requests", to: "/requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
   { label: "My Requests", to: "/requests?mine=true", icon: ClipboardList, roles: ["STAFF"], phase: 2 },

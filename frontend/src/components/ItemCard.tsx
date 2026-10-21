@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { categoryFallbackPhoto } from "../lib/categoryPhotos";
 import type { Item } from "../types/item";
 import { PhotoFrame } from "./PhotoFrame";
 import { ConditionBadge } from "./StatusBadges";
@@ -25,7 +26,11 @@ export function ItemCard({ item, actions }: { item: Item; actions?: ReactNode })
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2",
         ].join(" ")}
       >
-        <PhotoFrame src={item.photoUrl} alt={item.name} />
+        <PhotoFrame
+          src={item.photoUrl}
+          alt={item.name}
+          fallbackSrc={categoryFallbackPhoto(item.category?.name)}
+        />
         <div>
           <h3 className="line-clamp-1 font-semibold text-slate-900 group-hover:text-brand-700">
             {item.name}

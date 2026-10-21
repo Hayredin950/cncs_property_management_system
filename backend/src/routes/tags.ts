@@ -1,6 +1,6 @@
 import { Router, type Response, type Router as ExpressRouter } from "express";
 import { prisma } from "../lib/prisma.js";
-import { itemInScope } from "../services/itemScope.js";
+import { canOpenItem } from "../services/itemScope.js";
 import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import { generateTagQR, regenerateTagQR, readTagFile } from "../utils/qrGenerator.js";
 
@@ -58,7 +58,7 @@ tagsRouter.get(
         res.status(404).json({ error: "Item not found" });
         return;
       }
-      if (!itemInScope(req.user, item)) {
+      if (!canOpenItem(req.user, item)) {
         // The same answer as "it does not exist".
         res.status(404).json({ error: "Item not found" });
         return;

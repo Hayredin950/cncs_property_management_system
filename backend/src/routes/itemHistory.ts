@@ -7,7 +7,7 @@ import {
 import { z } from "zod";
 import { httpError } from "../lib/httpError.js";
 import { prisma } from "../lib/prisma.js";
-import { hasCapability } from "../services/permissions.js";
+import { canOpenItem } from "../services/itemScope.js";
 import { authenticate, requireCapability, type AuthenticatedRequest, type UserRole } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
 import { allItemsWhere } from "../services/itemVisibility.js";
@@ -84,33 +84,15 @@ itemHistoryRouter.get(
       if (!user) {
         return res.status(401).json({ error: "Not authenticated" });
       }
-      const isOwnItem =
-        item.ownerId === user.id || (item.holderType === "STAFF" && item.holderId === user.id);
-      const canViewEverywhere = hasCapability(user.role, "ITEM_READ_ALL");
 
-      if (!canViewEverywhere) {
-        // A **staff** member reads the history of the items they hold. Their
-        // own laptop's record is theirs; a colleague's is not, and the
-        // department's holdings are the head's business, not every member's.
-        if (user.role === "STAFF") {
-          if (!isOwnItem) {
-            return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
-          }
-        } else {
-          const isInDept = Boolean(user.orgUnitId) && item.orgUnitId === user.orgUnitId;
-          const isDeptHeld = item.holderType === "DEPARTMENT" && item.holderId === user.orgUnitId;
-          const isCrossDept =
-            Boolean(user.orgUnitId) &&
-            item.orgUnitId !== user.orgUnitId &&
-            item.holderType !== "DEPARTMENT";
-
-          const canView = isOwnItem || isInDept || isDeptHeld || isCrossDept;
-          if (!canView) {
-            // The same answer as "it does not exist" — the history of an item
-            // you may not see should not be discoverable.
-            return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
-          }
-        }
+      // The same rule every item read uses: if the person may open the item,
+      // they may read its record. It used to be stricter than the read itself,
+      // so a person could open an item and be told "Insufficient permissions"
+      // about the history on the same page.
+      if (!canOpenItem(user, item as unknown as Parameters<typeof canOpenItem>[1])) {
+        // The same answer as "it does not exist" — the history of an item you
+        // may not see should not be discoverable.
+        return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
       }
 
       const where = {

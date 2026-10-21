@@ -672,6 +672,10 @@ itemsRouter.get(
           category: true,
           buildingRef: true,
           accessories: true,
+          // The department of the item, so the page can say **where** the thing
+          // is. The list sends it; the single-item read did not, so the same item
+          // showed its department in one place and not in another.
+          orgUnitRef: true,
           owner: {
             select: { id: true, fullName: true, email: true },
           },
@@ -750,7 +754,14 @@ itemsRouter.get(
         return;
       }
 
-      const sanitized = sanitizeItem(item as unknown as Record<string, unknown>, req.user);
+      // The department and the building, under the names the clients read.
+      const sanitized = sanitizeItem(
+        withLocationNames(item as unknown as Parameters<typeof withLocationNames>[0]) as unknown as Record<
+          string,
+          unknown
+        >,
+        req.user,
+      );
       res.status(200).json(sanitized);
     } catch (err) {
       next(err);

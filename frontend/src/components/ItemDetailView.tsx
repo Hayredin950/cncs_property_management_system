@@ -2,7 +2,7 @@ import { MapPin } from "lucide-react";
 import type { ReactNode } from "react";
 import { categoryFallbackPhoto } from "../lib/categoryPhotos";
 import { formatCurrencyETB, formatDateUTC } from "../lib/formatters";
-import { isPrivilegedItemView, type Item } from "../types/item";
+import type { Item } from "../types/item";
 import { CopyableTagId } from "./CopyableTagId";
 import { ConditionBadge, ItemStatusBadge } from "./StatusBadges";
 import { PhotoFrame } from "./PhotoFrame";
@@ -18,8 +18,6 @@ import { PhotoFrame } from "./PhotoFrame";
  * the two never diverge in what they consider "the item's fields."
  */
 export function ItemDetailView({ item }: { item: Item }) {
-  const privileged = isPrivilegedItemView(item);
-
   return (
     <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
       <div>
@@ -54,7 +52,7 @@ export function ItemDetailView({ item }: { item: Item }) {
           </FieldGrid>
         </Section>
 
-        {privileged && (
+        {item.owner && (
           <Section title="Owner">
             <FieldGrid>
               <Field label="Custodian" value={item.owner.fullName} />
@@ -63,7 +61,7 @@ export function ItemDetailView({ item }: { item: Item }) {
           </Section>
         )}
 
-        {privileged && (
+        {item.purchaseCost != null && (
           <Section title="Value">
             <FieldGrid>
               <Field label="Purchase cost" value={formatCurrencyETB(item.purchaseCost)} />
@@ -74,7 +72,7 @@ export function ItemDetailView({ item }: { item: Item }) {
           </Section>
         )}
 
-        {privileged && (item.brand || item.model || item.serialNumber) && (
+        {(item.brand || item.model || item.serialNumber) && (
           <Section title="Specs">
             <FieldGrid>
               {item.brand && <Field label="Brand" value={item.brand} />}
@@ -84,13 +82,13 @@ export function ItemDetailView({ item }: { item: Item }) {
           </Section>
         )}
 
-        {privileged && item.notes && (
+        {item.notes && (
           <Section title="Notes">
             <p className="whitespace-pre-wrap text-sm text-slate-700">{item.notes}</p>
           </Section>
         )}
 
-        {privileged && item.accessories && item.accessories.length > 0 && (
+        {item.accessories && item.accessories.length > 0 && (
           <Section title="Accessories">
             <ul className="flex flex-col gap-2">
               {item.accessories.map((accessory) => (

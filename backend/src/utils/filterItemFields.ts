@@ -29,7 +29,21 @@ export interface RequestingUser {
     | "DEPARTMENT_HEAD"
     | "STAFF"
     | "AUDITOR";
-  /** Filled when the token carried a `ver` claim and the row was read; see `authenticate`. */
+  /**
+   * The unit the viewer belongs to.
+   *
+   * `orgUnitId` is what the session actually carries (see `middleware/auth.ts`);
+   * `departmentId` was the older name and is kept as an alias, because a few
+   * callers still speak it.
+   *
+   * This matters more than it looks: the department head's branch below reads
+   * the viewer's unit, and while it read `departmentId` — a field the session
+   * never sets — **a department head never saw the full detail of their own
+   * department's items**: no custodian, no value, no change history. The head
+   * who administers a department could not read its register.
+   */
+  orgUnitId?: string | null;
+  /** The older name for the same thing. */
   departmentId?: string | null;
 }
 
@@ -109,10 +123,11 @@ export function seesFullItemDetail(
   // comes from the holder; both the stored `orgUnitId` (current schema) and
   // `departmentId` (legacy/alias) are checked, because the holder fields are new
   // and the column link is what older rows populate.
-  if (user.role === "DEPARTMENT_HEAD" && user.departmentId) {
+  const userUnitId = user.orgUnitId ?? user.departmentId;
+  if (user.role === "DEPARTMENT_HEAD" && userUnitId) {
     const itemDeptId = item.orgUnitId ?? item.departmentId;
-    if (itemDeptId === user.departmentId) return true;
-    if (item.holderType === "DEPARTMENT" && item.holderId === user.departmentId) return true;
+    if (itemDeptId === userUnitId) return true;
+    if (item.holderType === "DEPARTMENT" && item.holderId === userUnitId) return true;
   }
 
   return false;

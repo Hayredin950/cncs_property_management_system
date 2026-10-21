@@ -106,6 +106,23 @@ describe('Server-Side Field-Filtering Helper (sanitizeItem)', () => {
     expect(otherDepartment.purchaseCost).toBeUndefined();
   });
 
+  it('reads the head\'s unit from the field the session actually sends', () => {
+    // The session carries `orgUnitId` (see `middleware/auth.ts`). The test
+    // above speaks the older `departmentId`, which is why the mismatch went
+    // unnoticed for so long: **the tests were in a different language from the
+    // code**. A department head whose session says `orgUnitId` got no
+    // custodian, no value and no change history for their own department's
+    // items — the head who administers a department could not read its
+    // register.
+    const head = { id: 'head-1', role: 'DEPARTMENT_HEAD' as const, orgUnitId: 'dept-bio' };
+
+    const own = sanitizeItem({ ...mockItem, departmentId: 'dept-bio' }, head);
+    expect(own.purchaseCost).toBe(4500.0);
+
+    const other = sanitizeItem({ ...mockItem, departmentId: 'dept-cs' }, head);
+    expect(other.purchaseCost).toBeUndefined();
+  });
+
   it('strips the bundle and history relations the SRS 3.4 table implies', () => {
     // `parentItemId` is the inverse edge of `accessories` — the same relation, so
     // publishing it would hand out a sibling item's id while hiding the list.

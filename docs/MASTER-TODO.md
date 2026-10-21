@@ -135,7 +135,7 @@
   *Decide:* drop them in a reviewed contract migration (the `ownerId` column still has live readers — KB §3.1.2), or keep them and document why. Write the decision here.
   *Evidence:* a note in this file + the matching KB update.
 
-- [ ] **P2-8 A real test database in CI.**
+- [x] **P2-8 A real test database in CI.** — the E2E CI job builds a Postgres in Docker, migrates it from the migration history, seeds it, starts the real server and drives 42 checks over HTTP. The unit suites still mock Prisma; this is the half that does not.
   *Today the backend suite mocks Prisma, so a query against a missing column is invisible to CI — that is how four 500s shipped. Add a Postgres service to `backend.yaml`, run `migrate deploy` + `seed` there, and add at least one **integration** test that exercises the real database (a "smoke" suite: sign in → file a request → approve → claim).
   *Evidence:* the workflow runs the real-database suite and it is green.
 
@@ -271,7 +271,7 @@
 
 - [x] **P6-1 Verify the breakpoints by hand** at 375, 768, 1024 and 1440 px → **done with a browser instead of by hand**: `scripts/responsive-check.py` drives the **deployed** app in Chromium at 390px and 1440px, for every screen every role can reach, and checks that the page renders, that nothing overflows sideways, that the tap targets are big enough, and that no request was refused. It found and got fixed: the Accounts badge asking an endpoint the role may not read (a 403 on every page for the officer, auditor and staff), the head's accounts screen asking for the account list heads may not read, the request row overflowing a phone by 94px, the reports tabs by 22px, and every `size="sm"` button being 36px on a phone against the design system's own 44px claim. **Result: 0 failures** (was 14).
 - [x] **P6-2 The phone layout is not a squeezed desktop layout.** — the request row stacks on a small screen, the reports tabs scroll instead of pushing the page wide, the bottom bar and every small button clear 44px, and the AAU crest is a 44px tap target.
-- [ ] **P6-2b Check the middle widths** (768px and 1024px) — the check runs 390 and 1440; the tablet range is the one the two do not cover.
+- [x] **P6-2b Check the middle widths** (768px and 1024px) — the check runs all four now, and the tablet range found what the two ends could not: the filter rows switched to a horizontal layout at 640px, which is not enough room, and the request list overflowed by 39px at 768 and 150px at 1024. The rows now stay stacked until `xl`.
 - [ ] **P6-2c Check the phone layout by hand as well** — the script proves nothing overflows and the targets are big enough; it cannot say whether the result is *pleasant*. Bottom tab bar (≤4 primary + "More"), safe-area insets, the AAU drawer, sticky headers, and the tables that must become cards.
 - [ ] **P6-3 The QR scanner must work on a phone** (camera permission prompt, a clear failure path when denied, manual tag entry as the fallback).
 - [ ] **P6-4 The desktop layout must not waste the width** (the register, the approval queue and the audit report are all wide).
@@ -291,7 +291,7 @@
   * **the loan-return handshake**: the borrower says "I am handing it back"; the department head or the property officer confirms it came back (recording the condition) or reports that it has not.
   * **the request states**: the app knew four of the nine. The other five — the two stages of a transfer, a waitlisted, a withdrawn, an invalidated request and a loan waiting for its return to be confirmed — arrived as "Unknown", so a person on the phone was told a request was in a state the app had no word for. All nine now have a name, a colour and an icon, and `LOAN` is a request type the app knows.
   * still open: `GET /items/recent` and `GET /items/held-by-me` (the mobile dashboard still fetches whole pages to count three things).
-- [ ] **P7-5 Fix the hardcoded share link** (`item_detail_view.dart:281` points at a domain that is not in production).
+- [x] **P7-5 Fix the hardcoded share link** — the copy button copied `https://cncs-pms.aau.edu.et/item/…`, which is not the address the app is served from, so the link was copied, pasted into a message, and led nowhere. It now comes from the configuration (`Env.publicItemLink`).
 - [ ] **P7-6 Real-device check** — the APK must install, sign in, scan a tag, file a request and read notifications on a physical phone (no Android device was available earlier; this is the outstanding item).
 - *Evidence:* `flutter analyze` clean, `flutter test` green, CI green, and a written device result.
 
@@ -320,7 +320,7 @@
 - [ ] **P9-3 PROPERTY_OFFICER** — register an item → print its tag → approve a transfer / disposal / loan → reverse a disposal → run an audit end to end → download the inventory report (CSV + PDF) → manage a category → manage a building.
 - [ ] **P9-4 AUDITOR** — start an audit → scan items → complete it → read the report → download the evidence pack → confirm the read-only state of a completed session → attempt an action they must not do (must be refused).
 - [ ] **P9-5 SYSTEM_ADMIN** — invite a privileged account (with the authorization fields) → resend the invite → accept it → approve a staff request → deactivate an account → see the account event log → **see no asset data anywhere**.
-- [~] **P9-6 The 20-row live-verification table** (KB §17) — all 20 rows, with the real responses pasted. `scripts/live-walkthrough.sh` now walks the deployed app role by role (41 checks, all green) and covers the account-approval flow, the refusals, and the rule that a SYSTEM_ADMIN sees zero items and zero requests. The remaining rows are the role-specific negatives (a head approving another unit's request, an auditor acting, a self-approval).
+- [~] **P9-6 The 20-row live-verification table** (KB §17) — `scripts/live-walkthrough.sh` walks the deployed app role by role (**45 checks, 0 failed**) and now covers, live: the account-approval flow end to end, the scope rules, the rule that a SYSTEM_ADMIN sees zero items and zero requests, a request that names a privileged role still being created as STAFF, an invite with no authorization reference refused, a second head for a unit that has one refused, the same person refused as both Property Officer and Auditor, an invitation link that was never issued failing cleanly, and the four refusals (wrong domain, unknown unit, a staff member reading the account queue, an anonymous caller). The rows still to prove: a head approving another unit's request, an auditor acting on something, a self-approval, and a deactivated account's token dying.
 - [~] **P9-7 Negative paths** — proven on the deployed app: out-of-scope reads are 404/403, a staff member calling the approvals endpoint is refused, an anonymous caller gets 401, a request from outside the institution is refused, a request naming a unit the college does not have is refused, and a SYSTEM_ADMIN sees zero items and zero requests. Still to prove: a self-approval refused, a deactivated account's token dying, and a used invite link erroring cleanly.
 - *Evidence:* a walkthrough table: step → who → screen → result. Anything not passed stays open here.
 

@@ -41,4 +41,16 @@ class Env {
   /// login screen (and the shell's status dot) can say so instead of leaving a
   /// tester guessing which backend answered.
   static bool get isCustomBackend => _override.isNotEmpty;
+
+  /// Where the **web** app lives — the origin a shared link should point at.
+  ///
+  /// The copy-link button used to hard-code `https://cncs-pms.aau.edu.et`,
+  /// which is not the address the app is served from: the link was copied,
+  /// pasted into a message, and led nowhere. A shared link has to be the one
+  /// the person receiving it can actually open, and that is the deployed web
+  /// origin, not the API origin.
+  static const String webOrigin = 'https://cncs-pms-web.vercel.app';
+
+  /// The public link for an item, on the web app.
+  static String publicItemLink(String tagId) => '$webOrigin/item/$tagId';
 }

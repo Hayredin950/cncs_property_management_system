@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/env.dart';
+
 import '../../../../data/providers/items_provider.dart';
 import '../../../../models/enums.dart';
 import '../../../../models/item.dart';
@@ -278,7 +280,7 @@ class ItemDetailView extends StatelessWidget {
                   icon: const Icon(Icons.copy_outlined, size: 18),
                   onPressed: () async {
                     await Clipboard.setData(
-                      ClipboardData(text: 'https://cncs-pms.aau.edu.et/item/${item.tagId}'),
+                      ClipboardData(text: Env.publicItemLink(item.tagId)),
                     );
                     await HapticFeedback.selectionClick();
                   },

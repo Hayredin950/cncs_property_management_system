@@ -173,20 +173,25 @@ What a person sees of an item is decided by **two** questions, and until 21 Oct 
 
 The result, measured on the deployed app for one Biology laptop viewed from three roles:
 
-| Field | Staff (another department) | Department head (another department) | **Department head (their own department)** | Property Officer | The holder |
-|---|---|---|---|---|---|
-| name · status · condition | ✓ | ✓ | ✓ | ✓ | ✓ |
-| department · building · floor · room | ✓ | ✓ | ✓ | ✓ | ✓ |
-| brand · model · serial number · notes | — | ✓ | ✓ | ✓ | ✓ |
-| purchase cost · current value | — | — | ✓ | ✓ | ✓ |
-| custodian (name + email) | — | — | ✓ | ✓ | ✓ |
-| the change history | — | — | ✓ | ✓ | ✓ |
+| Field | Staff | Department head | Property Officer | The holder |
+|---|---|---|---|---|
+| name · status · condition · photo | ✓ | ✓ | ✓ | ✓ |
+| department · building · floor · room | ✓ | ✓ | ✓ | ✓ |
+| brand · model · serial number · notes | ✓ | ✓ | ✓ | ✓ |
+| purchase cost · current value | ✓ | ✓ | ✓ | ✓ |
+| custodian (name + email) | ✓ | ✓ | ✓ | ✓ |
+| **the change history** | — | their own department | ✓ | ✓ |
 
-**Why the columns differ.** The item in the screenshots belongs to **Biology** and the viewer was the **Computer Science** head, so the head was looking at another department's equipment — and the question "what does the rest of the college have?" is a different question from "what does my department have?".
+**One tier for the item, one line for the change log.** Everybody in the college sees the whole record: the register is the college's, and a person looking for something to request needs the make and model ("will this do the job?"), the serial number, the price ("what would replacing it cost?") and the custodian ("who do I ask?"). Restricting those protected nothing a colleague could not learn from the staff list, and it made the register harder to use — the rule that "the register is not a secret from the college" is the simpler and the more useful one.
 
-- **Opening** an item is about the *college's register*: anybody in the college may open an item, because you have to be able to see what exists before you can request it. What they may not open is another department's **pool** — the items a department holds for itself. That is the department's own business.
-- **Administering** an item is about *your* equipment: the value, the custodian's name, and the change log. The change log is the sharpest case — it names the people who made each change and shows the old and new value of every field, **including the value and the custodian the same viewer is not shown on the item itself**. If the log were open to everyone who can open the item, the field filtering would be pointless: the log would be a side channel to everything it hides.
-- So the rule is two questions, not one: *may you open it* (the register) and *may you administer it* (your equipment). A department head passes the second for their **own** department and not for another one.
+The **change history** keeps its own line: it is the trail of *who changed what* and the values before and after — the registry's audit record, which belongs to the people who answer for the asset (the holder, a property officer, an auditor, and a head for their own department). It is served by its own endpoint and gated there; a viewer who may open an item but not administer it is told so in a sentence rather than shown a failure.
+
+**Two questions, not three.**
+
+1. **May you open it?** — about the *college's register*. Anybody in the college may open an item, because you have to be able to see what exists before you can request it. The one thing nobody may open is another department's **pool** — the items a department holds for itself. That is the department's own business, not a catalogue.
+2. **May you administer it?** — about *your* equipment, and the only thing it decides is the **change history**. The change log is the sharpest case: it names the people who made each change and shows the old and new value of every field. It belongs to the people who answer for the asset.
+
+A department head passes the second for their **own** department and not for another one. And the item's own fields are the same for everybody — the register is the college's.
 
 **The two bugs this uncovered** (both fixed 21 Oct):
 1. The page gated whole **sections** on one flag — "does this payload carry the custodian?" — so a head whose payload carried the make and model but not the custodian got a page with **no Specs section at all**, even though the data was in the response. That is where the brand went.

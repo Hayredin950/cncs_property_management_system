@@ -358,8 +358,10 @@ describe("GET /items/:tagId", () => {
       .get("/items/CNCS-DEMO-0001")
       .set("Authorization", `Bearer ${createToken({ id: "staff-9", role: "STAFF" })}`);
     expect(otherStaff.status).toBe(200);
-    expect(otherStaff.body.serialNumber).toBeUndefined();
-    expect(otherStaff.body.purchaseCost).toBeUndefined();
+    // The whole record: the register is the college's, and a person looking
+    // for something to request needs the serial number and the price.
+    expect(otherStaff.body.serialNumber).toBe("SN-998822");
+    expect(otherStaff.body.purchaseCost).toBe(45000);
 
     // Another department's **pool** is the one thing nobody may open: it is the
     // department's own business, not a catalogue of things you may request.
@@ -418,10 +420,13 @@ describe("GET /items/:tagId", () => {
     // The operational detail a head needs to see where the thing is.
     expect(otherHead.body).toHaveProperty("floor");
     expect(otherHead.body).toHaveProperty("room");
-    // ...and not the money, and not the custodian's record.
-    expect(otherHead.body).not.toHaveProperty("purchaseCost");
-    expect(otherHead.body).not.toHaveProperty("currentValue");
-    expect(otherHead.body).not.toHaveProperty("owner");
+    // The whole record, like everybody else: the register is the college's.
+    // What a head does **not** get for another department's item is the change
+    // history - the trail of who changed what - and that is gated on its own
+    // endpoint, not here.
+    expect(otherHead.body).toHaveProperty("purchaseCost");
+    expect(otherHead.body).toHaveProperty("currentValue");
+    expect(otherHead.body).toHaveProperty("owner");
   });
 
   it("still serves a row the caller holds, and every row to an officer", async () => {

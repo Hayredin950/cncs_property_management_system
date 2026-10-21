@@ -77,14 +77,20 @@ describe('Server-Side Field-Filtering Helper (sanitizeItem)', () => {
     expect(result.owner).toBeUndefined();
   });
 
-  it('gives a STAFF member only their own items — someone else\u2019s is stripped', () => {
+  it('gives every member of the college the whole record - the register is not a secret from the college', () => {
+    // The register exists so that somebody can look for what the college has
+    // and ask for it. That needs the make and model ("will this do the
+    // job?"), the serial number, the price ("what would replacing it
+    // cost?") and the custodian ("who do I ask?"). Hiding them from a
+    // colleague protected nothing they could not learn from the staff list,
+    // and made the register harder to use.
     const otherStaff = { id: 'staff-2', role: 'STAFF' as const };
     const result = sanitizeItem(mockItem, otherStaff);
 
     expect(result.tagId).toBe('CNCS-LAB-001');
-    expect(result.purchaseCost).toBeUndefined();
-    expect(result.brand).toBeUndefined();
-    expect(result.serialNumber).toBeUndefined();
+    expect(result.purchaseCost).toBe(4500.0);
+    expect(result.brand).toBe('Olympus');
+    expect(result.serialNumber).toBe('SN-998822');
   });
 
   it('keeps all fields when requester is the assigned owner (custodian)', () => {
@@ -97,13 +103,16 @@ describe('Server-Side Field-Filtering Helper (sanitizeItem)', () => {
     expect(result.notes).toBe('Stored in cabinet A');
   });
 
-  it('gives a DEPARTMENT_HEAD full detail for their own department only', () => {
+  it('gives a DEPARTMENT_HEAD the whole record, in their own department and in another', () => {
     const ownHead = { id: 'head-1', role: 'DEPARTMENT_HEAD' as const, departmentId: 'dept-bio' };
     const inDepartment = sanitizeItem({ ...mockItem, departmentId: 'dept-bio' }, ownHead);
     expect(inDepartment.purchaseCost).toBe(4500.0);
 
+    // Another department's item is on the same college register, so it is the
+    // same record. What differs for another department's item is not the
+    // fields but the **change history**, and that is gated on its own endpoint.
     const otherDepartment = sanitizeItem({ ...mockItem, departmentId: 'dept-cs' }, ownHead);
-    expect(otherDepartment.purchaseCost).toBeUndefined();
+    expect(otherDepartment.purchaseCost).toBe(4500.0);
   });
 
   it('reads the head\'s unit from the field the session actually sends', () => {
@@ -112,7 +121,7 @@ describe('Server-Side Field-Filtering Helper (sanitizeItem)', () => {
     // unnoticed for so long: **the tests were in a different language from the
     // code**. A department head whose session says `orgUnitId` got no
     // custodian, no value and no change history for their own department's
-    // items — the head who administers a department could not read its
+    // items - the head who administers a department could not read its
     // register.
     const head = { id: 'head-1', role: 'DEPARTMENT_HEAD' as const, orgUnitId: 'dept-bio' };
 
@@ -120,7 +129,7 @@ describe('Server-Side Field-Filtering Helper (sanitizeItem)', () => {
     expect(own.purchaseCost).toBe(4500.0);
 
     const other = sanitizeItem({ ...mockItem, departmentId: 'dept-cs' }, head);
-    expect(other.purchaseCost).toBeUndefined();
+    expect(other.purchaseCost).toBe(4500.0);
   });
 
   it('strips the bundle and history relations the SRS 3.4 table implies', () => {

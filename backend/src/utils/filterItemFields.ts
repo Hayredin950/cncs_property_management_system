@@ -143,31 +143,6 @@ export function isAuthenticatedViewer(user?: RequestingUser | null): boolean {
   return Boolean(user);
 }
 
-/**
- * The fields that only the college's administrators ever see.
- *
- * They are the **financial** ones — what the college paid and what it values
- * the item at — and the custodian's own details. Everything else (the photo,
- * the location, the condition, the make and model) is operational knowledge
- * about an item in the college's own register, and the people who work in the
- * college need it to do their jobs: a department head has to see where the
- * equipment of the next department is, and a staff member looking for
- * something to borrow needs to see what it is and what it looks like.
- *
- * The custodian's identity stays restricted because it is a person: the item
- * is in a department's cupboard and the fact that it is *in* that cupboard is
- * the department's business. The custodian's **name** is not — the staff
- * register is the same list the college publishes.
- */
-const ADMINISTRATOR_ONLY_FIELDS = new Set([
-  "purchaseCost",
-  "currentValue",
-  // The custodian's record, both the name and the id behind it. The id alone
-  // says nothing to a reader, and leaving it in the payload would make the
-  // client believe it is looking at a privileged view.
-  "owner",
-  "ownerId",
-]);
 
 export function sanitizeItem(
   item: Record<string, unknown>,
@@ -177,29 +152,37 @@ export function sanitizeItem(
     return item;
   }
 
-  // A **Department Head** looking at an item in another department gets the
-  // operational detail: the photo, the location, the condition, the make and
-  // model. They are a manager in the same college, and the equipment of the
-  // next department is on the same register they administer — the old view
-  // showed them a name and a building and nothing else.
-  //
-  // The **financial** fields stay with the administrators, and so does the
-  // custodian's own record: what the college paid, and who in particular is
-  // responsible for the item, are the Property Office's business.
-  //
-  // A staff member keeps the **restricted tier** the catalogue spec asks for
-  // (name, category, building, status, photo): they are looking for something
-  // to request, not administering it.
-  const isDepartmentHead = user?.role === "DEPARTMENT_HEAD";
+  /**
+   * Everybody in the college sees the whole record: the price, the custodian,
+   * the make and model, the serial number, the notes.
+   *
+   * This used to be two tiers — a staff member got the name and the building
+   * and nothing else, and a department head got everything but the money — and
+   * both tiers were wrong in the same way: they **stopped a person from doing
+   * their job**. The register exists so that somebody can look for what the
+   * college has and ask for it, and that needs the make and model ("will this
+   * do the job?"), the serial number, the price ("what would replacing it
+   * cost?") and the custodian ("who do I ask?"). Hiding them protected
+   * nothing a colleague could not learn from the staff list; it only made the
+   * register harder to use.
+   *
+   * The one thing that keeps its own line is the **change history** — the
+   * trail of who changed what and the values before and after. That is the
+   * registry's audit record, and it belongs to the people who answer for the
+   * asset. It is served by its own endpoint and gated there.
+   *
+   * The restricted tier below is the safety net for a viewer with no asset
+   * access at all (a system administrator, whose scope is empty by
+   * construction, so they never reach a row).
+   */
+  const isCollegeReader =
+    user?.role === "PROPERTY_OFFICER" ||
+    user?.role === "DEPARTMENT_HEAD" ||
+    user?.role === "STAFF" ||
+    user?.role === "AUDITOR";
 
-  if (isDepartmentHead) {
-    const operational: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(item)) {
-      if (!ADMINISTRATOR_ONLY_FIELDS.has(key)) {
-        operational[key] = value;
-      }
-    }
-    return operational;
+  if (isCollegeReader) {
+    return item;
   }
 
   const publicSafeFields: Record<string, unknown> = {};

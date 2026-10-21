@@ -2664,7 +2664,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0074",
     by: "bio1",
     reason: "Centrifuge moving to CS department for collaborative research project.",
-    createdDaysAgo: 12,
+    createdDaysAgo: 5,
     stage1By: "headBio",
     stage1DaysAgo: 11,
     newBuildingCode: "CNCS",
@@ -2819,7 +2819,7 @@ const REQUESTS: RequestSpec[] = [
     by: "chem1",
     reason:
       "The fume hood's airflow monitor has failed and the unit cannot be used until it is serviced.",
-    createdDaysAgo: 7,
+    createdDaysAgo: 6,
   },
   {
     id: "seed-req-chem1-loan-approved",
@@ -2868,7 +2868,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-DEMO-0002",
     by: "headCS",
     reason: "Office desk is damaged beyond repair and needs to be disposed.",
-    createdDaysAgo: 14,
+    createdDaysAgo: 6,
   },
   {
     id: "seed-req-head-cs-disposal-approved",
@@ -3056,7 +3056,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0040",
     by: "pendingCS",
     reason: "Moving the desktop PC into the new tutorial room 310.",
-    createdDaysAgo: 20,
+    createdDaysAgo: 4,
     newFloor: "3",
     newRoom: "310",
   },
@@ -3092,7 +3092,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0044",
     by: "pendingCS",
     reason: "Handing the folding guest chair over to the tutorial room store.",
-    createdDaysAgo: 19,
+    createdDaysAgo: 3,
     stage1By: "headCS",
     stage1DaysAgo: 18,
     newFloor: "3",
@@ -3117,7 +3117,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0046",
     by: "pendingBio",
     reason: "Moving the benchtop shaker into the new genetics lab.",
-    createdDaysAgo: 18,
+    createdDaysAgo: 4,
     newFloor: "2",
     newRoom: "214",
   },
@@ -3153,7 +3153,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0049",
     by: "pendingBio",
     reason: "Handing the pipette stand over to the departmental store.",
-    createdDaysAgo: 17,
+    createdDaysAgo: 2,
     stage1By: "headBio",
     stage1DaysAgo: 16,
     newFloor: "2",
@@ -3178,7 +3178,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0052",
     by: "pendingPhys",
     reason: "Moving the signal generator into the electronics teaching room.",
-    createdDaysAgo: 16,
+    createdDaysAgo: 5,
     newFloor: "1",
     newRoom: "104",
   },
@@ -3239,7 +3239,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0055",
     by: "newCS",
     reason: "Moving the USB microphone into the recording booth.",
-    createdDaysAgo: 14,
+    createdDaysAgo: 3,
     newFloor: "3",
     newRoom: "311",
   },
@@ -3288,7 +3288,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0059",
     by: "newCS",
     reason: "Handing the folding desk over to the tutorial room store.",
-    createdDaysAgo: 13,
+    createdDaysAgo: 2,
     stage1By: "headCS",
     stage1DaysAgo: 12,
     newFloor: "3",
@@ -3301,7 +3301,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0060",
     by: "escalatedCS",
     reason: "Moving the development laptop into the new research room 312.",
-    createdDaysAgo: 15,
+    createdDaysAgo: 4,
     newFloor: "3",
     newRoom: "312",
   },
@@ -3337,7 +3337,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0063",
     by: "escalatedCS",
     reason: "Handing the footrest over to the department store.",
-    createdDaysAgo: 9,
+    createdDaysAgo: 1,
     stage1By: "headCS",
     stage1DaysAgo: 8,
     newFloor: "2",
@@ -3363,7 +3363,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0065",
     by: "rejectedChem",
     reason: "Moving the drying cabinet into the new synthesis room.",
-    createdDaysAgo: 14,
+    createdDaysAgo: 6,
     newFloor: "1",
     newRoom: "106",
   },
@@ -3399,7 +3399,7 @@ const REQUESTS: RequestSpec[] = [
     item: "CNCS-STAFF-0068",
     by: "rejectedChem",
     reason: "Handing the lab coat over to the departmental store.",
-    createdDaysAgo: 8,
+    createdDaysAgo: 5,
     stage1By: "headChem",
     stage1DaysAgo: 7,
     newFloor: "1",
@@ -3618,13 +3618,13 @@ async function main() {
     ["bio", "headBio"],
     ["chem", "headChem"],
   ];
-  const unitHeads = new Map<UnitKey, string>();
+  const unitHeads = new Map<UnitKey, UserKey>();
   for (const [unitKey, userKey] of headAssignments) {
     await prisma.orgUnit.update({
       where: { id: units.get(unitKey)! },
       data: { headId: users.get(userKey)!.id },
     });
-    unitHeads.set(unitKey, users.get(userKey)!.id);
+    unitHeads.set(unitKey, userKey);
   }
 
   console.log("Seeding items + QR tags...");
@@ -3765,14 +3765,13 @@ async function main() {
       spec.status === RequestStatus.PENDING ||
       spec.status === RequestStatus.PENDING_STAGE1 ||
       spec.status === RequestStatus.PENDING_STAGE2;
-    const unitHeadId = unitHeads.get(items.get(spec.item)?.unit ?? ("college" as UnitKey));
-    const fallbackReviewerId = users.get("officer")?.id;
+    const unitHeadKey = unitHeads.get(items.get(spec.item)?.unit ?? ("college" as UnitKey));
+    const reviewerKey =
+      unitHeadKey && unitHeadKey !== spec.by ? unitHeadKey : ("officer" as UserKey);
     const reviewer = spec.reviewer
       ? users.get(spec.reviewer)
       : isPending
-        ? users.get(
-            (unitHeadId && unitHeadId !== requester.id ? unitHeadId : fallbackReviewerId) as UserKey,
-          )
+        ? users.get(reviewerKey)
         : undefined;
     if (spec.reviewer && !reviewer) {
       throw new Error(`Unknown reviewer "${spec.reviewer}" for request ${spec.id}`);

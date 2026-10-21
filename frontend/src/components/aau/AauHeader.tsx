@@ -238,7 +238,9 @@ export function AauHeader({
             onClick={() => updatePanel({ mobile: true })}
             aria-expanded={mobileOpen}
             aria-label="Open menu"
-            className="flex items-center rounded-lg p-2 text-aau-gray-600 hover:bg-aau-gray-100 lg:hidden"
+            /* The phone's menu button: 44px tall, like every other tap target
+               on a screen where a thumb has to find it. */
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 text-aau-gray-600 hover:bg-aau-gray-100 lg:hidden"
           >
             <Menu className="h-6 w-6" aria-hidden="true" />
           </button>

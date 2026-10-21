@@ -17,7 +17,16 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
 
 /** Below `lg` every size still clears the 44px touch-target minimum (§12). */
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: "h-9 px-3 text-sm gap-1.5",
+  /**
+   * The small size is 36px on a desktop and **44px on a phone**.
+   *
+   * The design system says "below lg every size still clears the 44px
+   * touch-target minimum" (§12) — and it did not: every `size="sm"` button
+   * was 36px on a phone, which is the size of a small control on a screen
+   * where it has to be hit with a thumb. Tailwind is mobile-first, so the
+   * phone size comes first and the desktop size overrides it from `sm` up.
+   */
+  sm: "h-11 px-3 text-sm gap-1.5 sm:h-9",
   md: "h-11 px-4 text-sm gap-2",
   lg: "h-14 px-6 text-base gap-2",
 };

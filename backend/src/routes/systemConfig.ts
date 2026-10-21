@@ -107,8 +107,11 @@ systemConfigRouter.get(
  * worse failure than showing ten rows.
  */
 const eventsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).catch(10).default(10),
-  offset: z.coerce.number().int().min(0).catch(0).default(0),
+  // The clamp lives in the route, not here: a `.max()` in the schema sends an
+  // over-large page size to `.catch()` and answers with the *default* instead
+  // of the largest page — so "?limit=9999" silently became 10.
+  limit: z.coerce.number().int().catch(10).default(10),
+  offset: z.coerce.number().int().catch(0).default(0),
   /** Filter by the action slug (`ACCOUNT_APPROVED`). */
   action: z.string().trim().min(1).optional(),
   /** A free-text search over the action and the person's name. */

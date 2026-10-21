@@ -9,7 +9,7 @@ process.env.JWT_SECRET = "test_jwt_secret";
 vi.mock("../lib/prisma.js", () => {
   return {
     prisma: {
-      adminActionLog: { findMany: vi.fn() },
+      adminActionLog: { findMany: vi.fn(), count: vi.fn() },
       auditSession: { findMany: vi.fn() },
     },
   };
@@ -62,6 +62,7 @@ describe("GET /system/events", () => {
   });
 
   it("maps account-log rows to the fields the dashboard widget renders", async () => {
+    vi.mocked(prisma.adminActionLog.count).mockResolvedValueOnce(2 as never);
     vi.mocked(prisma.adminActionLog.findMany).mockResolvedValueOnce([
       {
         id: "log-1",
@@ -82,38 +83,41 @@ describe("GET /system/events", () => {
       .set("Authorization", `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
-    // A bare array, matching `fetchSystemEvents()`'s return type. The old
-    // `{ data: [...] }` envelope is what made the widget call `.map` on an object.
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body).toEqual([
-      {
+    // An envelope with the page's rows and the totals — the log is paginated
+    // now, and a list that cannot say how much there is cannot offer a next
+    // page.
+    expect(res.body.events).toEqual([
+      expect.objectContaining({
         id: "log-1",
         type: "ACCOUNT_APPROVED",
         message: "account approved — Demo Staff",
         timestamp: "2026-10-10T09:00:00.000Z",
-      },
-      {
+      }),
+      expect.objectContaining({
         id: "log-2",
         type: "ACCOUNT_REJECTED",
         message: "account rejected",
         timestamp: "2026-10-09T09:00:00.000Z",
-      },
+      }),
     ]);
   });
 
-  it("is empty until the account flows write the log, and says so with []", async () => {
+  it("is empty until the account flows write the log, and says so with no events", async () => {
     vi.mocked(prisma.adminActionLog.findMany).mockResolvedValueOnce([] as never);
+    vi.mocked(prisma.adminActionLog.count).mockResolvedValueOnce(0 as never);
 
     const res = await request(app)
       .get("/api/v1/system/events")
       .set("Authorization", `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.events).toEqual([]);
+    expect(res.body.total).toBe(0);
   });
 
   it("defaults the page size, and clamps a silly one instead of refusing to draw", async () => {
     vi.mocked(prisma.adminActionLog.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.adminActionLog.count).mockResolvedValue(0 as never);
 
     await request(app)
       .get("/api/v1/system/events?limit=abc")

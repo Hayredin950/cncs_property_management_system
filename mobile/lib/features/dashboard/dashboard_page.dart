@@ -148,15 +148,45 @@ class DashboardPage extends ConsumerWidget {
         ),
 
         const SizedBox(height: AppSpace.s6),
-        SectionHeader(title: 'Recently registered'),
-        ref.watch(itemListProvider).when(
+        SectionHeader(title: 'My holdings'),
+        ref.watch(myHoldingsProvider).when(
               loading: () => const SkeletonList(count: 2, height: 92),
               error: (error, _) => InlineError(
                 error: error,
-                onRetry: () => ref.invalidate(itemListProvider),
+                onRetry: () => ref.invalidate(myHoldingsProvider),
               ),
               data: (response) {
                 final items = response.items.take(3).toList();
+                if (items.isEmpty) {
+                  return const AppCard(
+                    child: Text(
+                      'You are not holding anything right now. Items you borrow or are '
+                      'assigned to you will appear here.',
+                      style: TextStyle(fontSize: 13.5, color: AppColors.aauGray500, height: 1.5),
+                    ),
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final item in items) ...[
+                      ItemCard(item: item, onTap: () => context.push('/items/${item.id}')),
+                      const SizedBox(height: AppSpace.s2),
+                    ],
+                  ],
+                );
+              },
+            ),
+
+        const SizedBox(height: AppSpace.s6),
+        SectionHeader(title: 'Recently registered'),
+        ref.watch(recentItemsProvider).when(
+              loading: () => const SkeletonList(count: 2, height: 92),
+              error: (error, _) => InlineError(
+                error: error,
+                onRetry: () => ref.invalidate(recentItemsProvider),
+              ),
+              data: (items) {
                 if (items.isEmpty) {
                   return const AppCard(
                     child: Text(

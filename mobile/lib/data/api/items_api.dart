@@ -69,6 +69,25 @@ class ItemsApi {
     return ItemsListResponse.fromJson(json);
   }
 
+  /// `GET /items/recent` — the newest registrations in the register.
+  ///
+  /// A separate endpoint rather than a page of the list sorted by date: the
+  /// server keeps this one cheap, and it is the only one that answers "what
+  /// arrived lately" for every role at once.
+  Future<List<Item>> recent({int limit = 5}) async {
+    final json = await _client.get<Map<String, dynamic>>(
+      '/items/recent',
+      query: {'limit': limit},
+    );
+    return [for (final row in asMapList(json)) Item.fromJson(row)];
+  }
+
+  /// `GET /items/held-by-me` — what the signed-in person holds.
+  Future<ItemsListResponse> heldByMe() async {
+    final json = await _client.get<Map<String, dynamic>>('/items/held-by-me');
+    return ItemsListResponse.fromJson(json);
+  }
+
   /// `GET /items/:tagId` — the QR destination. `404` for an unknown tag, `410`
   /// for a disposed item seen by the public. Both surface as [ApiError] for the
   /// screen to branch on.

@@ -92,6 +92,20 @@ class ItemListNotifier extends AsyncNotifier<ItemsListResponse> {
 
 final itemListProvider = AsyncNotifierProvider<ItemListNotifier, ItemsListResponse>(ItemListNotifier.new);
 
+/// The newest registrations in the register — the dashboard's "recently
+/// registered" list.
+///
+/// It asks `GET /items/recent` rather than the first page of the list: a
+/// dashboard wants three rows and was downloading twenty to show three.
+final recentItemsProvider = FutureProvider<List<Item>>((ref) {
+  return ref.watch(itemsApiProvider).recent(limit: 3);
+});
+
+/// What the signed-in person holds — the dashboard's "my holdings".
+final myHoldingsProvider = FutureProvider<ItemsListResponse>((ref) {
+  return ref.watch(itemsApiProvider).heldByMe();
+});
+
 /// `GET /items/:tagId` — the QR destination.
 ///
 /// This provider deliberately **surfaces** a `404`/`410` as an `AsyncError`

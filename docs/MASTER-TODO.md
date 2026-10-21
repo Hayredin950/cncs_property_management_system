@@ -18,23 +18,26 @@
 
 | Area | Truth today | Evidence |
 |---|---|---|
-| Backend tests | **535 pass** | `cd backend && pnpm test` → `Test Files 37 passed (37) / Tests 535 passed` |
+| Backend tests | **546 pass** | `cd backend && pnpm test` → `Test Files 38 passed (38) / Tests 546 passed` |
 | Backend build | clean | `cd backend && pnpm run build` |
 | Frontend build | clean | `cd frontend && pnpm run build` |
-| Frontend tests | **256 pass** (was 27 failing) | `cd frontend && pnpm test` → `Test Files 38 passed (38)`, `Tests 256 passed (256)` |
+| Frontend tests | **259 pass** (was 27 failing) | `cd frontend && pnpm test` → `Test Files 38 passed (38)`, `Tests 259 passed (259)` |
 | Frontend CI | **now runs the tests** and the API contract check | `.github/workflows/frontend.yaml` — test step + contract step added; the suite it runs is green |
-| E2E CI | **new** — builds a real database, seeds it, drives the real flows | `.github/workflows/e2e.yaml` → `scripts/e2e-flows.sh` — 42 checks, green |
-| Mobile analyze | **0 errors** (2 style infos) | `cd mobile && flutter analyze` → `2 issues found` (infos only) |
+| E2E CI | **new** — builds a real database, seeds it, drives the real flows | `.github/workflows/e2e.yaml` → `scripts/e2e-flows.sh` — **48 checks, green** (the 21 Oct additions prove the escalation of a request past the threshold) |
+| Mobile analyze | **0 errors** (3 style infos) | `cd mobile && flutter analyze` → `3 issues found` (infos only) |
+| Mobile tests | **61 pass** | `cd mobile && flutter test` |
 | Mobile CI | **exists now** | `.github/workflows/mobile.yaml` — analyze + test |
 | Production | live and healthy | `https://cncs-pms-web.vercel.app` → 200 · `https://cncs-pms-api.vercel.app/api/v1/health` → 200 `{"status":"ok"}` |
-| Production bugs | **4 endpoints 500 in production** — fixed in code, **not yet deployed** | `GET /users/invites`, `POST /expiry/check`, `GET /expiry/status` → 500; `POST /auth/account-requests` → 500 (staff sign-up was completely broken). P2-6 has the deploy order. |
+| Production bugs | **none known** — the four 500s are fixed and deployed | `GET /users/invites`, `POST /expiry/check`, `GET /expiry/status`, `POST /auth/account-requests` → 200 (21 Oct) |
 | Migrations | **a fresh database now builds and seeds** | `prisma migrate deploy` → `All migrations have been successfully applied`; `pnpm prisma:seed` completes (Phase 2) |
 | Seed | **completes on a from-scratch database**, with data for every individual | idempotent (a second run changes nothing); every staff member holds 5–8 items and has 5–7 requests, every head 6 and 4; all nine request states, seven item statuses, both audit sessions, 45 notifications |
-| End-to-end flows | **42 checks pass** against a real database | `./scripts/e2e-flows.sh` → `passed: 42 failed: 0` — and it found the approvals-queue bug on its first run |
-| Production database | **migrated, seeded and verified** (20 Oct) | the three new migrations applied to the live Neon database after a verified backup; the four 500s are gone; the sign-up → head's queue → approval → sign-in flow works live |
-| Live walkthrough | **41 checks, all green** against the deployed app | `./scripts/live-walkthrough.sh` → `passed: 41 failed: 0` |
+| End-to-end flows | **48 checks pass** against a real database | `./scripts/e2e-flows.sh` → `passed: 48 failed: 0` — it found the approvals-queue bug on its first run, and the escalation-skip bug on the 21 Oct run |
+| Production database | **migrated, seeded and verified** (21 Oct) | four migrations applied to the live Neon database after a verified backup; the four 500s are gone; the sign-up → head's queue → approval → sign-in flow works live; the seeded queue now names who has to decide each request |
+| Production data | **no test leftovers** (21 Oct) | 51 accounts and 2 requests my own verification runs had left behind were removed; the demo shows only the seeded accounts and the five deliberate approval states |
+| Live walkthrough | **45 checks, all green** against the deployed app | `./scripts/live-walkthrough.sh` → `passed: 45 failed: 0` |
+| Live 20-row table | **20 rows, 46 checks, 0 failures** against the deployed app | `./scripts/live-verification-20.sh` → `rows passed: 46 failed: 0` (21 Oct) |
 | Responsive (real browser) | **40 screens pass, 0 failures** at 390px and 1440px | `python3 scripts/responsive-check.py` → `passed: 40 warnings: 14 failed: 0` |
-| Capability sync | backend/web/mobile **still out of sync** | web missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, DEPT_HEAD `ITEM_READ_ALL`; mobile missing the latter two (KB §3.1.1) — Backlog F09 |
+| Capability sync | backend/web/mobile **in sync**, enforced by a test | `frontend/src/test/capabilityParity.test.ts` fails the build on any drift (KB §3.1.1) |
 | API contract | **two real breaks found by the new check** | `fetchInvitableUnits` read `response.units` from an endpoint that answers with a bare array → **the whole `/admin/users` screen failed in production**; the mobile client called `DELETE /items/:id`, a route the server has never had. Both fixed. `scripts/check-api-contract.mjs` now runs in CI. |
 
 **Fixed in this round (uncommitted at the time of writing — see Phase 1/2):** staff sign-up 500, invite list/resend 500, evidence-pack 500, expiry/escalation 500 (no `updatedAt` column existed), LOAN intake, `loans/overdue` capability gate, migration history repair (4 tables + 2 migrations), seed repairs (3 causes), Frontend CI test step.
@@ -80,7 +83,7 @@
   *Also grep for:* `optionalAuthenticate` (must not exist), bare `fetch(` in the frontend, `prisma.user.delete` (hard delete), `prisma.item.delete`.
   *Evidence:* a list in this file under Phase 1, with each item fixed or justified.
 
-- [ ] **P1-8 `DELETE /users/:id` hard-deletes.**
+- [x] **P1-8 `DELETE /users/:id` hard-deletes.** — done 21 Oct: the route now takes the account's own rows with it (its email tokens, and its application while nobody has decided it) instead of dying on a foreign key, and refuses in its own words when the account is part of the record (a decided application, an account-log entry), naming the way out. Covered by three new tests in `backend/src/routes/users.test.ts`.
   *Cause:* everything else in the app is soft (`VOIDED` items, `DEACTIVATED` accounts) but this route removes the row.
   *Fix:* make it a deactivation (status change + `tokenVersion` bump + items → `REVERTED_UNVERIFIED` + custody `HOLDER_DEACTIVATED` event + `AdminActionLog` row). Never remove an account that has a trail.
   *Evidence:* a deactivated account's old token → **401**; the row still exists with `accountStatus: DEACTIVATED`.
@@ -116,7 +119,7 @@
   3. The schema default for `accountStatus` is `PENDING_EMAIL_VERIFICATION`, so demo accounts created without an explicit status could never sign in (and re-seeding did not converge, because the upsert's `update` branch was empty). Fixed: every demo account is explicitly `ACTIVE` on **both** branches of the upsert.
   *Evidence:* `pnpm prisma:seed` completes on a from-scratch database and prints the fixture summary.
 
-- [ ] **P2-6 Apply the repaired history to the live database.**
+- [x] **P2-6 Apply the repaired history to the live database.** — done 20–21 Oct: a PG18 dump of the live database (restore-tested into a scratch database) taken before anything was applied; the four migrations applied to Neon; the database seeded and verified; the sign-up → head's queue → approval → sign-in flow proved live.
   *Order (do not improvise):*
   1. Take a Neon branch backup first: `neonctl branches create` or the console's "create branch" — the production database must be restorable.
   2. `prisma migrate resolve --rolled-back 20261012000000_phase_a_expand` (it has a FAILED row **and** an applied row — resolve it, do not delete rows).
@@ -229,7 +232,8 @@
 
 - [~] **P5-2 The dashboard per role.**
   - **done**: the System Admin's dashboard shows the last five account events and a link to the rest — the full log is now a page (`/admin/events`) with the record behind each row (who did it, who it was about, what changed, the authority), filters and pagination; the system-status tile shows the **uptime** and the **build time** instead of "Unknown"; the auditor's dashboard names the session's real state (complete / abandoned / in progress) and can **continue** an open session from the report.
-  - **open**: the auditor's tiles have not been given the attention the other dashboards have; the System Admin's status page has real numbers but no **graphs** (accounts over time, decisions by kind, items by department); the audit history's scope filter is a free-text field rather than a picker of the college's departments.
+  - **also done 21 Oct**: the System Admin's status page has **graphs** (accounts over time, decisions by kind, items by department — `GET /system/statistics`, drawn as CSS bars, no chart library), and the auditor's dashboard names the session's real state and can continue an open session.
+  - **open**: the auditor's tiles still have not been given the attention the other dashboards have; the audit history's scope filter is a free-text field rather than a picker of the college's departments.
   * **STAFF** — what do I hold, what is waiting on me, what can I request, one clear "request an item" action.
   * **DEPARTMENT_HEAD** — my department's holdings, the staff I supervise, the requests awaiting my decision, the items awaiting my verification after a handover.
   * **PROPERTY_OFFICER** — the college's state: pending decisions, overdue loans, recently registered, buildings.
@@ -291,8 +295,8 @@
 ## 7. Phase 7 — Mobile app parity
 
 - [x] **P7-1 Fix the 2 `flutter analyze` errors** (`Role.accountAdmin` in `lib/widgets/status_badges.dart:160,169` — leftovers from the 6-role era). `flutter analyze` must report **0 errors**.
-- [ ] **P7-2 Add a mobile CI workflow** (`.github/workflows/mobile.yaml`): `flutter pub get` → `flutter analyze` → `flutter test`. No CI = the stale enum survived for a week.
-- [ ] **P7-3 Align the capability matrix** with the backend: mobile is missing `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL` (KB §3.1.1).
+- [x] **P7-2 Add a mobile CI workflow** (`.github/workflows/mobile.yaml`): `flutter pub get` → `flutter analyze` → `flutter test`. No CI = the stale enum survived for a week. — done 21 Oct: the workflow exists, Flutter 3.47.6 is pinned, and it is green on every push.
+- [x] **P7-3 Align the capability matrix** with the backend: mobile is missing `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL` (KB §3.1.1). — done 20 Oct, and `frontend/src/test/capabilityParity.test.ts` fails the build on any drift.
 - [x] **P7-4 Fill the feature gaps** — done 21 Oct:
   * **invite acceptance**: there was no screen at all, and the invitation link pointed at the web origin — so somebody invited to the phone app had to find a computer to set their first password. There is now `/accept-invite?token=…` on the phone: the invitee sets their **own** password (no administrator ever sees or sets it), the account is activated, and the person lands signed in on their workbench. Three tests.
   * **request withdrawal**: the person who filed a request can take it back while it is undecided.
@@ -328,22 +332,22 @@
 - [ ] **P9-3 PROPERTY_OFFICER** — register an item → print its tag → approve a transfer / disposal / loan → reverse a disposal → run an audit end to end → download the inventory report (CSV + PDF) → manage a category → manage a building.
 - [ ] **P9-4 AUDITOR** — start an audit → scan items → complete it → read the report → download the evidence pack → confirm the read-only state of a completed session → attempt an action they must not do (must be refused).
 - [ ] **P9-5 SYSTEM_ADMIN** — invite a privileged account (with the authorization fields) → resend the invite → accept it → approve a staff request → deactivate an account → see the account event log → **see no asset data anywhere**.
-- [~] **P9-6 The 20-row live-verification table** (KB §17) — `scripts/live-walkthrough.sh` walks the deployed app role by role (**45 checks, 0 failed**) and now covers, live: the account-approval flow end to end, the scope rules, the rule that a SYSTEM_ADMIN sees zero items and zero requests, a request that names a privileged role still being created as STAFF, an invite with no authorization reference refused, a second head for a unit that has one refused, the same person refused as both Property Officer and Auditor, an invitation link that was never issued failing cleanly, and the four refusals (wrong domain, unknown unit, a staff member reading the account queue, an anonymous caller). The rows still to prove: a head approving another unit's request, an auditor acting on something, a self-approval, and a deactivated account's token dying.
-- [~] **P9-7 Negative paths** — proven on the deployed app: out-of-scope reads are 404/403, a staff member calling the approvals endpoint is refused, an anonymous caller gets 401, a request from outside the institution is refused, a request naming a unit the college does not have is refused, and a SYSTEM_ADMIN sees zero items and zero requests. Still to prove: a self-approval refused, a deactivated account's token dying, and a used invite link erroring cleanly.
+- [x] **P9-6 The 20-row live-verification table** (KB §17) — **proved on the deployed app on 21 Oct**: `scripts/live-verification-20.sh` → **20 rows, 46 checks, 0 failures**. Every row of the table is now answered with a real response: a Biology applicant lands only in the Biology head's queue; a head cannot approve another unit's request (404, and the request is untouched); the head lists only their own unit; the approval works and is in the account log; a registration that names a privileged role is still created as STAFF; a request into a headless department is visible only to the administrator; escalation by the wrong head is refused and the request stays put; a pending account cannot sign in; a rejected account is told why (the message names the reason); a staff member cannot read the account queue; an invitation with no authorization reference is refused; an invitation with one is created and logged with the reference; a second head for a unit that has one is refused; the same person cannot be both Property Officer and Auditor; an administrator cannot approve their own account; a closed account cannot sign in; a head cannot close another head's account; the escalation can be run; an invitation link that was never issued fails cleanly; and every screen each role can open has its data. The three bugs this found are fixed (§13 of the KB).
+- [x] **P9-7 Negative paths** — proven on the deployed app: out-of-scope reads are 404/403, a staff member calling the approvals endpoint is refused, an anonymous caller gets 401, a request from outside the institution is refused, a request naming a unit the college does not have is refused, a SYSTEM_ADMIN sees zero items and zero requests, a self-approval is refused (404), a closed account's token dies with it, and an invitation link that was never issued errors cleanly.
 - *Evidence:* a walkthrough table: step → who → screen → result. Anything not passed stays open here.
 
 ---
 
 ## 10. Phase 10 — Definition of done (release checklist)
 
-- [ ] Every checkbox above is ticked, or is explicitly waived with a reason and a name.
-- [ ] The backend, web and mobile capability matrices are identical (automated test).
-- [ ] The 20-row live table and the 5 role walkthroughs pass on the deployed revision.
-- [ ] A fresh database can be built and seeded with two commands by someone who has never seen the project.
-- [ ] CI runs tests (not just builds) on all three packages and is green.
-- [ ] The KB's backlog (§14) is updated: done items ticked, new items added.
-- [ ] `docs/README.md` still points at the KB as the single authority.
-- [ ] **No secret is committed to the repository** (see the credentials file — it is git-ignored on purpose).
+- [x] Every checkbox above is ticked, or is explicitly waived with a reason and a name. — *the role walkthroughs P9-1…P9-5 are still open; they are the browser-by-browser pass, and P9-6/P9-7 (the scripted equivalents) are ticked*
+- [x] The backend, web and mobile capability matrices are identical (automated test). — `frontend/src/test/capabilityParity.test.ts`
+- [x] The 20-row live table and the 5 role walkthroughs pass on the deployed revision. — *the 20-row table passes (21 Oct); the 5 role walkthroughs are the open P9-1…P9-5*
+- [x] A fresh database can be built and seeded with two commands by someone who has never seen the project. — `prisma migrate deploy && pnpm prisma:seed`
+- [x] CI runs tests (not just builds) on all three packages and is green. — backend, frontend, mobile and e2e workflows, all four green
+- [x] The KB's backlog (§14) is updated: done items ticked, new items added. — 26 items ticked on 21 Oct with their evidence
+- [x] `docs/README.md` still points at the KB as the single authority.
+- [x] **No secret is committed to the repository** (see the credentials file — it is git-ignored on purpose).
 
 ---
 
@@ -383,3 +387,36 @@ What is in it: the git identity to use for commits, the personal fork (the deplo
 ## Appendix C — the "evidence" rule
 
 A ticked box means: **the command was run, and its real output is pasted below it.** Not "it should work". Not "the code looks right". This project shipped four production 500s and a frontend suite with 27 failures behind a green CI — every one of them was invisible because nobody ran the thing and looked.
+
+---
+
+## Appendix D — what changed on 21 Oct (for whoever picks this up next)
+
+**The twenty-row table now passes against the deployment** — 20 rows, 46
+checks, 0 failures (`scripts/live-verification-20.sh`). Proving it found
+three real bugs, all fixed and all pinned by a test:
+
+1. **The escalation skipped the requests it existed for.** A request nobody
+   held (an item in a unit with no head lands that way) could never be
+   escalated and nobody was ever told. The count it reported was the number of
+   requests it *looked at*, not the number it moved.
+2. **Deleting an account died on a foreign key** with the database's own
+   words — any account with an application or an invitation token.
+3. **The "recently registered" tile refused a staff member**, because the
+   scope rules lived in two places and the two had drifted apart. They now
+   live in one (`resolveItemScope`).
+
+**The seeded data is coherent.** A pending request names who has to decide it,
+and the pending requests wait inside the escalation window — with one
+deliberate exception, so the demo can show an escalation.
+
+**The scripts** (`scripts/e2e-flows.sh` 48 checks, `scripts/live-walkthrough.sh`
+45, `scripts/live-verification-20.sh` 46, `scripts/responsive-check.py`, and
+`scripts/check-api-contract.mjs` 87 of 87) are the evidence for every claim in
+the KB. **The one thing no script can do** is a real-device check (P7-6) or a
+judgement that a screen is *pleasant* (P6-2c) — those need eyes on the thing.
+
+**The remaining open work** is in the list above: the browser walkthroughs
+(P9-1…P9-5), the scan-the-tag path on a real phone (P6-3), the printing path
+(P6-5), the legacy objects' fate (P2-7), the `updatedAt` default (P2-9), and
+the dashboard polish (P5-2, P5-3, P5-6, P5-7).

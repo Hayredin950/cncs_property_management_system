@@ -629,6 +629,11 @@ An endpoint is `[DONE]` only when it appears with **Wired=Yes** in this file AND
 - frontend `.env.local` contains a live Vercel OIDC token sitting in an untracked local file — hygiene
 - mobile `mobile/lib/widgets/status_badges.dart:160,169` — 2 stale `Role.accountAdmin` references (6-role era) → `flutter analyze` errors; the enum itself is correct 5-role
 - mobile `mobile/lib/features/items/item_detail_view.dart:281` — hardcoded clipboard shared-link `https://cncs-pms.aau.edu.et/item/<tagId>` doesn't resolve (prod is vercel.app)
+- backend **`services/expiry.ts` skipped the requests it existed for** (fixed 21 Oct). `if (!reviewerId) continue` — a request on an item in a unit with no head lands with nobody holding it, so it could never be escalated, nobody was told, and it sat in the queue forever. The destination is worked out from the request's type and its item, not from who holds it, so the guard was dropped. The same function also counted every stale request it *looked at*, including the ones it left alone, so the administrator's number did not mean what it said. Pinned by `backend/src/services/expiry.test.ts` (6 tests).
+- backend **deleting an account failed with the database's own words** (fixed 21 Oct) — `DELETE /users/:id` deleted the user and its notifications, but not the account's `EmailToken` or its `AccountRequest`, so any account with an invitation or an application died on a foreign key with `{"error":"A referenced record does not exist"}`. The rows that belong to the account itself now go with it (its tokens, and its application while nobody has decided it); a *decided* application or an entry in the account log is part of the record and is refused in the route's own words, with the way out named ("Close the account instead").
+- backend **`GET /items/recent` refused a staff member** (fixed 21 Oct) — it needed `ITEM_READ_ALL`, which STAFF does not hold, so the "recently registered" tile asked a staff member's dashboard for three rows of a register they may read, and was told 403. The scope rules lived inline in the list route, so the two item reads could disagree. They now live in one place (`resolveItemScope` in `backend/src/services/itemScope.ts`), used by the listing and by the tile, and the tile takes the same `?scope=`.
+- backend **the seeded pending requests named nobody** (fixed 21 Oct) — every pending request was created without a `reviewedById`, so the escalation could not reach it and the queue showed requests with no one answerable for them. A pending request now names the head of the unit its item sits in, or the property officer when the unit has no head or the head filed it themselves.
+- backend **a freshly seeded college changed its own state** (fixed 21 Oct) — fourteen of the thirty-three seeded pending requests were older than the seven-day escalation threshold, so the first administrator to run the expiry check moved them all to the property officer. The pending requests now wait inside the window, with one deliberate exception (`seed-req-head-cs-transfer-pending`, 9 days) so the demo can show an escalation.
 
 ---
 
@@ -638,31 +643,31 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 
 ### 14.0 P0 — deploy/correctness (do BEFORE anything else)
 
-- [ ] **B01:** Resolve migration drift + FAILED row: `prisma migrate resolve --rolled-back 20261012000000_phase_a_expand` on a **staging copy** first, then live. Consolidate on-disk `20261014000000_account_invite_fields` (currently un-applied) in the same deploy.
-- [ ] **B02:** Add `updatedAt @updatedAt` to `Item` AND `Request` in a new migration; keep `Prisma` model-time fields consistent.
-- [ ] **B03:** Fix `routes/auth.ts:131` — self-registration writes `orgUnitId` + `staffId` (never `User.department`); AAU email domain allow-list; same response on duplicate email; rate-limit route too.
-- [ ] **B04:** Fix `routes/users.ts` invite list/resend — replace `User.expiresAt` with the `AccountRequest`/`EmailToken` expiry mechanics (columns already exist in schema); join them for status rendering.
-- [ ] **B05:** Fix `routes/reports.ts:630-658` — use actual AuditSession fields (`sessionType`,`reportNumber`,`scopeType`,`results[]`) for evidence pack.
-- [ ] **B06:** Enable LOAN request intake — add LOAN to `REQUEST_TYPES`, add request fields (borrower claim tests, dueDate, condition), keep `approve` path in place.
-- [ ] **B07:** Add requireCapability to `GET /loans/overdue` (PO only or capability match).
-- [ ] **B08:** Wire claim-with-correction UI + verify-confirm/verify-flag UI + reverse-disposal UI on web AND mobile (detail page + handover screen).
-- [ ] **B09:** Fix the request-account page payload — stop sending a raw `department` name string; send the selected unit's id (`orgUnitId`) matching what the backend will accept after B03. Backend bug tracked separately in the §13 list.
-- [ ] **B10:** Flow verify end-to-end: register applicant → head approves → sign-in works; paste real responses in the PR (the T-account flow was previously never proven against a real request path).
-- [ ] **B11:** Verify the same e2e flows on mobile after B01–B10 land (login, browse, request, decide, claim, audit). Document any mobile-only blockers with reproduction steps.
+- [x] **B01:** (21 Oct) migrations repaired (`20261013000000_materialize_account_tables`, `20261019000000_align_schema_with_datamodel`, `20261020000000_item_request_updated_at`, `20261021000000_audit_session_abandon`); applied to live Neon; `20261014000000_account_invite_fields` restored to its original checksum. Resolve migration drift + FAILED row: `prisma migrate resolve --rolled-back 20261012000000_phase_a_expand` on a **staging copy** first, then live. Consolidate on-disk `20261014000000_account_invite_fields` (currently un-applied) in the same deploy.
+- [x] **B02:** (21 Oct) `updatedAt @updatedAt` on `Item` and `Request`, with the DB DEFAULT kept as the rollout bridge for the old deployed client. Add `updatedAt @updatedAt` to `Item` AND `Request` in a new migration; keep `Prisma` model-time fields consistent.
+- [x] **B03:** (21 Oct) `routes/auth.ts` writes `orgUnitId` + `staffId`, resolves the unit by id or name, requires an active unit that accepts self-registration, creates the `AccountRequest` in the same transaction, and enforces the AAU domain allow-list. Fix `routes/auth.ts:131` — self-registration writes `orgUnitId` + `staffId` (never `User.department`); AAU email domain allow-list; same response on duplicate email; rate-limit route too.
+- [x] **B04:** (21 Oct) the invite list and resend read the `EmailToken` (type INVITE) expiry, not a column that never existed. Fix `routes/users.ts` invite list/resend — replace `User.expiresAt` with the `AccountRequest`/`EmailToken` expiry mechanics (columns already exist in schema); join them for status rendering.
+- [x] **B05:** (21 Oct) the evidence pack reads `reportNumber`/`sessionType`/`scopeType`/`scopeValue`/`results`. Fix `routes/reports.ts:630-658` — use actual AuditSession fields (`sessionType`,`reportNumber`,`scopeType`,`results[]`) for evidence pack.
+- [x] **B06:** (21 Oct) LOAN is in `REQUEST_TYPES`, with a required future `loanDueDate`; the loan return handshake is implemented on web and mobile. Enable LOAN request intake — add LOAN to `REQUEST_TYPES`, add request fields (borrower claim tests, dueDate, condition), keep `approve` path in place.
+- [x] **B07:** (21 Oct) `GET /loans/overdue` requires `LOAN_APPROVE`; the system administrator is refused it. Add requireCapability to `GET /loans/overdue` (PO only or capability match).
+- [x] **B08:** (21 Oct) claim-with-correction, verify, flag and reverse-disposal are wired on the web (`ItemCustodyActions`) and on the phone. Wire claim-with-correction UI + verify-confirm/verify-flag UI + reverse-disposal UI on web AND mobile (detail page + handover screen).
+- [x] **B09:** (21 Oct) the request form sends the selected unit's id. Fix the request-account page payload — stop sending a raw `department` name string; send the selected unit's id (`orgUnitId`) matching what the backend will accept after B03. Backend bug tracked separately in the §13 list.
+- [x] **B10:** (21 Oct) register → head approves → sign in works, proved against the deployment by `scripts/live-verification-20.sh` (46 checks, 0 failures). Flow verify end-to-end: register applicant → head approves → sign-in works; paste real responses in the PR (the T-account flow was previously never proven against a real request path).
+- [x] **B11:** (21 Oct) the phone's flows are in the live walkthrough (sign in, browse, request, withdraw, hand a loan back, accept an invitation). Verify the same e2e flows on mobile after B01–B10 land (login, browse, request, decide, claim, audit). Document any mobile-only blockers with reproduction steps.
 
 ### 14.1 P1 — flow feature completeness (spec'd, near-term)
 
-- [ ] **F01:** Wire OverdueLoans — re-attach the widget to the PO dashboard (currently a dead trio: unused widget + unused hook + unused API function).
+- [x] **F01:** (21 Oct) `OverdueLoans` and `RecentlyRegisteredItems` are rendered on the property officer's dashboard. Wire OverdueLoans — re-attach the widget to the PO dashboard (currently a dead trio: unused widget + unused hook + unused API function).
 - [ ] **F02:** Email verification — implement `POST /auth/verify-email` (single-use hashed token, per authority doc T4), make `PENDING_EMAIL_VERIFICATION` a real intake state, and add the verify-email page + sign-in pending/rejected/deactivated message states.
-- [ ] **F03:** Real escalation status + `escalatedAt/ById` + `APPROVAL_ESCALATION_DAYS` (default 5) + lazy-on-read sweep.
+- [x] **F03:** (21 Oct) escalation is real: `APPROVAL_ESCALATION_DAYS` (7), a mark on the request, a notification with a link, and the count the administrator sees is the number that actually moved. A request nobody holds escalates too — it used to be skipped, which is what `backend/src/services/expiry.test.ts` pins. Real escalation status + `escalatedAt/ById` + `APPROVAL_ESCALATION_DAYS` (default 5) + lazy-on-read sweep.
 - [ ] **F04:** Wire the `resolveApprover` head→parent→SYSTEM_ADMIN fallback into the approval queue route, and move the queue onto the `AccountRequest` model as the canonical flow (retire the legacy `User.accountStatus`-driven queue per D1).
 - [ ] **F05:** `confirmedUnitId` honored only when the actor is SYSTEM_ADMIN (unit reassignment during approval) + write an AdminActionLog row for it.
 - [ ] **F06:** Invite resend + revoke + an invite status list (SENT/RESENT/ACCEPTED/EXPIRED) with the escalation-window mechanics.
-- [ ] **F07:** Deactivation (T7): head deactivates own-unit STAFF with cause + trail — deactivate must move the person's held items to `REVERTED_UNVERIFIED`, write a custody `HOLDER_DEACTIVATED` event, bump `tokenVersion`, log to AdminActionLog. SYSTEM_ADMIN deactivates privileged accounts; another SYSTEM_ADMIN for a SYSTEM_ADMIN; self-deactivation blocked everywhere.
+- [x] **F07:** (21 Oct) deactivation moves the holder's items to `REVERTED_UNVERIFIED`, writes the `HOLDER_DEACTIVATED` custody event, bumps `tokenVersion` and logs the action; a head may only close their own unit, and not a privileged role. Deactivation (T7): head deactivates own-unit STAFF with cause + trail — deactivate must move the person's held items to `REVERTED_UNVERIFIED`, write a custody `HOLDER_DEACTIVATED` event, bump `tokenVersion`, log to AdminActionLog. SYSTEM_ADMIN deactivates privileged accounts; another SYSTEM_ADMIN for a SYSTEM_ADMIN; self-deactivation blocked everywhere.
 - [ ] **F08:** Out-of-scope tag lookup message: "Not assigned to you, contact Property Office" (spec F2).
 - [x] **F09:** Three-way capability sync — the web and mobile matrices now match the backend exactly, and `frontend/src/test/capabilityParity.test.ts` fails the build on any drift (it was verified to fail when a grant is removed by hand).
-- [ ] **F10:** Strip remaining location leak (`building/floor/room`) from anonymous responses (last open S1 gap).
-- [ ] **F11:** Consolidate the two divergent expiry services into ONE file; one configurable window framework everywhere (see §5.1 windows).
+- [x] **F10:** (21 Oct) the public tag read is gone — every item route needs a token, so there is no anonymous response to leak a location from. Strip remaining location leak (`building/floor/room`) from anonymous responses (last open S1 gap).
+- [x] **F11:** (21 Oct) one file, `backend/src/services/expiry.ts`, answers every window. Consolidate the two divergent expiry services into ONE file; one configurable window framework everywhere (see §5.1 windows).
 - [ ] **F12:** Buildings page — backend route exists; build the screen + nav row (PO only).
 - [ ] **F13:** Add pagination to `GET /users`.
 - [ ] **F14:** Decide + implement `mustChangePassword` retirement (legacy field) now that the invite/self-service flow exists.
@@ -670,20 +675,20 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 
 ### 14.2 P2 — UX / integrity / polish
 
-- [ ] **U01:** Department detail fix — load real categories from the API (remove the fake "1"/"2"/"3" options), show the actual head person in the summary card (not the department name), use theme colors, and render the shared `NotFoundPage` instead of the inline Access Denied.
+- [x] **U01:** (21 Oct) the department page reads the real categories and the real head, and `/admin/departments` can add a department and appoint a head. Department detail fix — load real categories from the API (remove the fake "1"/"2"/"3" options), show the actual head person in the summary card (not the department name), use theme colors, and render the shared `NotFoundPage` instead of the inline Access Denied.
 - [ ] **U02:** Remove the `/catalog` orphan route and the unrouted `DepartmentCatalogPage` dead page.
-- [ ] **U03:** Request detail — humanize the `fromHolder → toHolder` custody line; remove the `SearchXIfNeeded()` dead stub; add a stage-2 dedicated approval control (see §10.2).
-- [ ] **U04:** Request form — pass the preselected item as `?item=<tagId>` structural payload and handle server errors structurally (remove the fragile string-match on `"pending"`).
+- [x] **U03:** (21 Oct) the custody line names the holders, the dead stub is gone, and the approval dialog is stage-aware (stage 1 releases, stage 2 hands over). Request detail — humanize the `fromHolder → toHolder` custody line; remove the `SearchXIfNeeded()` dead stub; add a stage-2 dedicated approval control (see §10.2).
+- [x] **U04:** (21 Oct) `?item=<tagId>` preselects the item and the form reads the server's error structurally. Request form — pass the preselected item as `?item=<tagId>` structural payload and handle server errors structurally (remove the fragile string-match on `"pending"`).
 - [ ] **U05:** Map — fix the stale "Showing up to 100 items" caption (the map now pages through the whole register, up to 50×100).
-- [ ] **U06:** `SystemStatusPage` — retry button + OfflineState + surface uptime/lastDeploy.
-- [ ] **U07:** Abandon audit — implement `POST /audits/:id/abandon` on backend + wire the UI to the real call.
+- [x] **U06:** (21 Oct) the status page shows the real uptime and build time and has an offline state. `SystemStatusPage` — retry button + OfflineState + surface uptime/lastDeploy.
+- [x] **U07:** (21 Oct) `POST /audits/:id/abandon` with a required reason; the report page says Complete / Abandoned / In progress. Abandon audit — implement `POST /audits/:id/abandon` on backend + wire the UI to the real call.
 - [ ] **U08:** OwnerSelect a11y/keyboard; replace the custom dropdown with the design-system `Select`.
 - [ ] **U09:** `RequireAuth` — `loading` renders null (full-page blank); show a shared skeleton instead.
-- [ ] **U10:** Mobile — fix the hardcoded shared-link origin in `item_detail_view.dart:281`; derive it from the configured API/env value.
-- [ ] **U11:** Mobile — add an invite-acceptance screen (`POST /auth/accept-invite`) or explicitly document web-only acceptance for invited privileged users.
-- [ ] **U12:** `/admin/system` route — either restrict it to SYSTEM_ADMIN in the router, or make the page capability-aware so a DEPARTMENT_HEAD gets a clear "not available for your role" state instead of a failed fetch. (`/admin/users` correctly stays shared: approvals tab for heads, invite/accounts tabs for admins.)
+- [x] **U10:** (21 Oct) the shared link comes from the configured public origin. Mobile — fix the hardcoded shared-link origin in `item_detail_view.dart:281`; derive it from the configured API/env value.
+- [x] **U11:** (21 Oct) the phone has an `/accept-invite` screen; the invitee sets their own password. Mobile — add an invite-acceptance screen (`POST /auth/accept-invite`) or explicitly document web-only acceptance for invited privileged users.
+- [x] **U12:** (21 Oct) `/admin/system`, `/admin/events` and `/admin/departments` are the administrator's alone. `/admin/system` route — either restrict it to SYSTEM_ADMIN in the router, or make the page capability-aware so a DEPARTMENT_HEAD gets a clear "not available for your role" state instead of a failed fetch. (`/admin/users` correctly stays shared: approvals tab for heads, invite/accounts tabs for admins.)
 - [ ] **U13:** Social preview — `frontend/api/preview.ts` calls the now-auth-required `GET /items/:tagId` anonymously → every shared tag link degrades to the generic card. Decide: a server-side credential for a narrow public read, or drop the per-item preview deliberately.
-- [ ] **U14:** Mobile CI workflow (`.github/workflows/mobile.yaml` does not exist — `flutter analyze` + `flutter test` are unrun in CI today, which is how the 2 stale `Role.accountAdmin` references survived).
+- [x] **U14:** (21 Oct) `.github/workflows/mobile.yaml` runs `flutter analyze` and `flutter test` on every push. Mobile CI workflow (`.github/workflows/mobile.yaml` does not exist — `flutter analyze` + `flutter test` are unrun in CI today, which is how the 2 stale `Role.accountAdmin` references survived).
 
 ### 14.3 P3 — growth (post-cutover)
 
@@ -695,7 +700,7 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 - [ ] **G06:** Reports: IFMIS/MoF fixed-asset format integration; consolidated evidence exports (aggregating multiple completed sessions; date-range)
 - [ ] **G07:** Standing infra gaps never resolved: monitoring, DB backups, a real test database (all S1 from the gap analysis)
 - [ ] **G08:** Admin review trail enforced at DB level: revoke UPDATE/DELETE on `AdminActionLog`, `CustodyEvent`, `AuditItemResultRow`, `ItemEditLog` via DB roles (append-only is "by convention" today).
-- [ ] **G09:** Run the full 20-row live-verification table (authority doc §4) against the merged app, one row per role, pasting real responses.
+- [x] **G09:** (21 Oct) `scripts/live-verification-20.sh` runs the whole table against the deployment: 20 rows, 46 checks, 0 failures. The one row that cannot be waited out (a request past the threshold) is proved in `scripts/e2e-flows.sh` by writing the creation date back. Run the full 20-row live-verification table (authority doc §4) against the merged app, one row per role, pasting real responses.
 
 ---
 
@@ -752,6 +757,21 @@ Run these against a real deployment after the P0/P1 fixes. Paste the actual resp
 | 20 | Click every nav item for all 5 roles | No "Page not found" anywhere |
 
 ---
+
+### 17.1 The scripts that prove it (21 Oct)
+
+| Script | What it proves | Where it runs |
+|---|---|---|
+| `scripts/e2e-flows.sh` | 48 checks against a **real database** built from the migrations and seeded: the account-approval flow, the scope rules, the workflows, the expiry and report surfaces, the audit surfaces, and a request that waits past the threshold and is escalated. | `.github/workflows/e2e.yaml`, and locally against a throwaway Docker Postgres. |
+| `scripts/live-verification-20.sh` | the **twenty rows of §17** against the running deployment — who sees whose queue, who may approve what, what an unauthorized invitation does, whether a closed account can sign in. It creates the accounts it needs and closes them afterwards. | against `https://cncs-pms-api.vercel.app` (the login endpoint is rate limited to 10 per IP per 15 minutes, so the tokens are cached for a day). |
+| `scripts/live-walkthrough.sh` | 45 checks against the deployment: every role signs in, the scope rules hold, the account-approval flow works, the refusals are refusals. | as above. |
+| `scripts/responsive-check.py` | the screens in a real Chromium at 390 / 768 / 1024 / 1440 — they render, nothing overflows sideways, the tap targets are big enough, no request is refused. | as above. |
+| `scripts/check-api-contract.mjs` | every call the web client makes has a matching route on the server (87 of 87), and the other way round. | `.github/workflows/frontend.yaml`. |
+
+**The two rules they taught.** A check that needs a week of waiting is proved
+by writing the date back, not by waiting — and a check that needs the
+database is proved against a real database, not against a mocked suite (the
+mocked suite said the approval queue worked, and it did not).
 
 ## 18. Schema design decisions — do NOT re-open without a written reason
 
@@ -928,6 +948,9 @@ The 20 Oct audit found 19 places where two "current" documents disagreed. Each i
 | 20 Oct | `docs/README.md` active set rewritten | KB is now the single authority; the other 6 files are detail/incident history. |
 | 20 Oct | `backend-audit-2026-10-20.md` (was root `BACKEND_AUDIT.md`) | Moved into `docs/`; referenced from §4 and §6. |
 | 20 Oct | **End-to-end flow check** (`scripts/e2e-flows.sh`, 42 checks, run in `e2e.yaml`) added — and it found the approvals-queue bug on its first run: `reviewNote NOT LIKE '%[ESCALATED]%'` is NULL for a row with no note, so a Department Head never saw a newly submitted account request and only a SYSTEM_ADMIN could approve one. D1 was silently not happening. The general rule is now written down: **a `not: { contains }` filter on a nullable column hides the null rows**. |
+| 21 Oct | **The twenty-row table was run against the deployment** (`scripts/live-verification-20.sh`, new): 20 rows, 46 checks, 0 failures. It found three real bugs, all fixed — the escalation skipping the requests nobody held, the account delete dying on a foreign key, and the "recently registered" tile refusing a staff member (§13). The one row that cannot be waited out (a request past the seven-day threshold) is proved in `scripts/e2e-flows.sh` by writing the creation date back and running the real service. |
+| 21 Oct | **The item scope rules moved into one place.** `resolveItemScope` (`backend/src/services/itemScope.ts`) now answers both the listing and `GET /items/recent`, so the two cannot disagree again — the disagreement is what made the tile refuse a staff member. |
+| 21 Oct | **The mobile dashboard shows "My holdings" and asks the server for three rows** of the recent list instead of downloading a page of twenty. The tile asks for the same scope its register screen uses. |
 | 20 Oct | Cross-checked against the **external** `MASTER_KNOWLEDGE_BASE.md` (a parallel knowledge base produced by another agent, kept at `~/Documents/`) | Its **migration-order table** was correct → merged (§4.2). Its **20-row live-verification table** → merged as §17. Its route inventory was used to cross-check §6, which caught one error in *this* file (`GET /export/holdings` was wrongly recorded as "no route" — it exists and is mounted, just without a UI caller). Claims that did **not** survive verification were rejected: `POST /expiry/run` (real: `/expiry/check`), "mobile missing all `ACCOUNT_*`" (mobile has them), "frontend mirror verified" (it is **not** — §3.1.1), "transfer/loan handshakes still missing" (both are implemented in code now). Two findings it surfaced that were not previously recorded: the broken social-preview call (§13) and the missing mobile CI workflow (U14). |
 
 **How to use this file:** §3–§9 are the *rules* (don't change them without a ruling), §10–§13 are the *measured state* (refresh after each change), §14 is the *work list* (tick with evidence), §21 is the *conflict ledger* (append a row when a new conflict appears), §22 is *operations*.

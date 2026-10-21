@@ -498,6 +498,10 @@ auditsRouter.get(
             runById: true,
             startedAt: true,
             completedAt: true,
+            // An abandoned session has to be visible as such: the list is where
+            // somebody checks whether a session is still open.
+            abandonedAt: true,
+            abandonReason: true,
             runBy: { select: { id: true, fullName: true, email: true } },
           },
           orderBy: [{ startedAt: "desc" }, { id: "desc" }],

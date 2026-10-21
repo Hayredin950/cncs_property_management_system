@@ -154,6 +154,40 @@ It found two real breaks on the day it was written, neither of which any test ha
 
 The second one is the shape of bug that hides best: the method existed, was never called by any screen, and would have failed the first time somebody wired it up.
 
+### 3.1.1b The three tiers of an item, measured on the deployed app
+
+What a person sees of an item is decided by **two** questions, and until 21 Oct they were answered by one:
+
+1. **May they open it?** — the holder, their department, and the college-wide
+   readers (a property officer, an auditor) may. A staff member and a
+   department head may open an item **outside** their own scope: the register is
+   the college's, and "what does the rest of the college have?" is the question a
+   person asks when they need to request something. The one thing nobody may
+   open is **another department's pool** — the items a department holds for
+   itself. That is the department's own business, not a catalogue.
+2. **May they administer it?** — the holder, a property officer, an auditor, and
+   a department head for **their own** department. The change history belongs to
+   these people: it names who made each change and shows the old and new value
+   of every field, including the value and the custodian that the same viewer
+   is not shown on the item itself.
+
+The result, measured on the deployed app for one Biology laptop viewed from three roles:
+
+| Field | Staff (another department) | Department head (another department) | Property Officer |
+|---|---|---|---|
+| name · status · condition | ✓ | ✓ | ✓ |
+| department · building · floor · room | ✓ | ✓ | ✓ |
+| brand · model · serial number · notes | — | ✓ | ✓ |
+| purchase cost · current value | — | — | ✓ |
+| custodian (name + email) | — | — | ✓ |
+| the change history | — | — | ✓ |
+
+Two rules that came out of it: the **status** is shown to everyone (a person
+looking at a laptop needs to know whether it is in service, on loan or
+disposed), and the custodian's record is stripped **whole** — the name *and*
+the id behind it, because a payload carrying the id without the record makes
+the client believe it has the privileged view and render an empty owner.
+
 ### 3.1.2 Two custody-field rulings (measured, not inferred)
 
 1. **`ownerId` is legacy but still returned to privileged callers.** `utils/filterItemFields.ts` strips `ownerId`/`owner` for restricted (public/anonymous) views, but the privileged payload keeps it alongside the holder pair — so a Property Officer/Auditor payload carries **two sources of truth for custody** (`ownerId` and `holderType`/`holderId`), both dual-written by `services/holder.ts`. Cleanup item: stop returning `ownerId` to clients once the contract migration drops the column (it is a schema-column decision, not a leak).

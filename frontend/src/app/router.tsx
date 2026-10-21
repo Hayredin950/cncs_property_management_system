@@ -1,6 +1,7 @@
 import { createBrowserRouter, Outlet, type RouteObject } from "react-router-dom";
 import { AdminCategoriesPage } from "../features/admin/AdminCategoriesPage";
 import { AdminUsersPage } from "../features/admin/AdminUsersPage";
+import { DepartmentsPage } from "../features/admin/DepartmentsPage";
 import { SystemEventsPage } from "../features/admin/SystemEventsPage";
 import { SystemStatusPage } from "../features/admin/SystemStatusPage";
 import { AuditListPage } from "../features/audits/AuditListPage";
@@ -210,6 +211,7 @@ export const appRoutes: RouteObject[] = [
               { path: "/admin/users", element: <AdminUsersPage /> },
               { path: "/admin/system", element: <SystemStatusPage /> },
               { path: "/admin/events", element: <SystemEventsPage /> },
+              { path: "/admin/departments", element: <DepartmentsPage /> },
             ],
           },
         ],

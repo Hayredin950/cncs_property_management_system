@@ -227,7 +227,9 @@
   Realistic states: wrong password, unknown email, pending approval, rejected (with the reason), deactivated, forced password change, expired session. The `next` parameter must survive all of them. Loading must disable the button, not double-submit.
   *Evidence:* a test per state + a manual click-through.
 
-- [ ] **P5-2 The dashboard per role.**
+- [~] **P5-2 The dashboard per role.**
+  - **done**: the System Admin's dashboard shows the last five account events and a link to the rest — the full log is now a page (`/admin/events`) with the record behind each row (who did it, who it was about, what changed, the authority), filters and pagination; the system-status tile shows the **uptime** and the **build time** instead of "Unknown"; the auditor's dashboard names the session's real state (complete / abandoned / in progress) and can **continue** an open session from the report.
+  - **open**: the auditor's tiles have not been given the attention the other dashboards have; the System Admin's status page has real numbers but no **graphs** (accounts over time, decisions by kind, items by department); the audit history's scope filter is a free-text field rather than a picker of the college's departments.
   * **STAFF** — what do I hold, what is waiting on me, what can I request, one clear "request an item" action.
   * **DEPARTMENT_HEAD** — my department's holdings, the staff I supervise, the requests awaiting my decision, the items awaiting my verification after a handover.
   * **PROPERTY_OFFICER** — the college's state: pending decisions, overdue loans, recently registered, buildings.
@@ -268,6 +270,11 @@
 ## 6. Phase 6 — Responsive: mobile view and desktop view
 
 *Exit condition: both layouts are usable for every role, with no horizontal scroll and no hidden action.*
+
+- [x] **The role report (21 Oct) — the work it produced:**
+  - the register **sorts** (name, value, status, oldest/newest) and **filters by building**; the audit history **filters by scope** and searches; a department head has a **"Decided" tab** with the accounts they approved or declined; an administrator can **add a department** (`/admin/departments`); every item has a **picture**, and the pictures load (a site-relative path was being resolved against the API origin instead of the app's own).
+  - the live defects it found are fixed: the staff member's 404 on another department's item, the item page's two errors (tag image, edit history), the head's near-empty cross-department view, the notification that led to a request nobody could open, the roster's "0 items" for everybody, the abandoned session offered as the "current audit", the report page that called everything "Audit complete", the missing department on the cards and rows, and the system status's "Unknown" uptime.
+  - the four questions it asked are answered in `KNOWLEDGE-BASE.md` §20.1; the rest of its items are in the phases above (P5-2b/c, P6-2b, P7-4, P9).
 
 - [x] **P6-1 Verify the breakpoints by hand** at 375, 768, 1024 and 1440 px → **done with a browser instead of by hand**: `scripts/responsive-check.py` drives the **deployed** app in Chromium at 390px and 1440px, for every screen every role can reach, and checks that the page renders, that nothing overflows sideways, that the tap targets are big enough, and that no request was refused. It found and got fixed: the Accounts badge asking an endpoint the role may not read (a 403 on every page for the officer, auditor and staff), the head's accounts screen asking for the account list heads may not read, the request row overflowing a phone by 94px, the reports tabs by 22px, and every `size="sm"` button being 36px on a phone against the design system's own 44px claim. **Result: 0 failures** (was 14).
 - [x] **P6-2 The phone layout is not a squeezed desktop layout.** — the request row stacks on a small screen, the reports tabs scroll instead of pushing the page wide, the bottom bar and every small button clear 44px, and the AAU crest is a 44px tap target.

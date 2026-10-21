@@ -782,6 +782,42 @@ Run these against a real deployment after the P0/P1 fixes. Paste the actual resp
 
 ---
 
+## 20.1 The open questions, answered
+
+The role report asked four questions that are design decisions rather than defects. They are answered here so the next person does not have to guess.
+
+**1. Should the Property Officer have the audit history?**
+Yes. An officer acts on what an audit finds — the findings list is on their dashboard and a finding without the session that produced it is not actionable. The officer **reads** the history (`AUDIT_VIEW`); they do not **run** sessions (`AUDIT_RUN` is the auditor's alone). The nav already draws that line: "Audit history" for the officer, "Active Audit" for the auditor.
+
+**2. Should the auditor have notifications, and of what kind?**
+Yes, and of three kinds only — the ones that concern an auditor's work:
+- an audit session was **completed** by somebody else (so they can check the result);
+- an item was **flagged** for review (spec §5.3's flag path);
+- a finding was **confirmed lost** (the loss record exists).
+An auditor does not need to be told that an account was approved. The seed does not create auditor notifications today; the notifications service does not emit audit events to auditors either. **This is open work (P3), not a decision against it.**
+
+**3. Which roles get which reports?**
+| Role | Reports | Scope |
+|---|---|---|
+| PROPERTY_OFFICER | inventory, disposals, audit session, evidence pack | the whole college |
+| DEPARTMENT_HEAD | inventory and disposals for their department | their unit |
+| AUDITOR | inventory, disposals, audit session, evidence pack | the whole college (read-only) |
+| SYSTEM_ADMIN | **none** | — an account role does not get asset data |
+| STAFF | **none** | — they see their own items, which is not a report |
+
+`REPORT_VIEW_ALL` is held by the officer, the head and the auditor, and the *scope* is decided by the report, not by a second capability. The web's Reports page is a property officer's and an auditor's; a department head's departmental reports are still to be built.
+
+**4. What happens when the person who holds the account, or the head of the department, leaves?**
+The handover is the answer, and it already exists in code — what was missing was that it was not obvious, and that the account was never closed.
+
+- **A staff member leaves.** The administrator **deactivates** the account (`POST /users/:id/deactivate`): the account stops being able to sign in (`tokenVersion` is bumped, so every session dies), the items they held move to `REVERTED_UNVERIFIED` and a custody `HOLDER_DEACTIVATED` event is written. The items are **not** given away to somebody else automatically: the department head confirms them one by one, and until they do, the item cannot be transferred or disposed of.
+- **A department head leaves.** The administrator **appoints the new head** (`POST /org-units/:id/activate-head`): the unit's held items move to `REVERTED_UNVERIFIED` and the new head verifies each one. The old head's **personally held** items are *not* moved to the new head — a role change never silently moves personal custody; they stay with the person until that person hands them over or is deactivated.
+- **Who replaces them?** The administrator appoints. There is one head per unit (`OrgUnit.headId` is unique) and one unit per head.
+
+**The gap that is still open:** the deactivation and head-appointment screens are not built (the endpoints are), and the deactivation does not yet write the AdminActionLog row the append-only rule requires. Both are in `MASTER-TODO.md`.
+
+---
+
 ## 21. Conflict rulings ledger (every known doc conflict, resolved once)
 
 The 20 Oct audit found 19 places where two "current" documents disagreed. Each is ruled here; the losing statement is not repeated anywhere else in this file.

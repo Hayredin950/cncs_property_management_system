@@ -1,5 +1,6 @@
 import {
   Bell,
+  Building2,
   ClipboardCheck,
   ClipboardList,
   FileBarChart,
@@ -85,6 +86,8 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "System Status", to: "/admin/system", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN"], phase: 3 },
   // The account log, in full. The dashboard shows the last few; this is the rest.
   { label: "System Events", to: "/admin/events", icon: ScrollText, roles: ["SYSTEM_ADMIN"], phase: 3 },
+  // The college's departments, and how to add one.
+  { label: "Departments", to: "/admin/departments", icon: Building2, roles: ["SYSTEM_ADMIN"], phase: 3 },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
 ];
 

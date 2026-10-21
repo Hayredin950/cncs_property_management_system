@@ -285,7 +285,12 @@
 - [x] **P7-1 Fix the 2 `flutter analyze` errors** (`Role.accountAdmin` in `lib/widgets/status_badges.dart:160,169` — leftovers from the 6-role era). `flutter analyze` must report **0 errors**.
 - [ ] **P7-2 Add a mobile CI workflow** (`.github/workflows/mobile.yaml`): `flutter pub get` → `flutter analyze` → `flutter test`. No CI = the stale enum survived for a week.
 - [ ] **P7-3 Align the capability matrix** with the backend: mobile is missing `DISPOSAL_REVERSE` and DEPARTMENT_HEAD's `ITEM_READ_ALL` (KB §3.1.1).
-- [ ] **P7-4 Fill the feature gaps:** invite acceptance (the invite link points at the web origin, so an invited person must leave the app), request withdrawal, the loan-return handshake, `GET /items/recent` and `GET /items/held-by-me` (the mobile dashboard fetches whole pages to count three things).
+- [x] **P7-4 Fill the feature gaps** — done 21 Oct:
+  * **invite acceptance**: there was no screen at all, and the invitation link pointed at the web origin — so somebody invited to the phone app had to find a computer to set their first password. There is now `/accept-invite?token=…` on the phone: the invitee sets their **own** password (no administrator ever sees or sets it), the account is activated, and the person lands signed in on their workbench. Three tests.
+  * **request withdrawal**: the person who filed a request can take it back while it is undecided.
+  * **the loan-return handshake**: the borrower says "I am handing it back"; the department head or the property officer confirms it came back (recording the condition) or reports that it has not.
+  * **the request states**: the app knew four of the nine. The other five — the two stages of a transfer, a waitlisted, a withdrawn, an invalidated request and a loan waiting for its return to be confirmed — arrived as "Unknown", so a person on the phone was told a request was in a state the app had no word for. All nine now have a name, a colour and an icon, and `LOAN` is a request type the app knows.
+  * still open: `GET /items/recent` and `GET /items/held-by-me` (the mobile dashboard still fetches whole pages to count three things).
 - [ ] **P7-5 Fix the hardcoded share link** (`item_detail_view.dart:281` points at a domain that is not in production).
 - [ ] **P7-6 Real-device check** — the APK must install, sign in, scan a tag, file a request and read notifications on a physical phone (no Android device was available earlier; this is the outstanding item).
 - *Evidence:* `flutter analyze` clean, `flutter test` green, CI green, and a written device result.

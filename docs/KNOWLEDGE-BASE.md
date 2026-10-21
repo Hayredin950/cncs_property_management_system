@@ -128,14 +128,18 @@ The backend matrix is authoritative (27 capability strings). The clients are han
 Everything else matches exactly (STAFF, AUDITOR, PROPERTY_OFFICER sets are identical across all three; the 6-role `ACCOUNT_ADMIN` residue is mobile-only, §3).
 **Ruling:** the backend matrix is the single source; the clients mirror it exactly, and **`frontend/src/test/capabilityParity.test.ts` fails the build on any drift** (it reads all three files and compares them role by role; it was verified to fail when a grant is removed by hand).
 
-### 3.1.0 The two checks that catch what the unit tests cannot
+### 3.1.0 The three checks that catch what the unit tests cannot
 
 | Check | What it does | Where |
 |---|---|---|
 | `scripts/check-api-contract.mjs` | compares every client call with every server route; fails the build on a mismatch | `frontend.yaml` |
 | `scripts/e2e-flows.sh` | builds a real database from the migrations, seeds it, starts the real server against it and drives the real flows over HTTP | `e2e.yaml` |
+| `scripts/responsive-check.py` | drives the **deployed** app in Chromium at 390px and 1440px, for every screen every role can reach: does it render, does anything overflow sideways, are the tap targets big enough, was any request refused | run it by hand; it needs a browser |
+| `scripts/live-walkthrough.sh` | walks the **deployed** app role by role — what each role sees, the account-approval flow end to end, and the refusals | run it by hand (it signs in as seven accounts, so the login rate limiter is the reason it caches its tokens) |
 
-Both exist because the unit suites **mock Prisma**: they cannot see a query that is wrong in SQL, a column that does not exist, or a route that was renamed. The e2e script found the approvals-queue bug above on its first run — a bug that had been silently breaking the core "unit head approves own-unit staff" flow while every test, and the CI badge, stayed green.
+All three exist because the unit suites **mock Prisma** and never open a browser: they cannot see a query that is wrong in SQL, a column that does not exist, a route that was renamed, a client asking for something the server will refuse, or a layout that breaks on a phone.
+
+Between them they found: the approvals-queue bug (a Department Head never saw a newly submitted account request, while every test and the CI badge stayed green), two client/server contract breaks, a 403 on every page the Property Officer opened, a Department Head's screen asking for an account list they may not read, a request row that overflowed a phone by 94px, and every small button being 36px on a phone against the design system's own 44px claim.
 
 ### 3.1.1a The API contract check (new, and it earns its keep)
 

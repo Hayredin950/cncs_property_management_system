@@ -33,6 +33,7 @@
 | End-to-end flows | **42 checks pass** against a real database | `./scripts/e2e-flows.sh` → `passed: 42 failed: 0` — and it found the approvals-queue bug on its first run |
 | Production database | **migrated, seeded and verified** (20 Oct) | the three new migrations applied to the live Neon database after a verified backup; the four 500s are gone; the sign-up → head's queue → approval → sign-in flow works live |
 | Live walkthrough | **41 checks, all green** against the deployed app | `./scripts/live-walkthrough.sh` → `passed: 41 failed: 0` |
+| Responsive (real browser) | **40 screens pass, 0 failures** at 390px and 1440px | `python3 scripts/responsive-check.py` → `passed: 40 warnings: 14 failed: 0` |
 | Capability sync | backend/web/mobile **still out of sync** | web missing `SYSTEM_CONFIG`, `DISPOSAL_REVERSE`, DEPT_HEAD `ITEM_READ_ALL`; mobile missing the latter two (KB §3.1.1) — Backlog F09 |
 | API contract | **two real breaks found by the new check** | `fetchInvitableUnits` read `response.units` from an endpoint that answers with a bare array → **the whole `/admin/users` screen failed in production**; the mobile client called `DELETE /items/:id`, a route the server has never had. Both fixed. `scripts/check-api-contract.mjs` now runs in CI. |
 
@@ -269,8 +270,10 @@
 
 *Exit condition: both layouts are usable for every role, with no horizontal scroll and no hidden action.*
 
-- [ ] **P6-1 Verify the breakpoints by hand** at 375, 768, 1024 and 1440 px: dashboard, items browse, item detail, request list, request detail, approvals, audit scan, reports, notifications, login.
-- [ ] **P6-2 The phone layout is not a squeezed desktop layout.** Bottom tab bar (≤4 primary + "More"), safe-area insets, the AAU drawer, sticky headers, and the tables that must become cards.
+- [x] **P6-1 Verify the breakpoints by hand** at 375, 768, 1024 and 1440 px → **done with a browser instead of by hand**: `scripts/responsive-check.py` drives the **deployed** app in Chromium at 390px and 1440px, for every screen every role can reach, and checks that the page renders, that nothing overflows sideways, that the tap targets are big enough, and that no request was refused. It found and got fixed: the Accounts badge asking an endpoint the role may not read (a 403 on every page for the officer, auditor and staff), the head's accounts screen asking for the account list heads may not read, the request row overflowing a phone by 94px, the reports tabs by 22px, and every `size="sm"` button being 36px on a phone against the design system's own 44px claim. **Result: 0 failures** (was 14).
+- [x] **P6-2 The phone layout is not a squeezed desktop layout.** — the request row stacks on a small screen, the reports tabs scroll instead of pushing the page wide, the bottom bar and every small button clear 44px, and the AAU crest is a 44px tap target.
+- [ ] **P6-2b Check the middle widths** (768px and 1024px) — the check runs 390 and 1440; the tablet range is the one the two do not cover.
+- [ ] **P6-2c Check the phone layout by hand as well** — the script proves nothing overflows and the targets are big enough; it cannot say whether the result is *pleasant*. Bottom tab bar (≤4 primary + "More"), safe-area insets, the AAU drawer, sticky headers, and the tables that must become cards.
 - [ ] **P6-3 The QR scanner must work on a phone** (camera permission prompt, a clear failure path when denied, manual tag entry as the fallback).
 - [ ] **P6-4 The desktop layout must not waste the width** (the register, the approval queue and the audit report are all wide).
 - [ ] **P6-5 Print** — the QR sticker path must still print correctly (`[data-print-tag]`).

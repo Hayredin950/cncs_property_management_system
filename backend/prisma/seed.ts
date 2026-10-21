@@ -423,6 +423,26 @@ const ACCOUNTS: AccountSpec[] = [
   },
 ];
 
+/**
+ * A picture for an item that was not given one.
+ *
+ * The demo set is small — a laptop, a desk, a charger, a microscope — so the
+ * pictures repeat across the register. A repeated picture is a placeholder; a
+ * missing picture is a hole, and the hole is what a person scanning the
+ * register notices.
+ */
+const CATEGORY_PHOTOS: Record<string, string> = {
+  Electronics: "/photos/laptop.jpg",
+  Furniture: "/photos/desk.jpg",
+  "Lab Equipment": "/photos/microscope.jpg",
+  Vehicles: "/photos/desk.jpg",
+  "Office Supplies": "/photos/desk.jpg",
+};
+
+function photoForCategory(category: string): string {
+  return CATEGORY_PHOTOS[category] ?? "/photos/desk.jpg";
+}
+
 interface ItemSpec {
   tagId: string;
   name: string;
@@ -3631,7 +3651,12 @@ async function main() {
       brand: spec.brand ?? null,
       model: spec.model ?? null,
       serialNumber: `CNCS-SN-${spec.tagId.replace(/^CNCS-/, "")}`,
-      photoUrl: spec.photo ?? null,
+      // Every item gets a picture. A register where a third of the rows show
+      // "Image unavailable" is a register nobody can scan: the picture is how
+      // a person recognises the thing they are looking for. The demo photos are
+      // a small set, so they repeat — the alternative is an item with no
+      // picture at all, and the picture is the point.
+      photoUrl: spec.photo ?? photoForCategory(spec.category),
       notes: spec.notes ?? null,
       status: spec.status ?? ItemStatus.ACTIVE,
       disposalReason: spec.disposalReason ?? null,

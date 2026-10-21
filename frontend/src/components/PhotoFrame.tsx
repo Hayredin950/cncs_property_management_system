@@ -1,7 +1,6 @@
 import { ImageOff, Package } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/cn";
-import { API_BASE_URL } from "../lib/env";
 
 export interface PhotoFrameProps {
   // `| undefined` (not just `?`) because callers forward `item.photoUrl`, which
@@ -26,10 +25,21 @@ export interface PhotoFrameProps {
 export function PhotoFrame({ src, alt, className }: PhotoFrameProps) {
   const [failed, setFailed] = useState(false);
   
-  // Resolve relative URLs to the API base URL
-  const resolvedSrc = src && !src.startsWith("http") 
-    ? `${API_BASE_URL}${src.startsWith("/") ? "" : "/"}${src}`
-    : src;
+  /**
+   * A site-relative path is resolved against **this app's** origin, not the
+   * API's.
+   *
+   * The demo photos live in the frontend's `public/photos/` and are therefore
+   * served by the web app; the API serves `/api/v1/…`. Resolving `/photos/
+   * laptop.jpg` against the API produced
+   * `…/api/v1/photos/laptop.jpg`, which 404s — so every seeded item showed
+   * "Image unavailable" while the very same files were sitting in the app's own
+   * public folder. A full URL (a Cloudinary upload, say) is used as it is.
+   */
+  const resolvedSrc =
+    src && !src.startsWith("http")
+      ? `${typeof window === "undefined" ? "" : window.location.origin}${src.startsWith("/") ? "" : "/"}${src}`
+      : src;
   
   const showPlaceholder = !resolvedSrc || failed;
 

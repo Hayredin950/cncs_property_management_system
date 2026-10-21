@@ -146,6 +146,9 @@ enum ItemStatus {
 enum RequestType {
   transfer('TRANSFER', 'Transfer'),
   disposal('DISPOSAL', 'Disposal'),
+  /// A loan out and due back. The server has supported it for weeks; the
+  /// mobile app could not name one, so a loan was an "Unknown" type on a phone.
+  loan('LOAN', 'Loan'),
   unknown('', 'Unknown');
 
   const RequestType(this.wire, this.label);
@@ -156,14 +159,27 @@ enum RequestType {
   static RequestType fromJson(Object? value) => switch (value) {
         'TRANSFER' => RequestType.transfer,
         'DISPOSAL' => RequestType.disposal,
+        'LOAN' => RequestType.loan,
         _ => RequestType.unknown,
       };
 }
 
+/// The request states the server can produce.
+///
+/// It knew four of them. The other five — the two stages of a transfer, a
+/// waitlisted request, a withdrawn one, an invalidated one and a loan waiting
+/// for its return to be confirmed — arrived as `unknown`, so a person on the
+/// phone was told a request was in a state the app had no word for.
 enum RequestStatus {
   pending('PENDING', 'Pending review'),
+  pendingStage1('PENDING_STAGE1', 'Waiting for the releasing head'),
+  pendingStage2('PENDING_STAGE2', 'Waiting for the receiving head'),
   approved('APPROVED', 'Approved'),
   rejected('REJECTED', 'Rejected'),
+  waitlisted('WAITLISTED', 'Waiting for another request'),
+  withdrawn('WITHDRAWN', 'Withdrawn'),
+  invalidated('INVALIDATED', 'No longer possible'),
+  returnPendingConfirmation('RETURN_PENDING_CONFIRMATION', 'Waiting for the return to be confirmed'),
   unknown('', 'Unknown');
 
   const RequestStatus(this.wire, this.label);
@@ -171,10 +187,22 @@ enum RequestStatus {
   final String wire;
   final String label;
 
+  /// The state a request is still waiting on a person for.
+  bool get isOpen =>
+      this == RequestStatus.pending ||
+      this == RequestStatus.pendingStage1 ||
+      this == RequestStatus.pendingStage2;
+
   static RequestStatus fromJson(Object? value) => switch (value) {
         'PENDING' => RequestStatus.pending,
+        'PENDING_STAGE1' => RequestStatus.pendingStage1,
+        'PENDING_STAGE2' => RequestStatus.pendingStage2,
         'APPROVED' => RequestStatus.approved,
         'REJECTED' => RequestStatus.rejected,
+        'WAITLISTED' => RequestStatus.waitlisted,
+        'WITHDRAWN' => RequestStatus.withdrawn,
+        'INVALIDATED' => RequestStatus.invalidated,
+        'RETURN_PENDING_CONFIRMATION' => RequestStatus.returnPendingConfirmation,
         _ => RequestStatus.unknown,
       };
 }

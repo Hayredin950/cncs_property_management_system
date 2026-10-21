@@ -121,6 +121,21 @@ class AuthController extends Notifier<AuthState> {
     state = AuthState(status: AuthStatus.authenticated, user: response.user);
   }
 
+  /// `POST /auth/accept-invite` — the invited person chooses their own
+  /// password and is signed in. The server returns a fresh token, so the
+  /// invitation is a way in, not another thing to do afterwards.
+  Future<void> acceptInvite({
+    required String token,
+    required String password,
+    String? fullName,
+  }) async {
+    final response = await ref
+        .read(authApiProvider)
+        .acceptInvite(token: token, password: password, fullName: fullName);
+    await ref.read(apiClientProvider).saveToken(response.token);
+    state = AuthState(status: AuthStatus.authenticated, user: response.user);
+  }
+
   Future<void> logout() async {
     await ref.read(apiClientProvider).clearToken();
     state = const AuthState.unauthenticated();

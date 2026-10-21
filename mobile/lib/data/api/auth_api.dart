@@ -48,6 +48,28 @@ class AuthApi {
   ///
   /// There is no `role` field on purpose: the request always lands as STAFF, and the
   /// approver assigns the real role.
+  /// `POST /auth/accept-invite` — the invited person sets their own password
+  /// and the account is activated.
+  ///
+  /// The invitation is the only way a privileged account comes into being, and
+  /// the **invitee** sets the password — no administrator ever sees it or sets
+  /// it. The token is single-use and expires.
+  Future<LoginResponse> acceptInvite({
+    required String token,
+    required String password,
+    String? fullName,
+  }) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/auth/accept-invite',
+      body: {
+        'token': token,
+        'password': password,
+        if (fullName != null && fullName.isNotEmpty) 'fullName': fullName,
+      },
+    );
+    return LoginResponse.fromJson(json);
+  }
+
   Future<AccountRequestResponse> requestAccount({
     required String fullName,
     required String email,

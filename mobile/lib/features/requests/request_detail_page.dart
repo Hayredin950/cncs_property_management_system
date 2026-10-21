@@ -307,8 +307,200 @@ class _RequestDetailPageState extends ConsumerState<RequestDetailPage> {
             message: 'This is under review. You will be notified when it is decided.',
             tone: InfoTone.neutral,
           ),
+
+        // ── The actions the person looking at this screen can take ─────────
+        //
+        // Withdrawing: the person who filed the request may take it back while
+        // it is still undecided. The server refuses it once a stage has been
+        // approved — from that point the approver's decision is the one of
+        // record.
+        if (request.status.isOpen &&
+            request.requestedById == currentUserId &&
+            !canDecide) ...[
+          const SizedBox(height: AppSpace.s3),
+          AppButton(
+            label: 'Withdraw this request',
+            variant: AppButtonVariant.ghost,
+            expand: true,
+            size: AppButtonSize.lg,
+            icon: Icons.undo_outlined,
+            loading: _busy,
+            onPressed: () => _withdraw(request),
+          ),
+        ],
+
+        // ── A loan that is out, and coming back ────────────────────────────
+        if (request.type == RequestType.loan &&
+            request.status == RequestStatus.approved &&
+            request.requestedById == currentUserId) ...[
+          const SizedBox(height: AppSpace.s3),
+          AppButton(
+            label: 'I am handing it back',
+            expand: true,
+            size: AppButtonSize.lg,
+            icon: Icons.assignment_return_outlined,
+            loading: _busy,
+            onPressed: () => _initiateReturn(detail),
+          ),
+          const SizedBox(height: AppSpace.s2),
+          const InfoNote(
+            icon: Icons.info_outline,
+            message: 'The loan stays open until the department head or the property officer '
+                'confirms the item arrived back.',
+            tone: InfoTone.neutral,
+          ),
+        ],
+        if (request.type == RequestType.loan &&
+            request.status == RequestStatus.returnPendingConfirmation &&
+            canDecide) ...[
+          const SizedBox(height: AppSpace.s3),
+          AppButton(
+            label: 'Confirm it came back',
+            expand: true,
+            size: AppButtonSize.lg,
+            icon: Icons.check_circle_outline,
+            loading: _busy,
+            onPressed: () => _confirmReturn(detail),
+          ),
+          const SizedBox(height: AppSpace.s2),
+          AppButton(
+            label: 'It has not come back',
+            variant: AppButtonVariant.destructive,
+            expand: true,
+            size: AppButtonSize.lg,
+            icon: Icons.report_problem_outlined,
+            loading: _busy,
+            onPressed: () => _disputeReturn(request),
+          ),
+        ],
+        if (request.type == RequestType.loan &&
+            request.status == RequestStatus.returnPendingConfirmation &&
+            !canDecide) ...[
+          const SizedBox(height: AppSpace.s3),
+          const InfoNote(
+            icon: Icons.hourglass_empty_outlined,
+            message: 'Waiting for the department head or the property officer to confirm the '
+                'item came back.',
+            tone: InfoTone.info,
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _withdraw(RequestSummary request) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Withdraw this request?',
+      body: 'The request goes back to you and the reviewers are told. You can file it '
+          'again later if it is still needed.',
+      confirmLabel: 'Withdraw',
+      icon: Icons.undo_outlined,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final outcome = await ref
+          .read(requestActionsProvider)
+          .withdraw(requestId: widget.requestId, itemId: request.item.id);
+      if (!mounted) return;
+      setState(() => _outcome = outcome);
+      showAppToast(context, message: 'Request withdrawn.', tone: ToastTone.success);
+    } on ApiError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } on NetworkError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _initiateReturn(RequestDetail detail) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Hand the item back?',
+      body: 'The department head or the property officer is told the item is on its way '
+          'back. The loan stays open until they confirm it arrived.',
+      confirmLabel: 'Hand it back',
+      icon: Icons.assignment_return_outlined,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final outcome = await ref
+          .read(requestActionsProvider)
+          .initiateReturn(requestId: widget.requestId, itemId: detail.item.id);
+      if (!mounted) return;
+      setState(() => _outcome = outcome);
+      showAppToast(context, message: 'The return has been started.', tone: ToastTone.success);
+    } on ApiError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } on NetworkError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _confirmReturn(RequestDetail detail) async {
+    final condition = await showReasonDialog(
+      context,
+      title: 'Confirm the item came back',
+      body: 'Record the condition it arrived in — this is what the college will rely on '
+          'if the item is later reported missing.',
+      confirmLabel: 'Confirm',
+    );
+    if (condition == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final outcome = await ref.read(requestActionsProvider).confirmReturn(
+            requestId: widget.requestId,
+            condition: condition,
+            itemId: detail.item.id,
+          );
+      if (!mounted) return;
+      setState(() => _outcome = outcome);
+      showAppToast(context, message: 'The return is confirmed.', tone: ToastTone.success);
+    } on ApiError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } on NetworkError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _disputeReturn(RequestSummary request) async {
+    final reason = await showReasonDialog(
+      context,
+      title: 'Report that the item has not come back',
+      body: 'The loan stays open and the property officer is notified. Say what happened.',
+    );
+    if (reason == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final outcome = await ref
+          .read(requestActionsProvider)
+          .disputeReturn(
+              requestId: widget.requestId, reason: reason, itemId: request.item.id);
+      if (!mounted) return;
+      setState(() => _outcome = outcome);
+      showAppToast(
+        context,
+        message: 'Reported. The property officer has been notified.',
+        tone: ToastTone.success,
+      );
+    } on ApiError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } on NetworkError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _approve(RequestDetail detail) async {

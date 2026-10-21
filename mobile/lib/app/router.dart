@@ -11,6 +11,7 @@ import '../features/audits/audit_new_page.dart';
 import '../features/audits/audit_report_page.dart';
 import '../features/audits/audit_scan_page.dart';
 import '../features/auth/change_password_page.dart';
+import '../features/auth/accept_invite_page.dart';
 import '../features/auth/login_page.dart';
 import '../features/auth/request_account_page.dart';
 import '../features/dashboard/dashboard_page.dart';
@@ -84,7 +85,11 @@ class _AuthRefresh extends ChangeNotifier {
 /// made it a dead end — an anonymous session that settled on the splash matched the
 /// public rule and stayed there for good, showing the logo and a spinner forever.
 bool _isPublic(String path) =>
-    path == '/' || path == '/map' || path == '/login' || path == '/request-account';
+    path == '/' ||
+    path == '/map' ||
+    path == '/login' ||
+    path == '/request-account' ||
+    path == '/accept-invite';
 
 /// The shared addresses: public, and also inside the workbench.
 bool _isShared(String path) =>
@@ -181,6 +186,17 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/request-account',
             builder: (context, state) => const RequestAccountPage(),
+          ),
+          // The invitation link. It is a **public** route, because the person
+          // holding it has no account yet — that is the whole point of it. The
+          // token comes from the query string, and the screen says so plainly
+          // if it is missing.
+          GoRoute(
+            path: '/accept-invite',
+            builder: (context, state) => AcceptInvitePage(
+              token: state.uri.queryParameters['token'],
+              onAccepted: () => context.go('/dashboard'),
+            ),
           ),
         ],
       ),

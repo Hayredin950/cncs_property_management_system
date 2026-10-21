@@ -146,6 +146,58 @@ class RequestActions {
     return response;
   }
 
+  /// `POST /requests/:id/withdraw` — the person who filed the request takes it
+  /// back while it is still undecided.
+  Future<DecideRequestResponse> withdraw({
+    required String requestId,
+    String? reason,
+    String? itemId,
+  }) async {
+    final response =
+        await _ref.read(requestsApiProvider).withdraw(requestId, reason: reason);
+    _afterDecision(requestId, itemId);
+    return response;
+  }
+
+  /// `POST /requests/:id/return-initiate` — the borrower says the item is on
+  /// its way back.
+  Future<DecideRequestResponse> initiateReturn({
+    required String requestId,
+    String? itemId,
+  }) async {
+    final response = await _ref.read(requestsApiProvider).initiateReturn(requestId);
+    _afterDecision(requestId, itemId);
+    return response;
+  }
+
+  /// `POST /requests/:id/return-confirm` — the lender confirms the item came
+  /// back, in the condition it was lent in.
+  Future<DecideRequestResponse> confirmReturn({
+    required String requestId,
+    required String condition,
+    String? notes,
+    String? itemId,
+  }) async {
+    final response = await _ref
+        .read(requestsApiProvider)
+        .confirmReturn(requestId, condition, notes: notes);
+    _afterDecision(requestId, itemId);
+    return response;
+  }
+
+  /// `POST /requests/:id/return-dispute` — the item has not come back. The
+  /// loan stays open and the Property Officer is told.
+  Future<DecideRequestResponse> disputeReturn({
+    required String requestId,
+    required String reason,
+    String? itemId,
+  }) async {
+    final response =
+        await _ref.read(requestsApiProvider).disputeReturn(requestId, reason);
+    _afterDecision(requestId, itemId);
+    return response;
+  }
+
   /// Everything a decision moves. A rejection changes no item field, but the item
   /// providers are cheap to invalidate and *not* invalidating them on approve is a
   /// silent stale read — so both paths take the same route rather than a branch that

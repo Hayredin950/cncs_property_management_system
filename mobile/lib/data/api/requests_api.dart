@@ -85,4 +85,48 @@ class RequestsApi {
     );
     return DecideRequestResponse.fromJson(json);
   }
+
+  /// `POST /requests/:id/withdraw` — the person who filed the request takes it
+  /// back, while it is still undecided.
+  ///
+  /// The server refuses it once a stage has been approved: from that point the
+  /// approver's decision is the one of record, and the approver should reject
+  /// it instead.
+  Future<DecideRequestResponse> withdraw(String id, {String? reason}) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/requests/${Uri.encodeComponent(id)}/withdraw',
+      body: {if (reason != null && reason.isNotEmpty) 'reason': reason},
+    );
+    return DecideRequestResponse.fromJson(json);
+  }
+
+  /// `POST /requests/:id/return-initiate` — the borrower says the item is on
+  /// its way back. The loan stays open until the lender confirms it.
+  Future<DecideRequestResponse> initiateReturn(String id) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/requests/${Uri.encodeComponent(id)}/return-initiate',
+    );
+    return DecideRequestResponse.fromJson(json);
+  }
+
+  /// `POST /requests/:id/return-confirm` — the lender confirms the item came
+  /// back, in the condition it was lent in.
+  Future<DecideRequestResponse> confirmReturn(String id, String condition,
+      {String? notes}) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/requests/${Uri.encodeComponent(id)}/return-confirm',
+      body: {'condition': condition, if (notes != null && notes.isNotEmpty) 'notes': notes},
+    );
+    return DecideRequestResponse.fromJson(json);
+  }
+
+  /// `POST /requests/:id/return-dispute` — the lender did not get the item
+  /// back. The loan stays open and the Property Officer is notified.
+  Future<DecideRequestResponse> disputeReturn(String id, String reason) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/requests/${Uri.encodeComponent(id)}/return-dispute',
+      body: {'reason': reason},
+    );
+    return DecideRequestResponse.fromJson(json);
+  }
 }

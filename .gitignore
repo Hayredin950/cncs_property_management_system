@@ -244,3 +244,9 @@ docs/LOCAL-CREDENTIALS.md
 
 # The build stamp: true of one build and of no other.
 backend/build-info.json
+
+# Local safety copies of the live database. A dump is a copy of production data
+# (it holds the account rows and their password hashes), it is large, and it
+# goes stale the moment the next change lands — so it belongs on the machine
+# that took it, not in the history.
+backups/*.sql

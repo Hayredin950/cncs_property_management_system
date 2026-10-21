@@ -65,8 +65,16 @@ export interface PrivilegedItemFields {
 export type Item = PublicItemFields & Partial<PrivilegedItemFields>;
 
 /** `true` once any privileged-only key is present — i.e. this viewer is the owner or Staff/Admin. */
+/**
+ * Is this the **privileged** view of the item — the one that carries the
+ * custodian, the value and the specifications?
+ *
+ * It keys off the custodian's **record**, not their id: the id says nothing to
+ * a reader, and a payload that carried the id without the record would make
+ * the client believe it had the full item and then render an empty owner.
+ */
 export function isPrivilegedItemView(item: Item): item is Item & PrivilegedItemFields {
-  return "ownerId" in item;
+  return "owner" in item && item.owner != null;
 }
 
 export interface ItemsPagination {

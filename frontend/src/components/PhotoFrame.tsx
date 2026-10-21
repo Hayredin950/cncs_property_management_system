@@ -58,7 +58,12 @@ export function PhotoFrame({ src, alt, className, fallbackSrc }: PhotoFrameProps
       ? `${typeof window === "undefined" ? "" : window.location.origin}${fallbackSrc.startsWith("/") ? "" : "/"}${fallbackSrc}`
       : fallbackSrc;
 
-  const showPlaceholder = !resolvedSrc || (failed && (fallbackFailed || !resolvedFallback));
+  // The fallback stands in for a **missing** photo as well as a broken one.
+  // "No photo" is an honest answer about a record, but a register where a
+  // reader has to guess what a thing looks like is a register nobody can scan.
+  const useFallback = Boolean(resolvedFallback) && (!resolvedSrc || failed);
+
+  const showPlaceholder = !useFallback && (!resolvedSrc || failed);
 
   return (
     <div
@@ -67,9 +72,9 @@ export function PhotoFrame({ src, alt, className, fallbackSrc }: PhotoFrameProps
         className,
       )}
     >
-      {failed && !fallbackFailed && resolvedFallback ? (
+      {useFallback && !fallbackFailed ? (
         <img
-          src={resolvedFallback}
+          src={resolvedFallback ?? undefined}
           alt={alt}
           loading="lazy"
           className="h-full w-full object-cover"
@@ -82,7 +87,7 @@ export function PhotoFrame({ src, alt, className, fallbackSrc }: PhotoFrameProps
         </div>
       ) : (
         <img
-          src={resolvedSrc}
+          src={resolvedSrc ?? undefined}
           alt={alt}
           loading="lazy"
           className="h-full w-full object-cover"

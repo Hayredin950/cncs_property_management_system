@@ -32,7 +32,11 @@ export function ItemDetailView({ item }: { item: Item }) {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold text-slate-900">{item.name}</h1>
             <ConditionBadge condition={item.condition} />
-            {privileged && <ItemStatusBadge status={item.status} />}
+            {/* The status is not privileged information: a person looking at a
+                laptop needs to know whether it is in service, on loan or
+                disposed. It was hidden from everyone who was not an
+                administrator, which is most of the college. */}
+            <ItemStatusBadge status={item.status} />
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <CopyableTagId tagId={item.tagId} />

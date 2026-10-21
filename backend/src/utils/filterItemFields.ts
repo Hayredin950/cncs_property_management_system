@@ -147,7 +147,11 @@ export function isAuthenticatedViewer(user?: RequestingUser | null): boolean {
 const ADMINISTRATOR_ONLY_FIELDS = new Set([
   "purchaseCost",
   "currentValue",
+  // The custodian's record, both the name and the id behind it. The id alone
+  // says nothing to a reader, and leaving it in the payload would make the
+  // client believe it is looking at a privileged view.
   "owner",
+  "ownerId",
 ]);
 
 export function sanitizeItem(

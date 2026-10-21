@@ -7,7 +7,7 @@ import {
 import { z } from "zod";
 import { httpError } from "../lib/httpError.js";
 import { prisma } from "../lib/prisma.js";
-import { canOpenItem } from "../services/itemScope.js";
+import { seesFullItemDetail } from "../utils/filterItemFields.js";
 import { authenticate, requireCapability, type AuthenticatedRequest, type UserRole } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
 import { allItemsWhere } from "../services/itemVisibility.js";
@@ -85,13 +85,20 @@ itemHistoryRouter.get(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      // The same rule every item read uses: if the person may open the item,
-      // they may read its record. It used to be stricter than the read itself,
-      // so a person could open an item and be told "Insufficient permissions"
-      // about the history on the same page.
-      if (!canOpenItem(user, item as unknown as Parameters<typeof canOpenItem>[1])) {
+      // The change history is **not** part of opening an item — it is part of
+      // administering it.
+      //
+      // The record names the people who made the changes and shows the old and
+      // new value of every field, including the ones the viewer may not see on
+      // the item itself: a staff member who can open a colleague's laptop (the
+      // register is the college's) would otherwise read its purchase cost and
+      // its previous custodian out of the log.
+      //
+      // So the history is for the people who see the item in full: the holder,
+      // a property officer, an auditor, and a head for their own department.
+      if (!seesFullItemDetail(user, item as unknown as Parameters<typeof seesFullItemDetail>[1])) {
         // The same answer as "it does not exist" — the history of an item you
-        // may not see should not be discoverable.
+        // may not administer should not be discoverable.
         return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
       }
 

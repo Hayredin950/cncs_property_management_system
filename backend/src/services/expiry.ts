@@ -262,16 +262,26 @@ const staleRequests = await prisma.request.findMany({
 
   let count = 0;
   for (const request of staleRequests) {
-    const reviewerId = request.reviewedById;
-    if (!reviewerId) continue;
-
-    const reviewer = await prisma.user.findUnique({
-      where: { id: reviewerId },
-      select: { id: true, role: true, orgUnitId: true },
-    });
-    if (!reviewer) continue;
-
-    await prisma.$transaction(async (tx) => {
+    /**
+     * The destination is worked out from the request's type and its item, not
+     * from who happens to be holding it — so a request with nobody assigned
+     * still has one.
+     *
+     * It used to be skipped: `if (!reviewerId) continue`. A request on an item
+     * in a unit with no head lands with no reviewer, and such a request could
+     * therefore never escalate and nobody was ever told about it. It sat in
+     * the queue forever, which is the exact thing this service exists to
+     * prevent.
+     */
+    /**
+     * The transaction answers whether it actually escalated the request, so
+     * the count the administrator sees is the number of requests that moved.
+     * It used to count every stale request it looked at, including the ones
+     * it had to leave alone — a transfer whose unit has no head cannot be
+     * handed to anybody, and reporting that as an escalation is a number that
+     * does not mean what it says.
+     */
+    const escalated = await prisma.$transaction(async (tx) => {
       let escalationTarget: string | null = null;
 
       if (request.type === "TRANSFER") {
@@ -303,7 +313,7 @@ const staleRequests = await prisma.request.findMany({
         escalationTarget = propertyOfficer?.id ?? null;
       }
 
-      if (!escalationTarget) return;
+      if (!escalationTarget) return false;
 
       // Fetch current rejectionReason first
       const currentRequest = await tx.request.findUnique({
@@ -323,12 +333,20 @@ const staleRequests = await prisma.request.findMany({
       await tx.notification.create({
         data: {
           userId: escalationTarget,
+          /**
+           * The link. A notification that names a request but cannot be opened
+           * is a sentence in an inbox; `relatedRequestId` is what turns it into
+           * a way to go and decide it.
+           */
+          relatedRequestId: request.id,
           message: `[ESCALATED] Request ${request.id} for item ${request.item.tagId} (${request.item.name}) has been escalated to you after ${APPROVAL_ESCALATION_DAYS} days without a decision.`,
         },
       });
+
+      return true;
     });
 
-    count++;
+    if (escalated) count++;
   }
 
   return count;

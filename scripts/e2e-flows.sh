@@ -215,6 +215,40 @@ check "POST /auth/account-requests with a fake department → 400" "400" \
 check "POST /auth/account-requests from a personal address → 400" "400" \
   "$(status POST /auth/account-requests '' "{\"fullName\":\"Personal Address\",\"email\":\"someone.$RANDOM@gmail.com\",\"password\":\"E2eTest123!\",\"department\":\"Computer Science\"}")"
 
+say "11. A request that waits past the threshold is escalated (row 18, proved for real)"
+# The one row of the live-verification table that cannot be proved against a
+# live deployment without waiting a week: the escalation window is seven days.
+# Here the wait is a matter of writing the creation date back, and then the
+# escalation is the real one — the same service the administrator's button
+# runs.
+# An item that nothing is pending on — a seeded item usually already carries a
+# pending request, and a second one on the same item is refused by design.
+ITEMID=$(psql "$DATABASE_URL" -tAq -c "SELECT i.id FROM \"Item\" i WHERE i.status = 'ACTIVE' AND NOT EXISTS (SELECT 1 FROM \"Request\" r WHERE r.\"itemId\" = i.id AND r.status IN ('PENDING','PENDING_STAGE1','PENDING_STAGE2')) LIMIT 1;")
+if [ -z "$ITEMID" ]; then
+  check "an active item to make the request on" "found" "missing"
+else
+  S=$(status POST /requests "$OFFICER" "{\"type\":\"DISPOSAL\",\"itemId\":\"$ITEMID\",\"reason\":\"It has been waiting for a decision for far too long.\"}")
+  REQID=$(json 'd["request"]["id"] if isinstance(d,dict) and "request" in d else d["id"]')
+  if [ -n "$REQID" ]; then
+    ok "the request was made (a week ago)"
+    # Move it back past the threshold. The database is the developer's own
+    # throwaway one — the script says so at the top.
+    psql "$DATABASE_URL" -q -c \
+      "UPDATE \"Request\" SET \"createdAt\" = now() - interval '9 days' WHERE id = '$REQID';" >/dev/null 2>&1
+    check "the request is now older than the threshold" "1" \
+      "$(psql "$DATABASE_URL" -tAq -c "SELECT count(*) FROM \"Request\" WHERE id = '$REQID' AND \"createdAt\" < now() - interval '7 days';")"
+    check "POST /expiry/check (the administrator's button) → 200" "200" "$(status POST /expiry/check "$ADMIN" '{}')"
+    check "the request carries the escalation mark" "1" \
+      "$(psql "$DATABASE_URL" -tAq -c "SELECT count(*) FROM \"Request\" WHERE id = '$REQID' AND \"rejectionReason\" LIKE '%[ESCALATED]%';")"
+    check "the property officer was told about it, with a link to it" "1" \
+      "$(psql "$DATABASE_URL" -tAq -c "SELECT count(*) FROM \"Notification\" WHERE \"relatedRequestId\" = '$REQID';")"
+    check "the escalated request is now the officer's to decide" "1" \
+      "$(psql "$DATABASE_URL" -tAq -c "SELECT count(*) FROM \"Request\" r JOIN \"User\" u ON u.id = r.\"reviewedById\" WHERE r.id = '$REQID' AND u.role = 'PROPERTY_OFFICER';")"
+  else
+    check "the request was made" "created" "refused"
+  fi
+fi
+
 say ""
 printf '════════════════════════════════════════════\n'
 printf '  passed: %s   failed: %s\n' "$pass" "$fail"

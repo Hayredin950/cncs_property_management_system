@@ -3618,17 +3618,27 @@ async function main() {
     ["bio", "headBio"],
     ["chem", "headChem"],
   ];
+  const unitHeads = new Map<UnitKey, string>();
   for (const [unitKey, userKey] of headAssignments) {
     await prisma.orgUnit.update({
       where: { id: units.get(unitKey)! },
       data: { headId: users.get(userKey)!.id },
     });
+    unitHeads.set(unitKey, users.get(userKey)!.id);
   }
 
   console.log("Seeding items + QR tags...");
   const items = new Map<
     string,
-    { id: string; tagId: string; name: string; holderType: HolderType | null; holderId: string | null }
+    {
+      id: string;
+      tagId: string;
+      name: string;
+      holderType: HolderType | null;
+      holderId: string | null;
+      /** The unit the item sits in — the head of it is who decides a request. */
+      unit: UnitKey;
+    }
   >();
 
   for (const [index, spec] of ITEMS.entries()) {
@@ -3706,6 +3716,7 @@ async function main() {
       name: item.name,
       holderType: item.holderType,
       holderId: item.holderId,
+      unit: spec.unit,
     });
   }
 
@@ -3740,7 +3751,29 @@ async function main() {
     if (!requester) {
       throw new Error(`Unknown requester "${spec.by}" for request ${spec.id}`);
     }
-    const reviewer = spec.reviewer ? users.get(spec.reviewer) : undefined;
+    /**
+     * A pending request names the person who has to decide it — the head of
+     * the unit the item sits in, or the property officer when the unit has no
+     * head or the head filed the request themselves.
+     *
+     * It used to be left empty, and that is not a cosmetic gap: the escalation
+     * service hands a stale request to whoever is holding it, so a request
+     * with nobody holding it could never be escalated, and the queue showed a
+     * request with no one answerable for it.
+     */
+    const isPending =
+      spec.status === RequestStatus.PENDING ||
+      spec.status === RequestStatus.PENDING_STAGE1 ||
+      spec.status === RequestStatus.PENDING_STAGE2;
+    const unitHeadId = unitHeads.get(items.get(spec.item)?.unit ?? ("college" as UnitKey));
+    const fallbackReviewerId = users.get("officer")?.id;
+    const reviewer = spec.reviewer
+      ? users.get(spec.reviewer)
+      : isPending
+        ? users.get(
+            (unitHeadId && unitHeadId !== requester.id ? unitHeadId : fallbackReviewerId) as UserKey,
+          )
+        : undefined;
     if (spec.reviewer && !reviewer) {
       throw new Error(`Unknown reviewer "${spec.reviewer}" for request ${spec.id}`);
     }

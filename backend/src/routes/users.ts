@@ -1256,6 +1256,30 @@ usersRouter.delete(
         where: { newOwnerId: id },
       });
 
+      /**
+       * The rows that belong to the **account itself** rather than to the
+       * college's record: the tokens that were sent to it, and the application
+       * it filed, if nobody has decided that application yet.
+       *
+       * They are cleaned up with the account rather than blocking it. An
+       * account that applied and is still waiting has nothing decided about
+       * it, so removing the applicant removes the application — that is what
+       * "delete this account" means.
+       */
+      const [emailTokens, undecidedApplication, decidedApplication, adminLogRows] =
+        await Promise.all([
+          prisma.emailToken.count({ where: { userId: id } }),
+          prisma.accountRequest.count({
+            where: { userId: id, status: "PENDING_APPROVAL" },
+          }),
+          prisma.accountRequest.count({
+            where: { userId: id, status: { not: "PENDING_APPROVAL" } },
+          }),
+          prisma.adminActionLog.count({
+            where: { OR: [{ actorId: id }, { targetUserId: id }] },
+          }),
+        ]);
+
       const blockers = [
         [ownedItems, "owned item"],
         [requestsCreated, "filed request"],
@@ -1263,6 +1287,8 @@ usersRouter.delete(
         [auditsRun, "audit"],
         [itemEdits, "edit-history row"],
         [referencedAsNewOwner, "pending transfer naming this account as its new owner"],
+        [decidedApplication, "decided account application"],
+        [adminLogRows, "account-log entry"],
       ] as const;
 
       const inUse = blockers.filter(([count]) => count > 0);
@@ -1271,13 +1297,17 @@ usersRouter.delete(
           .map(([count, label]) => `${count} ${label}${count === 1 ? "" : "s"}`)
           .join(", ");
         res.status(409).json({
-          error: `This account is part of the record and cannot be deleted (${summary}). Records are preserved, not destroyed (F7.2).`,
+          error: `This account is part of the record and cannot be deleted (${summary}). Records are preserved, not destroyed (F7.2). Close the account instead.`,
         });
         return;
       }
 
       await prisma.$transaction([
         prisma.notification.deleteMany({ where: { userId: id } }),
+        prisma.emailToken.deleteMany({ where: { userId: id } }),
+        prisma.accountRequest.deleteMany({
+          where: { userId: id, status: "PENDING_APPROVAL" },
+        }),
         prisma.user.delete({ where: { id } }),
       ]);
 

@@ -18,7 +18,9 @@ vi.mock("../lib/prisma.js", () => {
     },
     notification: { deleteMany: vi.fn() },
     request: { count: vi.fn() },
-    adminActionLog: { create: vi.fn() },
+    adminActionLog: { create: vi.fn(), count: vi.fn() },
+    emailToken: { count: vi.fn(), deleteMany: vi.fn() },
+    accountRequest: { count: vi.fn(), deleteMany: vi.fn() },
     // `findMany` is how the head's unit scope is read (the unit and its
     // children) — without it, the approvals query for a DEPARTMENT_HEAD
     // cannot be built.
@@ -410,6 +412,87 @@ describe("DELETE /users/:id", () => {
     expect(res.body.deleted).toBe(true);
     expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
     expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: "user-1" } });
+  });
+
+  /**
+   * The rows that belong to the account itself — the tokens sent to it and the
+   * application it filed, while nobody has decided that application — go with
+   * it. Without this the delete failed with the database's own words ("a
+   * referenced record does not exist"), which says nothing about what to do.
+   */
+  it("takes the account's own tokens and its undecided application with it", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "user-1",
+      _count: {
+        ownedItems: 0,
+        requestsCreated: 0,
+        requestsReviewed: 0,
+        auditsRun: 0,
+        itemEdits: 0,
+      },
+    } as never);
+    vi.mocked(prisma.emailToken.count).mockResolvedValueOnce(1 as never);
+    vi.mocked(prisma.accountRequest.count).mockResolvedValueOnce(1 as never).mockResolvedValueOnce(0 as never);
+    vi.mocked(prisma.adminActionLog.count).mockResolvedValueOnce(0 as never);
+    vi.mocked(prisma.user.delete).mockResolvedValueOnce({ id: "user-1" } as never);
+
+    const res = await request(app)
+      .delete("/users/user-1")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(prisma.emailToken.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+    expect(prisma.accountRequest.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", status: "PENDING_APPROVAL" },
+    });
+  });
+
+  it("refuses to delete an account whose application was decided, and says so", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "user-1",
+      _count: {
+        ownedItems: 0,
+        requestsCreated: 0,
+        requestsReviewed: 0,
+        auditsRun: 0,
+        itemEdits: 0,
+      },
+    } as never);
+    vi.mocked(prisma.emailToken.count).mockResolvedValueOnce(0 as never);
+    vi.mocked(prisma.accountRequest.count).mockResolvedValueOnce(0 as never).mockResolvedValueOnce(1 as never);
+    vi.mocked(prisma.adminActionLog.count).mockResolvedValueOnce(0 as never);
+
+    const res = await request(app)
+      .delete("/users/user-1")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("decided account application");
+    expect(prisma.user.delete).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete an account the account log names, and says so", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "user-1",
+      _count: {
+        ownedItems: 0,
+        requestsCreated: 0,
+        requestsReviewed: 0,
+        auditsRun: 0,
+        itemEdits: 0,
+      },
+    } as never);
+    vi.mocked(prisma.emailToken.count).mockResolvedValueOnce(0 as never);
+    vi.mocked(prisma.accountRequest.count).mockResolvedValueOnce(0 as never).mockResolvedValueOnce(0 as never);
+    vi.mocked(prisma.adminActionLog.count).mockResolvedValueOnce(2 as never);
+
+    const res = await request(app)
+      .delete("/users/user-1")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("account-log entry");
+    expect(prisma.user.delete).not.toHaveBeenCalled();
   });
 });
 

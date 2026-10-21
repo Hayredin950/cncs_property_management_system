@@ -34,11 +34,12 @@
 | End-to-end flows | **48 checks pass** against a real database | `./scripts/e2e-flows.sh` → `passed: 48 failed: 0` — it found the approvals-queue bug on its first run, and the escalation-skip bug on the 21 Oct run |
 | Production database | **migrated, seeded and verified** (21 Oct) | four migrations applied to the live Neon database after a verified backup; the four 500s are gone; the sign-up → head's queue → approval → sign-in flow works live; the seeded queue now names who has to decide each request |
 | Production data | **no test leftovers** (21 Oct) | 51 accounts and 2 requests my own verification runs had left behind were removed; the demo shows only the seeded accounts and the five deliberate approval states |
-| Live walkthrough | **45 checks, all green** against the deployed app | `./scripts/live-walkthrough.sh` → `passed: 45 failed: 0` |
+| Live walkthrough | **47 checks, all green** against the deployed app | `./scripts/live-walkthrough.sh` → `passed: 47 failed: 0` |
 | Live 20-row table | **20 rows, 46 checks, 0 failures** against the deployed app | `./scripts/live-verification-20.sh` → `rows passed: 46 failed: 0` (21 Oct) |
+| Responsive (real browser) | **98 screens pass, 0 failures** at 390 / 768 / 1024 / 1440 | `python3 scripts/responsive-check.py` → `passed: 98 warnings: 10 failed: 0` (21 Oct) — it found the audit list's filter row overflowing sideways between 768 and 1024, now fixed |
 | Responsive (real browser) | **40 screens pass, 0 failures** at 390px and 1440px | `python3 scripts/responsive-check.py` → `passed: 40 warnings: 14 failed: 0` |
 | Capability sync | backend/web/mobile **in sync**, enforced by a test | `frontend/src/test/capabilityParity.test.ts` fails the build on any drift (KB §3.1.1) |
-| API contract | **two real breaks found by the new check** | `fetchInvitableUnits` read `response.units` from an endpoint that answers with a bare array → **the whole `/admin/users` screen failed in production**; the mobile client called `DELETE /items/:id`, a route the server has never had. Both fixed. `scripts/check-api-contract.mjs` now runs in CI. |
+| API contract | **96 of 96 client calls have a route** | `fetchInvitableUnits` read `response.units` from an endpoint that answers with a bare array → **the whole `/admin/users` screen failed in production**; the mobile client called `DELETE /items/:id`, a route the server has never had. Both fixed. `scripts/check-api-contract.mjs` now runs in CI. |
 
 **Fixed in this round (uncommitted at the time of writing — see Phase 1/2):** staff sign-up 500, invite list/resend 500, evidence-pack 500, expiry/escalation 500 (no `updatedAt` column existed), LOAN intake, `loans/overdue` capability gate, migration history repair (4 tables + 2 migrations), seed repairs (3 causes), Frontend CI test step.
 

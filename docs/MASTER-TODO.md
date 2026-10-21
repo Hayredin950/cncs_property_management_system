@@ -246,16 +246,15 @@
 
 - [x] **P5-4b The custody actions, on the item page.** — `ItemCustodyActions` gives the six endpoints that had **no screen at all** one: a holder can claim an item, **accept it with a corrected condition** (the register said one thing, the item is another — keeping the difference on the record is what makes it auditable), or **refuse it** with a reason; a head can **verify** an item that changed hands without a handover check, or **flag** it for review; a Property Officer can **reverse a disposal**, with a reason, and the item returns to the pool to be registered again. Five new tests.
 
-- [ ] **P5-5 Fix the known dead/broken UI.**
-  * `AuditListPage` "Abandon audit" → **fixed 20 Oct**: there is now a real `POST /audits/:id/abandon` (with a required reason), a distinct "Abandoned" state that is **not** "In progress" and **not** "Completed" — it produced no report — and no report/CSV link on an abandoned session. Migration `20261021000000_audit_session_abandon` adds `abandonedAt`/`abandonReason`.
-  * `AdminUsersPage` password-reset modal → unreachable; **remove it** (KB C10: no admin ever sets a password) and replace with "send a reset link".
-  * `DepartmentDetailPage` → hardcoded fake categories; the "Department Head" card shows the department name; inline "Access Denied" instead of the shared 404.
-  * `CatalogPage` → orphan route with links that ignore the clicked item; `DepartmentCatalogPage` → unrouted dead page.
-  * `SystemStatusPage` → no retry, bare error, uptime/lastDeploy never rendered; and it is reachable by a DEPARTMENT_HEAD whose data endpoint is SYSTEM_ADMIN-only (fix the route **or** the page).
-  * `RequestDetailPage` → the custody line shows raw truncated hex; `SearchXIfNeeded()` is a dead stub.
-  * `MapPage` → the caption still says "Showing up to 100 items".
-  * `AppLayout` → stray mis-indented JSX.
-  *Evidence:* each item ticked with the fix and a test.
+- [x] **P5-5 Fix the known dead/broken UI.** — done 20 Oct:
+  * `AuditListPage` "Abandon audit" → a real `POST /audits/:id/abandon` (required reason), a distinct "Abandoned" state that is **not** "In progress" and **not** "Completed" — it produced no report — and no report/CSV link on an abandoned session. Migration `20261021000000_audit_session_abandon`.
+  * `AdminUsersPage` password-reset dialog → **removed**: no admin ever sets a password. The administrator sends a reset link; the account holder chooses the password.
+  * `DepartmentDetailPage` → the three hardcoded categories ("1","2","3" — not category ids, so choosing one filtered for an item that did not exist) are now the real ones; the "Department Head" card names the **person** instead of printing the department's own name; the off-theme emerald and amber are the brand's.
+  * `CatalogPage` and `DepartmentCatalogPage` → **removed**: both were dead (one unreachable, one unrouted) and the staff restricted browse the catalog existed for is now served by "Browse Items → All departments", with the field restriction applied server-side.
+  * `SystemStatusPage` → shows the uptime and the last deploy (the API always returned them; the widget never showed them), and a failure offers the offline state and a "Try again" instead of a bare sentence.
+  * `RequestDetailPage` → the custody change names the people ("From: Meron Assefa → To: Computer Science") instead of the first eight characters of a UUID — the server resolves them, because a holder id is a user id or an org unit id and the client cannot tell which. The dead `SearchXIfNeeded()` stub is gone and the error state has an icon again.
+  * `MapPage` → the caption says what it does: every item in the register, grouped by building (it pages through all of it; the caption still said "up to 100").
+  *Evidence:* each item ticked with the fix; 256 frontend tests and the 42 end-to-end checks green.
 
 - [ ] **P5-6 Empty, loading and error states.**
   Every list: skeleton while loading, a written empty state (not "null"), an offline state, and a retry. Every mutation: a toast, a disabled button while in flight, and the cache invalidated.

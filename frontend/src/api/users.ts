@@ -138,3 +138,35 @@ export function resetUserPassword(
 export function deleteUser(id: string): Promise<{ id: string; deleted: boolean }> {
   return apiClient.delete<{ id: string; deleted: boolean }>(`/users/${encodeURIComponent(id)}`);
 }
+
+/**
+ * `POST /users/:id/deactivate` — close an account.
+ *
+ * Not a delete: the account stays, it simply cannot sign in again, and the
+ * items it held move to `REVERTED_UNVERIFIED` for the department head to
+ * verify one by one. The reason is required — it is written to the account's
+ * record.
+ */
+export function deactivateUser(
+  id: string,
+  reason: string,
+): Promise<{ message: string }> {
+  return apiClient.post(`/users/${encodeURIComponent(id)}/deactivate`, { reason });
+}
+
+/**
+ * `POST /users/org-units/:id/activate-head` — appoint a department's head.
+ *
+ * The handover: the unit's held items move to `REVERTED_UNVERIFIED` and the
+ * new head verifies them one by one. The items the *previous* head held
+ * personally are not moved to the new head — a role change never moves personal
+ * custody.
+ */
+export function activateDepartmentHead(
+  orgUnitId: string,
+  newHeadId: string,
+): Promise<{ message?: string }> {
+  return apiClient.post(`/users/org-units/${encodeURIComponent(orgUnitId)}/activate-head`, {
+    newHeadId,
+  });
+}

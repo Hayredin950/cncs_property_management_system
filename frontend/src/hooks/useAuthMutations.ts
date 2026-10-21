@@ -8,8 +8,7 @@ import {
   reverseDisposal,
 } from "../api/items";
 import { createCategory, deleteCategory, updateCategory } from "../api/categories";
-import {
-  approveUser,
+import {approveUser,
   deleteUser,
   inviteUser,
   promoteUser,
@@ -17,8 +16,7 @@ import {
   resetUserPassword,
   updateUser,
   type InviteUserPayload,
-  type UpdateUserPayload,
-} from "../api/users";
+  type UpdateUserPayload, deactivateUser, activateDepartmentHead } from "../api/users";
 import { initiateLoanReturn, confirmLoanReturn, disputeLoanReturn } from "../api/requests";
 import { checkExpiries } from "../api/expiry";
 import { toast } from "../lib/toast";
@@ -327,3 +325,44 @@ export function useCheckExpiries() {
 }
 
 export type { Item };
+
+/**
+ * `POST /users/:id/deactivate` — close an account.
+ *
+ * The account is not deleted: it stops being able to sign in, and the items it
+ * held move to `REVERTED_UNVERIFIED` for the department head to verify one by
+ * one. The reason is required, and it is written to the account's record.
+ */
+export function useDeactivateUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => deactivateUser(id, reason),
+    onSuccess: (_data, variables) => {
+      toast.success("The account has been closed.");
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void variables;
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Couldn't close the account"),
+  });
+}
+
+/**
+ * `POST /users/org-units/:id/activate-head` — appoint a department's head.
+ */
+export function useActivateDepartmentHead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orgUnitId, newHeadId }: { orgUnitId: string; newHeadId: string }) =>
+      activateDepartmentHead(orgUnitId, newHeadId),
+    onSuccess: () => {
+      toast.success("The new head is appointed. Their department's items need verifying.");
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({ queryKey: ["departments"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Couldn't appoint the head"),
+  });
+}

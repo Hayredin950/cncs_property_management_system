@@ -7,8 +7,12 @@ import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
 import { Modal } from "../../components/Modal";
+import { Select } from "../../components/Select";
 import { SkeletonText } from "../../components/Skeleton";
 import { apiClient } from "../../lib/apiClient";
+import { useActivateDepartmentHead } from "../../hooks/useAuthMutations";
+import { useUsers } from "../../hooks/useUsers";
+import type { UserSummary } from "../../types/user";
 
 export interface DepartmentRow {
   id: string;
@@ -37,6 +41,12 @@ export function DepartmentsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<string | null>(null);
+  const [appointing, setAppointing] = useState<DepartmentRow | null>(null);
+  const [newHeadId, setNewHeadId] = useState("");
+
+  const accountsQuery = useUsers(true);
+  const activateHead = useActivateDepartmentHead();
+  const accounts = accountsQuery.data ?? [];
 
   const departmentsQuery = useQuery({
     queryKey: ["departments", "admin"],
@@ -135,15 +145,90 @@ export function DepartmentsPage() {
                   </p>
                 </div>
                 {!department.head && (
-                  <span className="rounded-md border border-warning-200 bg-warning-50 px-2 py-1 text-xs text-warning-800">
-                    Headless
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-md border border-warning-200 bg-warning-50 px-2 py-1 text-xs text-warning-800">
+                      Headless
+                    </span>
+                    {/* The handover. The unit's held items move to
+                        "returned unverified" and the new head verifies them
+                        one by one; the items the previous head held
+                        personally are not moved to them — a role change never
+                        moves personal custody. */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setAppointing(department);
+                        setNewHeadId("");
+                      }}
+                    >
+                      Appoint a head
+                    </Button>
+                  </div>
                 )}
               </li>
             ))}
           </ul>
         </Card>
       )}
+
+      <Modal
+        open={appointing !== null}
+        onClose={() => setAppointing(null)}
+        title={appointing ? `Appoint the head of ${appointing.name}` : "Appoint a head"}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-slate-600">
+            The department's held items move to &quot;returned unverified&quot; and the new
+            head verifies them one by one. The items the previous head held personally
+            stay with them — a role change never moves personal custody.
+          </p>
+          <Select
+            label="New head"
+            value={newHeadId}
+            onChange={(event) => setNewHeadId(event.target.value)}
+            options={[
+              { value: "", label: "Choose a person…" },
+              ...accounts
+                .filter(
+                  (account: UserSummary) =>
+                    account.accountStatus === "ACTIVE" &&
+                    (account.role === "STAFF" || account.role === "DEPARTMENT_HEAD"),
+                )
+                .map((account: UserSummary) => ({
+                  value: account.id,
+                  label: `${account.fullName} (${account.email})`,
+                })),
+            ]}
+          />
+          {activateHead.isError && (
+            <p role="alert" className="text-sm text-danger-700">
+              {activateHead.error instanceof Error
+                ? activateHead.error.message
+                : "Couldn't appoint the head."}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAppointing(null)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              loading={activateHead.isPending}
+              disabled={!newHeadId || !appointing}
+              onClick={() => {
+                if (!appointing) return;
+                activateHead.mutate(
+                  { orgUnitId: appointing.id, newHeadId },
+                  { onSuccess: () => setAppointing(null) },
+                );
+              }}
+            >
+              Appoint
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a department">
         <div className="flex flex-col gap-4">

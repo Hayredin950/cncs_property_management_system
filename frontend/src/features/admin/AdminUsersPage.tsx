@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import {Check, ClipboardCopy, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X, KeyRound, ClipboardCheck } from "lucide-react";
+import {Check, ClipboardCopy, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X, KeyRound, ClipboardCheck, UserX } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -20,6 +20,7 @@ import { RoleBadge } from "../../components/StatusBadges";
 import { INVITABLE_ROLES, ROLE_LABELS, ROLES, type InvitableRole, type Role } from "../../types/enums";
 import {
   useApproveUser,
+  useDeactivateUser,
   useDeleteUser,
   useInviteUser,
   usePromoteUser,
@@ -131,6 +132,7 @@ export function AdminUsersPage() {
   const promoteMutation = usePromoteUser();
   const [resetSent, setResetSent] = useState<string | null>(null);
   const deleteMutation = useDeleteUser();
+  const closeMutation = useDeactivateUser();
   const approveMutation = useApproveUser();
   const rejectMutation = useRejectUser();
 
@@ -153,6 +155,8 @@ export function AdminUsersPage() {
   const [nextRole, setNextRole] = useState<Role>("STAFF");
   const [confirmingRole, setConfirmingRole] = useState<UserSummary | null>(null);
   const [deleting, setDeleting] = useState<UserSummary | null>(null);
+  const [closing, setClosing] = useState<UserSummary | null>(null);
+  const [closeReason, setCloseReason] = useState("");
   const [approving, setApproving] = useState<UserSummary | null>(null);
   const [approveRole, setApproveRole] = useState<Role>("STAFF");
   const [rejecting, setRejecting] = useState<UserSummary | null>(null);
@@ -749,6 +753,26 @@ export function AdminUsersPage() {
                           setPasswordFor(account);
                         }}
                       />
+                      {/* Closing an account, not deleting it. The account
+                          stays, it cannot sign in again, and the items it
+                          held move to REVERTED_UNVERIFIED for the department
+                          head to verify one by one. The reason is required and
+                          is written to the account's record. */}
+                      <IconButton
+                        size="sm"
+                        variant="outline"
+                        icon={<UserX className="h-4 w-4" aria-hidden="true" />}
+                        label={
+                          isSelf
+                            ? "You cannot close your own account"
+                            : `Close the account of ${account.fullName}`
+                        }
+                        disabled={isSelf || account.accountStatus === "DEACTIVATED"}
+                        onClick={() => {
+                          setClosing(account);
+                          setCloseReason("");
+                        }}
+                      />
                       <IconButton
                         size="sm"
                         variant="outline"
@@ -906,6 +930,47 @@ export function AdminUsersPage() {
           </>
         }
       />
+
+      <Modal
+        open={closing !== null}
+        onClose={() => setClosing(null)}
+        title={closing ? `Close the account of ${closing.fullName}` : "Close the account"}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-slate-600">
+            The account cannot sign in again, and the items it held move to
+            &quot;returned unverified&quot; so the department head can check them one by one.
+            The account itself is kept, with its record.
+          </p>
+          <Textarea
+            label="Why is the account being closed"
+            hint="Required. It is written to the account's record."
+            value={closeReason}
+            onChange={(event) => setCloseReason(event.target.value)}
+            required
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setClosing(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              loading={closeMutation.isPending}
+              disabled={!closeReason.trim()}
+              onClick={() => {
+                if (!closing) return;
+                closeMutation.mutate(
+                  { id: closing.id, reason: closeReason.trim() },
+                  { onSuccess: () => setClosing(null) },
+                );
+              }}
+            >
+              Close the account
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={deleting !== null}

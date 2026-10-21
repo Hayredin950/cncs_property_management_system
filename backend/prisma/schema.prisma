@@ -547,6 +547,13 @@ model AuditSession {
   /// Grace window after close before an unanswered MISSING becomes LOST (plan §6 step 4).
   graceEndsAt DateTime?
 
+  /// When the session was abandoned, and why. A session that was started for
+  /// the wrong scope has to be closable, and "abandoned" is not "completed":
+  /// a completed session produced a report, an abandoned one did not. Keeping
+  /// them apart is what stops an abandoned session being read as evidence.
+  abandonedAt DateTime?
+  abandonReason String?
+
   results AuditItemResultRow[]
 }
 

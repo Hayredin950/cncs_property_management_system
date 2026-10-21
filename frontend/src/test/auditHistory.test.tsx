@@ -11,6 +11,7 @@ import {
   AUDIT_READBACK,
   AUDIT_SESSION,
   AUDIT_STORED_ROWS,
+  OPEN_AUDIT_SESSION_SUMMARY,
   PRIVILEGED_ITEM,
 } from "./fixtures";
 
@@ -28,6 +29,43 @@ const API = "http://localhost:4000/api/v1";
  * instead of trusting one tab's `sessionStorage`.
  */
 describe("/audits — the audit history", () => {
+  it("really abandons a session, and says it produced no report", async () => {
+    // The button used to show a success toast and change nothing at all: the
+    // session stayed open, kept showing up in the "Active Audit" tile, and the
+    // person was told it had been dealt with. It now calls the endpoint.
+    let body: { reason?: string } | null = null;
+    // The session is the auditor's own, and still open: only the person who ran
+    // an open session can abandon it, and only an auditor can run sessions.
+    const openSession = { ...OPEN_AUDIT_SESSION_SUMMARY, id: "audit-open", runById: AUDITOR_USER.id, runBy: { id: AUDITOR_USER.id, fullName: AUDITOR_USER.fullName, email: AUDITOR_USER.email } };
+    server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: AUDITOR_USER })),
+      http.get(`${API}/audits`, () =>
+        HttpResponse.json({ audits: [openSession], total: 1, limit: 20, offset: 0 }),
+      ),
+      http.post(`${API}/audits/audit-open/abandon`, async ({ request }) => {
+        body = (await request.json()) as { reason?: string };
+        return HttpResponse.json({
+          message: "Audit session abandoned. It produced no report.",
+          session: { id: "audit-open", abandonedAt: "2026-10-20T10:00:00.000Z", abandonReason: "Wrong scope" },
+        });
+      }),
+    );
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/audits"] });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /^abandon$/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText(/why is it being abandoned/i),
+      "Wrong scope — counted the wrong department.",
+    );
+    await user.click(within(dialog).getByRole("button", { name: /abandon/i }));
+
+    await waitFor(() => expect(body?.reason).toBe("Wrong scope — counted the wrong department."));
+  });
+
   it("lists stored sessions with their counts, status and a link to the report", async () => {
     setToken("test-token");
     renderWithProviders({ initialEntries: ["/audits"] });

@@ -89,6 +89,70 @@ auditsRouter.post(
  * completion (Phase 3 Step 2), because an audit that is later abandoned
  * should never leave an item looking like it was audited.
  */
+/**
+ * `POST /api/v1/audits/:id/abandon` — close a session that will not be completed.
+ *
+ * An audit session is opened with a scope, and the scope is frozen into the
+ * session's result rows. If it turns out to be the wrong scope — the wrong
+ * department, the wrong building — the session cannot be completed honestly.
+ * Before this endpoint there was no way to close one: it stayed "in progress"
+ * forever, it showed up in the "Active Audit" tile, and it could only be
+ * completed (which would produce a report of a scope nobody meant to count).
+ *
+ * Abandoning is **not** completing. A completed session produced a report
+ * with a serial number; an abandoned one produced nothing, and saying so is
+ * the point — an abandoned session must never be read as evidence.
+ */
+auditsRouter.post(
+  "/:id/abandon",
+  authenticate,
+  requireCapability("AUDIT_RUN"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        res.status(400).json({ error: "Audit session ID is required" });
+        return;
+      }
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+      if (reason.length < 3) {
+        res.status(400).json({ error: "Say why the session is being abandoned" });
+        return;
+      }
+
+      const session = await prisma.auditSession.findUnique({
+        where: { id },
+        select: { id: true, completedAt: true, abandonedAt: true, runById: true },
+      });
+      if (!session) {
+        res.status(404).json({ error: "Audit session not found" });
+        return;
+      }
+      if (session.completedAt) {
+        res.status(409).json({ error: "Audit session is already completed" });
+        return;
+      }
+      if (session.abandonedAt) {
+        res.status(409).json({ error: "Audit session is already abandoned" });
+        return;
+      }
+
+      const abandoned = await prisma.auditSession.update({
+        where: { id },
+        data: { abandonedAt: new Date(), abandonReason: reason },
+        select: { id: true, abandonedAt: true, abandonReason: true },
+      });
+
+      res.status(200).json({
+        message: "Audit session abandoned. It produced no report.",
+        session: abandoned,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 auditsRouter.post(
   "/:id/scan",
   authenticate,
@@ -318,7 +382,7 @@ function scopeItemFilter(
 
 const listQuerySchema = z.object({
   mine: z.enum(["true", "false"]).optional(),
-  status: z.enum(["completed", "in-progress", "all"]).optional(),
+  status: z.enum(["completed", "in-progress", "abandoned", "all"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -415,9 +479,13 @@ auditsRouter.get(
         // findings) sees the college's audit history; `mine=true` narrows to
         // their own sessions and nothing widens it back.
         ...(query.mine === "true" ? { runById: user.id } : {}),
-        // Status filter: completed, in-progress, or all
+        // Status filter: completed, in-progress, abandoned, or all.
+        // "in-progress" means *still open*, so an abandoned session is not one —
+        // an abandoned session produced no report and must not be read as if it
+        // had.
         ...(query.status === "completed" ? { completedAt: { not: null } } : {}),
-        ...(query.status === "in-progress" ? { completedAt: null } : {}),
+        ...(query.status === "in-progress" ? { completedAt: null, abandonedAt: null } : {}),
+        ...(query.status === "abandoned" ? { abandonedAt: { not: null } } : {}),
       };
 
       const [sessions, total] = await Promise.all([
@@ -461,6 +529,9 @@ auditsRouter.get(
         audits: sessions.map((session) => ({
           ...session,
           completed: session.completedAt !== null,
+          // An abandoned session is not a completed one, and saying so is the
+          // point: it produced no report, so it must not be read as evidence.
+          abandoned: session.abandonedAt !== null,
           counts: {
             found: countFor(session.id, "FOUND"),
             missing: countFor(session.id, "MISSING"),

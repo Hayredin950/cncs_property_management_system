@@ -121,6 +121,10 @@ export interface AuditSessionSummary {
   startedAt: string;
   completedAt: string | null;
   completed: boolean;
+  /** An abandoned session produced no report — it is not a completed one. */
+  abandoned: boolean;
+  abandonedAt: string | null;
+  abandonReason: string | null;
   counts: {
     found: number;
     missing: number;
@@ -156,6 +160,10 @@ export interface AuditSessionReadback {
   startedAt: string;
   completedAt: string | null;
   completed: boolean;
+  /** An abandoned session produced no report — it is not a completed one. */
+  abandoned: boolean;
+  abandonedAt: string | null;
+  abandonReason: string | null;
   counts: {
     found: number;
     missing: number;

@@ -14,7 +14,7 @@ import { Pagination } from "../../components/Pagination";
 import { Select } from "../../components/Select";
 import { SkeletonText } from "../../components/Skeleton";
 import { useAuditsList } from "../../hooks/useAudits";
-import { AUDITS_PAGE_SIZE } from "../../api/audits";
+import { abandonAuditSession, AUDITS_PAGE_SIZE } from "../../api/audits";
 import { formatDateTimeUTC, formatRelativeTime } from "../../lib/formatters";
 import type { AuditSessionSummary } from "../../types/audit";
 import { canRunAudits, canViewAudits } from "../../lib/permissions";
@@ -87,14 +87,22 @@ export function AuditListPage() {
   async function confirmAbandon() {
     if (!auditToAbandon) return;
     try {
-      // TODO: Call abandon API endpoint when implemented
-      toast.success(`Audit abandoned: ${auditToAbandon.scopeValue || auditToAbandon.scopeType}`);
+      // The session is closed for real, with the reason recorded. The old
+      // version of this showed a success toast and changed nothing at all —
+      // the session stayed open, kept showing up in the "Active Audit" tile,
+      // and the person was told it had been dealt with.
+      await abandonAuditSession(auditToAbandon.id, abandonReason.trim());
+      toast.success(
+        `Audit abandoned: ${auditToAbandon.scopeValue || auditToAbandon.scopeType}. It produced no report.`,
+      );
       setAbandonDialogOpen(false);
       setAbandonReason("");
       setAuditToAbandon(null);
-      auditsQuery.refetch();
+      void auditsQuery.refetch();
     } catch (err) {
-      toast.error("Failed to abandon audit");
+      toast.error(
+        err instanceof Error ? err.message : "Couldn't abandon the audit session.",
+      );
     }
   }
 
@@ -141,6 +149,7 @@ export function AuditListPage() {
               { value: "", label: "All statuses" },
               { value: "completed", label: "Completed" },
               { value: "in-progress", label: "In progress" },
+              { value: "abandoned", label: "Abandoned" },
             ]}
             value={status}
             onChange={(event) => setParam("status", event.target.value || null)}
@@ -243,6 +252,11 @@ export function AuditListPage() {
                         {audit.completedAt ? formatRelativeTime(audit.completedAt) : ""}
                       </span>
                     </Badge>
+                  ) : audit.abandoned ? (
+                    // An abandoned session produced no report. Saying
+                    // "Abandoned" rather than "In progress" is the whole
+                    // point: it must never be read as evidence.
+                    <Badge tone="neutral">Abandoned</Badge>
                   ) : (
                     <Badge tone="warning">In progress</Badge>
                   )}
@@ -265,22 +279,35 @@ export function AuditListPage() {
                 </div>
 
                 <div className="flex flex-wrap justify-end gap-2">
-                  <Link to={`/audit/${audit.id}/report`}>
-                    <Button variant="outline" size="sm">
-                      View report
-                    </Button>
-                  </Link>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    leftIcon={<Download className="h-4 w-4" />}
-                    loading={downloadingId === audit.id}
-                    disabled={downloadingId !== null}
-                    onClick={() => void handleDownload(audit)}
-                  >
-                    CSV
-                  </Button>
-                  {!audit.completed && canRun && audit.runBy.id === user?.id && (
+                  {/* An abandoned session produced no report, so there is no
+                      report to read and no export to download. Offering both
+                      would send people to a page that says "not found" for a
+                      session that was never a report at all. */}
+                  {!audit.abandoned && (
+                    <>
+                      <Link to={`/audit/${audit.id}/report`}>
+                        <Button variant="outline" size="sm">
+                          View report
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        leftIcon={<Download className="h-4 w-4" />}
+                        loading={downloadingId === audit.id}
+                        disabled={downloadingId !== null}
+                        onClick={() => void handleDownload(audit)}
+                      >
+                        CSV
+                      </Button>
+                    </>
+                  )}
+                  {audit.abandoned && audit.abandonReason && (
+                    <p className="max-w-xs text-right text-xs text-slate-500">
+                      Abandoned: {audit.abandonReason}
+                    </p>
+                  )}
+                  {!audit.completed && !audit.abandoned && canRun && audit.runBy.id === user?.id && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -316,13 +343,15 @@ export function AuditListPage() {
           <div className="flex flex-col gap-4">
             <p>
               {auditToAbandon
-                ? `Are you sure you want to abandon "${auditToAbandon.scopeValue || auditToAbandon.scopeType}"? This action cannot be undone.`
+                ? `Are you sure you want to abandon "${auditToAbandon.scopeValue || auditToAbandon.scopeType}"? The session is closed and produces no report — it can never be completed afterwards.`
                 : ""}
             </p>
             <Input
-              label="Reason (optional)"
+              label="Why is it being abandoned"
+              hint="Required. An abandoned session is a record of a decision not to count, and the reason is part of that record."
               value={abandonReason}
               onChange={(event) => setAbandonReason(event.target.value)}
+              required
             />
           </div>
         }

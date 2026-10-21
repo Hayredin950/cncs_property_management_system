@@ -110,8 +110,12 @@ export function LoginPage() {
           Need access?{" "}
           <Link to="/request-account" className="font-medium text-brand-700 underline-offset-4 hover:underline">
             Request an account
+          </Link>{" "}
+          — your department head approves it. Been invited instead?{" "}
+          <Link to="/accept-invite" className="font-medium text-brand-700 underline-offset-4 hover:underline">
+            Accept your invitation
           </Link>
-          . A system administrator must approve before you can sign in.
+          .
         </span>
       </p>
 

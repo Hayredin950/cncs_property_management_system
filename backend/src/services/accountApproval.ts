@@ -48,7 +48,20 @@ export const ERROR_REJECTION_REASON = "A reason of 3 to 500 characters is requir
  * refusal to let this session start, not a failed credential check, so it answers
  * 403 with the reason instead of the misleading "Invalid credentials".
  */
-export function signInRefusal(status: AccountStatusValue): string | null {
+/**
+ * The sentence the sign-in screen shows when an account exists but may not
+ * sign in.
+ *
+ * `reason` is the decision note, when there is one. It is the applicant's own
+ * request, so it is theirs to read: being told only "contact the property
+ * office" leaves them with nothing to act on, while "the staff ID does not
+ * match the college register" is something they can fix.
+ */
+export function signInRefusal(
+  status: AccountStatusValue,
+  context: { reason?: string | null } = {},
+): string | null {
+  const reason = context.reason?.trim();
   switch (status) {
     case "ACTIVE":
       return null;
@@ -57,7 +70,9 @@ export function signInRefusal(status: AccountStatusValue): string | null {
     case "PENDING_EMAIL_VERIFICATION":
       return "Confirm your email address before signing in.";
     case "REJECTED":
-      return "This account's request was declined. Contact the property office if you believe that is wrong.";
+      return reason
+        ? `This account's request was declined: ${reason} Contact the property office if you believe that is wrong.`
+        : "This account's request was declined. Contact the property office if you believe that is wrong.";
     case "DEACTIVATED":
       return "This account has been deactivated. Contact the property office.";
     default:

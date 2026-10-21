@@ -21,7 +21,7 @@
 | Backend tests | **535 pass** | `cd backend && pnpm test` → `Test Files 37 passed (37) / Tests 535 passed` |
 | Backend build | clean | `cd backend && pnpm run build` |
 | Frontend build | clean | `cd frontend && pnpm run build` |
-| Frontend tests | **255 pass** (was 27 failing) | `cd frontend && pnpm test` → `Test Files 38 passed (38)`, `Tests 255 passed (255)` |
+| Frontend tests | **256 pass** (was 27 failing) | `cd frontend && pnpm test` → `Test Files 38 passed (38)`, `Tests 256 passed (256)` |
 | Frontend CI | **now runs the tests** and the API contract check | `.github/workflows/frontend.yaml` — test step + contract step added; the suite it runs is green |
 | E2E CI | **new** — builds a real database, seeds it, drives the real flows | `.github/workflows/e2e.yaml` → `scripts/e2e-flows.sh` — 42 checks, green |
 | Mobile analyze | **0 errors** (2 style infos) | `cd mobile && flutter analyze` → `2 issues found` (infos only) |
@@ -222,7 +222,7 @@
 
 *Exit condition: each role's journey is usable, honest, and free of dead ends. No page shows a fake empty state; no button does nothing.*
 
-- [ ] **P5-1 Login page.**
+- [~] **P5-1 Login page.** — the states are covered: the server's own refusal sentences are shown verbatim, `next` survives every path, the forced password change is honoured, and a **rejected** applicant is now told **why** (the decision note is their own to read, rather than "phone the property office"). The help text now says a **department head** approves a staff account (it said "system administrator", which was wrong since D1) and offers a link for people who were **invited**.
   Realistic states: wrong password, unknown email, pending approval, rejected (with the reason), deactivated, forced password change, expired session. The `next` parameter must survive all of them. Loading must disable the button, not double-submit.
   *Evidence:* a test per state + a manual click-through.
 
@@ -246,7 +246,7 @@
 - [x] **P5-4b The custody actions, on the item page.** — `ItemCustodyActions` gives the six endpoints that had **no screen at all** one: a holder can claim an item, **accept it with a corrected condition** (the register said one thing, the item is another — keeping the difference on the record is what makes it auditable), or **refuse it** with a reason; a head can **verify** an item that changed hands without a handover check, or **flag** it for review; a Property Officer can **reverse a disposal**, with a reason, and the item returns to the pool to be registered again. Five new tests.
 
 - [ ] **P5-5 Fix the known dead/broken UI.**
-  * `AuditListPage` "Abandon audit" → fake success toast (needs `POST /audits/:id/abandon`).
+  * `AuditListPage` "Abandon audit" → **fixed 20 Oct**: there is now a real `POST /audits/:id/abandon` (with a required reason), a distinct "Abandoned" state that is **not** "In progress" and **not** "Completed" — it produced no report — and no report/CSV link on an abandoned session. Migration `20261021000000_audit_session_abandon` adds `abandonedAt`/`abandonReason`.
   * `AdminUsersPage` password-reset modal → unreachable; **remove it** (KB C10: no admin ever sets a password) and replace with "send a reset link".
   * `DepartmentDetailPage` → hardcoded fake categories; the "Department Head" card shows the department name; inline "Access Denied" instead of the shared 404.
   * `CatalogPage` → orphan route with links that ignore the clicked item; `DepartmentCatalogPage` → unrouted dead page.

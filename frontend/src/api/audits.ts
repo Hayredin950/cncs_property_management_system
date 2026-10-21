@@ -149,3 +149,17 @@ export async function fetchActiveAudit(signal?: AbortSignal): Promise<ActiveAudi
 export function fetchOpenFindings(signal?: AbortSignal): Promise<{ count: number }> {
   return apiClient.get<{ count: number }>("/audits/findings", { status: "OPEN" }, signal);
 }
+
+/**
+ * `POST /api/v1/audits/:id/abandon` — close a session that will not be completed.
+ *
+ * The session produces **no report**; that is the difference between abandoning
+ * and completing, and the reason is required: an abandoned session is a record
+ * of a decision not to count, and "why" is part of that record.
+ */
+export function abandonAuditSession(
+  id: string,
+  reason: string,
+): Promise<{ message: string; session: { id: string; abandonedAt: string; abandonReason: string | null } }> {
+  return apiClient.post(`/audits/${encodeURIComponent(id)}/abandon`, { reason });
+}

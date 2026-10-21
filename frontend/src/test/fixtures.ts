@@ -303,6 +303,9 @@ export const AUDIT_SESSION_SUMMARY: AuditSessionSummary = {
   ...AUDIT_SESSION,
   completedAt: "2026-09-22T08:30:00.000Z",
   completed: true,
+  abandoned: false,
+  abandonedAt: null,
+  abandonReason: null,
   counts: { found: 3, missing: 2, locationMismatch: 1 },
 };
 
@@ -314,6 +317,9 @@ export const OPEN_AUDIT_SESSION_SUMMARY: AuditSessionSummary = {
   startedAt: "2026-09-23T09:00:00.000Z",
   completedAt: null,
   completed: false,
+  abandoned: false,
+  abandonedAt: null,
+  abandonReason: null,
   counts: { found: 1, missing: 0, locationMismatch: 0 },
   runBy: { id: STAFF_USER.id, fullName: STAFF_USER.fullName, email: STAFF_USER.email },
 };
@@ -400,6 +406,9 @@ export const AUDIT_READBACK = (
     startedAt: AUDIT_SESSION.startedAt,
     completedAt: null,
     completed: false,
+  abandoned: false,
+  abandonedAt: null,
+  abandonReason: null,
     counts: { found: 0, missing: 0, locationMismatch: 0 },
     found: [],
     missing: [],

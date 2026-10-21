@@ -288,6 +288,11 @@ router.post(
           tokenVersion: true,
           mustChangePassword: true,
           createdAt: true,
+          // The reason a request was declined, so the person who asks can be
+          // told *why* instead of being told to phone the property office.
+          // It is their own request, so it is theirs to read.
+          reviewNote: true,
+          accountRequest: { select: { rejectionReason: true } },
         },
       });
 
@@ -304,7 +309,13 @@ router.post(
       // cannot be signed into, and a rejected or deactivated account stays out.
       // 403 with the reason rather than 401 "Invalid credentials" — the password
       // was right, so telling the person it was wrong is the unhelpful answer.
-      const refusal = signInRefusal(user.accountStatus);
+      const refusal = signInRefusal(user.accountStatus, {
+        // The decision note, when the decision was a decline. A rejected
+        // applicant who is told only "contact the property office" cannot act;
+        // one who is told "the staff ID does not match the college register"
+        // can fix it.
+        reason: user.accountRequest?.rejectionReason ?? user.reviewNote ?? null,
+      });
       if (refusal) {
         return res.status(403).json({ error: refusal, accountStatus: user.accountStatus });
       }

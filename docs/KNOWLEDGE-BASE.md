@@ -173,14 +173,24 @@ What a person sees of an item is decided by **two** questions, and until 21 Oct 
 
 The result, measured on the deployed app for one Biology laptop viewed from three roles:
 
-| Field | Staff (another department) | Department head (another department) | Property Officer |
-|---|---|---|---|
-| name · status · condition | ✓ | ✓ | ✓ |
-| department · building · floor · room | ✓ | ✓ | ✓ |
-| brand · model · serial number · notes | — | ✓ | ✓ |
-| purchase cost · current value | — | — | ✓ |
-| custodian (name + email) | — | — | ✓ |
-| the change history | — | — | ✓ |
+| Field | Staff (another department) | Department head (another department) | **Department head (their own department)** | Property Officer | The holder |
+|---|---|---|---|---|---|
+| name · status · condition | ✓ | ✓ | ✓ | ✓ | ✓ |
+| department · building · floor · room | ✓ | ✓ | ✓ | ✓ | ✓ |
+| brand · model · serial number · notes | — | ✓ | ✓ | ✓ | ✓ |
+| purchase cost · current value | — | — | ✓ | ✓ | ✓ |
+| custodian (name + email) | — | — | ✓ | ✓ | ✓ |
+| the change history | — | — | ✓ | ✓ | ✓ |
+
+**Why the columns differ.** The item in the screenshots belongs to **Biology** and the viewer was the **Computer Science** head, so the head was looking at another department's equipment — and the question "what does the rest of the college have?" is a different question from "what does my department have?".
+
+- **Opening** an item is about the *college's register*: anybody in the college may open an item, because you have to be able to see what exists before you can request it. What they may not open is another department's **pool** — the items a department holds for itself. That is the department's own business.
+- **Administering** an item is about *your* equipment: the value, the custodian's name, and the change log. The change log is the sharpest case — it names the people who made each change and shows the old and new value of every field, **including the value and the custodian the same viewer is not shown on the item itself**. If the log were open to everyone who can open the item, the field filtering would be pointless: the log would be a side channel to everything it hides.
+- So the rule is two questions, not one: *may you open it* (the register) and *may you administer it* (your equipment). A department head passes the second for their **own** department and not for another one.
+
+**The two bugs this uncovered** (both fixed 21 Oct):
+1. The page gated whole **sections** on one flag — "does this payload carry the custodian?" — so a head whose payload carried the make and model but not the custodian got a page with **no Specs section at all**, even though the data was in the response. That is where the brand went.
+2. The field filter read the viewer's unit from `departmentId`, but the session carries `orgUnitId` — so the branch that gives a head the full detail of their **own** department never fired. The head who administers a department could not read its register. The test that "proved" it passed because it spoke the old field name: **the tests were in a different language from the code.**
 
 Two rules that came out of it: the **status** is shown to everyone (a person
 looking at a laptop needs to know whether it is in service, on loan or

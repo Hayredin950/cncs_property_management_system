@@ -60,7 +60,9 @@ export function SystemEventsPage() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      {/* Wraps rather than overflows: the filters are fixed-width, and a row
+          that overflows is a horizontal scrollbar on the whole page. */}
+      <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-end">
         <div className="flex-1">
           <Input
             label="Search"

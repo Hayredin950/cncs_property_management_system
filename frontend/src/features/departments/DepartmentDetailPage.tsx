@@ -201,7 +201,7 @@ export function DepartmentDetailPage() {
       {/* Tab content */}
       {activeTab === "items" && (
         <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-end">
             <SearchBar
               value={search}
               onChange={(value) => updateParam("search", value)}

@@ -143,7 +143,10 @@ export function AuditListPage() {
 
       {/* Filters */}
       <Card className="flex flex-col gap-4 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        {/* The row wraps rather than overflowing. Five fixed-width filters
+            on one line need more room than a tablet has, and a row that
+            overflows is a horizontal scrollbar on the whole page. */}
+        <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-end">
           <div className="flex-1">
             <Input
               label="Search session ID"

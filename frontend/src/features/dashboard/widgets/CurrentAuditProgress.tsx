@@ -24,7 +24,7 @@ export function CurrentAuditProgress() {
             to={`/audit/${data.id}/report`}
             className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
           >
-            View details →
+            View report →
           </Link>
         )}
       </div>
@@ -55,6 +55,23 @@ export function CurrentAuditProgress() {
         />
       ) : (
         <div className="flex flex-col gap-3">
+          {/* The next thing an auditor does. The tile used to link only to the
+              report, so the way back into the walkthrough was two clicks away
+              and the tile looked like a dead end. */}
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to={`/audit/${data.id}/scan`}
+              className="inline-flex items-center justify-center rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+            >
+              Continue scanning
+            </Link>
+            <Link
+              to={`/audit/${data.id}/report`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+            >
+              See the report
+            </Link>
+          </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-slate-600">Scope:</span>
             <span className="font-medium text-slate-900">{data.scope}</span>

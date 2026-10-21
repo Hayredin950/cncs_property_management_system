@@ -90,3 +90,34 @@ export function fetchSystemEvents(
 ): Promise<SystemEventsResponse> {
   return apiClient.get<SystemEventsResponse>("/system/events", { limit, ...query }, signal);
 }
+
+/**
+ * The shape of the college's register — counts, not rows.
+ *
+ * The status page used to answer "is it up?" and nothing else. An
+ * administrator wants to know how much the system holds and how it is being
+ * used: how many accounts and how many are waiting, what the decisions were,
+ * what the assets look like, whether the requests are moving.
+ */
+export interface SystemStatistics {
+  accounts: {
+    total: number;
+    byStatus: Record<string, number>;
+    perMonth: { month: string; count: number }[];
+  };
+  decisions: { action: string; count: number }[];
+  items: {
+    total: number;
+    byStatus: Record<string, number>;
+    byDepartment: { name: string; count: number }[];
+  };
+  requests: {
+    byStatus: Record<string, number>;
+    byType: Record<string, number>;
+  };
+  audits: { byType: Record<string, number> };
+}
+
+export function fetchSystemStatistics(signal?: AbortSignal): Promise<SystemStatistics> {
+  return apiClient.get<SystemStatistics>("/system/statistics", undefined, signal);
+}

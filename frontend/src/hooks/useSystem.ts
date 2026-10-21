@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchSystemEvents, fetchSystemStatus } from "../api/system";
+import { fetchSystemEvents, fetchSystemStatistics, fetchSystemStatus } from "../api/system";
 
 /**
  * The SYSTEM_ADMIN dashboard's two tiles.
@@ -45,5 +45,15 @@ export function useSystemEvents(query: { limit?: number; offset?: number; action
   return useQuery({
     queryKey: ["system", "events", query],
     queryFn: ({ signal }) => fetchSystemEvents(query.limit ?? 20, signal, query),
+  });
+}
+
+/** The shape of the register — counts only, for the status page's graphs. */
+export function useSystemStatistics() {
+  return useQuery({
+    queryKey: ["system", "statistics"],
+    queryFn: ({ signal }) => fetchSystemStatistics(signal),
+    staleTime: 60_000,
+    retry: false,
   });
 }

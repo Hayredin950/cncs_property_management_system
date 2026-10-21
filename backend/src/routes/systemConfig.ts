@@ -201,3 +201,108 @@ systemConfigRouter.get(
     }
   },
 );
+
+/**
+ * `GET /api/v1/system/statistics` — the shape of the college's register.
+ *
+ * The status page used to show three words ("production", a revision, and
+ * "connected"), which answer "is it up?" and nothing else. An administrator
+ * looking at a system wants to know how much it holds and how it is being
+ * used: how many accounts and how many are waiting, what the decisions were,
+ * what the assets look like, whether the requests are moving.
+ *
+ * Everything here is a **count** — no rows, no names, no values. It is a
+ * summary of the system's shape, not a second copy of the register.
+ */
+systemConfigRouter.get(
+  "/statistics",
+  authenticate,
+  requireCapability("SYSTEM_CONFIG"),
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+      sixMonthsAgo.setDate(1);
+      sixMonthsAgo.setHours(0, 0, 0, 0);
+
+      const [
+        accountsByStatus,
+        accountsTotal,
+        accountsCreated,
+        decisions,
+        itemsByStatus,
+        itemsByDepartment,
+        itemsTotal,
+        requestsByStatus,
+        requestsByType,
+        auditsByState,
+      ] = await Promise.all([
+        prisma.user.groupBy({ by: ["accountStatus"], _count: { _all: true } }),
+        prisma.user.count(),
+        prisma.user.findMany({
+          where: { createdAt: { gte: sixMonthsAgo } },
+          select: { createdAt: true },
+        }),
+        prisma.adminActionLog.groupBy({ by: ["action"], _count: { _all: true } }),
+        prisma.item.groupBy({ by: ["status"], _count: { _all: true } }),
+        prisma.item.groupBy({ by: ["orgUnitId"], _count: { _all: true } }),
+        prisma.item.count(),
+        prisma.request.groupBy({ by: ["status"], _count: { _all: true } }),
+        prisma.request.groupBy({ by: ["type"], _count: { _all: true } }),
+        prisma.auditSession.groupBy({ by: ["sessionType"], _count: { _all: true } }),
+      ]);
+
+      // The departments the items belong to, by name, so the graph can be read.
+      const departments = await prisma.orgUnit.findMany({
+        where: { type: "DEPARTMENT" },
+        select: { id: true, name: true },
+      });
+      const departmentName = new Map(departments.map((d) => [d.id, d.name]));
+
+      // Accounts created per month, oldest first — the shape of the college's
+      // own growth over the last six months.
+      const perMonth = new Map<string, number>();
+      for (let i = 0; i < 6; i += 1) {
+        const month = new Date();
+        month.setMonth(month.getMonth() - (5 - i));
+        perMonth.set(month.toISOString().slice(0, 7), 0);
+      }
+      for (const account of accountsCreated) {
+        const key = account.createdAt.toISOString().slice(0, 7);
+        if (perMonth.has(key)) perMonth.set(key, (perMonth.get(key) ?? 0) + 1);
+      }
+
+      res.status(200).json({
+        accounts: {
+          total: accountsTotal,
+          byStatus: Object.fromEntries(
+            accountsByStatus.map((row) => [row.accountStatus, row._count._all]),
+          ),
+          perMonth: [...perMonth.entries()].map(([month, count]) => ({ month, count })),
+        },
+        decisions: decisions
+          .map((row) => ({ action: row.action, count: row._count._all }))
+          .sort((a, b) => b.count - a.count),
+        items: {
+          total: itemsTotal,
+          byStatus: Object.fromEntries(itemsByStatus.map((row) => [row.status, row._count._all])),
+          byDepartment: itemsByDepartment
+            .map((row) => ({
+              name: departmentName.get(row.orgUnitId ?? "") ?? "Unassigned",
+              count: row._count._all,
+            }))
+            .sort((a, b) => b.count - a.count),
+        },
+        requests: {
+          byStatus: Object.fromEntries(requestsByStatus.map((row) => [row.status, row._count._all])),
+          byType: Object.fromEntries(requestsByType.map((row) => [row.type, row._count._all])),
+        },
+        audits: {
+          byType: Object.fromEntries(auditsByState.map((row) => [row.sessionType, row._count._all])),
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);

@@ -274,7 +274,19 @@ const REQUEST_LIST_SELECT = {
   newOwnerId: true,
   requestedById: true,
   reviewedById: true,
-  item: { select: { id: true, tagId: true, name: true, status: true } },
+  // The item's **department**, so a request row can say where the thing is.
+  // The list used to carry only a name and a tag id, and the row had nowhere to
+  // show the department — which is the first thing a reviewer wants to know
+  // about a request that crossed departments.
+  item: {
+    select: {
+      id: true,
+      tagId: true,
+      name: true,
+      status: true,
+      ...ITEM_LOCATION_SELECT,
+    },
+  },
   requestedBy: { select: { id: true, fullName: true, email: true, role: true } },
 } as const;
 
@@ -399,11 +411,30 @@ function scopeToViewer(user: { id: string; role: UserRole; orgUnitId?: string | 
       OR: [
         { requestedById: user.id },
         { item: { orgUnitId: user.orgUnitId } },
+        // …and the ones they were asked about, even when the item belongs to
+        // another department. A cross-department transfer notifies the
+        // releasing head; the notification is a link, and a link that answers
+        // "Request not found" is a broken promise.
+        { stage1ApprovedById: user.id },
+        { stage2ApprovedById: user.id },
+        { reviewedById: user.id },
       ],
     };
   }
-  
-  return hasCapability(user.role, "REQUEST_READ_ALL") ? {} : { requestedById: user.id };
+
+  if (hasCapability(user.role, "REQUEST_READ_ALL")) return {};
+
+  // A staff member sees their own requests, plus the ones they were asked
+  // about — a reviewer who was notified must be able to open what they were
+  // notified about.
+  return {
+    OR: [
+      { requestedById: user.id },
+      { stage1ApprovedById: user.id },
+      { stage2ApprovedById: user.id },
+      { reviewedById: user.id },
+    ],
+  };
 }
 
 /**
@@ -761,7 +792,14 @@ requestsRouter.get(
         prisma.request.count({ where }),
       ]);
 
-      res.status(200).json({ requests, total, limit: query.limit, offset: query.offset });
+      // The rows carry the item's department and building under those names, so
+      // a client never has to know the relation shape.
+      res.status(200).json({
+        requests: requests.map((request) => withRowItemNames(request)),
+        total,
+        limit: query.limit,
+        offset: query.offset,
+      });
     } catch (err) {
       next(err);
     }

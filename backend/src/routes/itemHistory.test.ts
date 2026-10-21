@@ -173,13 +173,46 @@ describe("GET /items/:id/history", () => {
     expect(prisma.item.findFirst).not.toHaveBeenCalled();
   });
 
-  it("refuses a STAFF member — edit history is not theirs to read", async () => {
-    const res = await request(app)
+  it("lets a STAFF member read the history of an item they hold, and refuses anyone else's", async () => {
+    // The holder of an item may read its history: it is their laptop, and the
+    // item page shows them the record of it. It used to require a
+    // college-wide capability, so the person holding the item was told
+    // "Insufficient permissions" about their own record.
+    vi.mocked(prisma.item.findFirst).mockResolvedValueOnce({
+      id: "item-1",
+      tagId: "CNCS-DEMO-0001",
+      name: "Laptop",
+      status: "ACTIVE",
+      orgUnitId: "unit-cs",
+      holderType: "STAFF",
+      holderId: "staff-1",
+      ownerId: "staff-1",
+    } as never);
+    vi.mocked(prisma.itemEditLog.findMany).mockResolvedValueOnce([] as never);
+    vi.mocked(prisma.itemEditLog.count).mockResolvedValueOnce(0 as never);
+
+    const own = await request(app)
       .get("/items/item-1/history")
       .set("Authorization", `Bearer ${staffToken}`);
+    expect(own.status).toBe(200);
 
-    expect(res.status).toBe(403);
-    expect(prisma.item.findFirst).not.toHaveBeenCalled();
+    // ...but a colleague's item is not theirs to read, and the answer is the
+    // same as "it does not exist".
+    vi.mocked(prisma.item.findFirst).mockResolvedValueOnce({
+      id: "item-2",
+      tagId: "CNCS-DEMO-0002",
+      name: "Someone else's laptop",
+      status: "ACTIVE",
+      orgUnitId: "unit-cs",
+      holderType: "STAFF",
+      holderId: "staff-9",
+      ownerId: "staff-9",
+    } as never);
+
+    const other = await request(app)
+      .get("/items/item-2/history")
+      .set("Authorization", `Bearer ${staffToken}`);
+    expect(other.status).toBe(404);
   });
 
   it("needs a token", async () => {

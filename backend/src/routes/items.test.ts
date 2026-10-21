@@ -309,17 +309,21 @@ describe("GET /items/:tagId", () => {
     expect(vi.mocked(prisma.item.findUnique)).not.toHaveBeenCalled();
   });
 
-  it("requires authentication; guest gets 401, staff gets full row", async () => {
+  it("requires authentication; a guest gets 401 and a staff member gets the restricted row", async () => {
     const guest = await request(app).get("/items/CNCS-DEMO-0001");
 
     expect(guest.status).toBe(401);
     expect(vi.mocked(prisma.item.findUnique)).not.toHaveBeenCalled();
 
+    // A staff member may open any item in the register — it is the college's,
+    // and the browse list shows them all — but the row is **field-filtered**:
+    // the operational detail, not the make and serial of a colleague's laptop.
     const staff = await request(app)
       .get("/items/CNCS-DEMO-0001")
       .set("Authorization", `Bearer ${staffToken}`);
     expect(staff.status).toBe(200);
-    expect(staff.body.serialNumber).toBe("SN-998822");
+    expect(staff.body.tagId).toBe("CNCS-DEMO-0001");
+    expect(staff.body.serialNumber).toBeUndefined();
     expect(JSON.stringify(staff.body)).not.toContain("passwordHash");
   });
 
@@ -331,7 +335,7 @@ describe("GET /items/:tagId", () => {
    *
    * `FULL_ITEM` is held by `staff-1` in `org-unit-cs`.
    */
-  it("404s a row outside the caller's scope instead of serving it", async () => {
+  it("404s a row the caller may not see at all instead of serving it", async () => {
     vi.mocked(prisma.item.findUnique).mockResolvedValue({
       ...FULL_ITEM,
       ownerId: "staff-2",
@@ -341,12 +345,16 @@ describe("GET /items/:tagId", () => {
       orgUnitId: "org-unit-bio",
     } as never);
 
-    // A staff member naming somebody else's item by tag id.
+    // A staff member naming somebody else's item by tag id. The register is the
+    // college's and the browse list shows them all, so opening one by tag has
+    // to agree with the list — but the row is field-filtered, and the answer
+    // is never the colleague's serial number.
     const otherStaff = await request(app)
       .get("/items/CNCS-DEMO-0001")
       .set("Authorization", `Bearer ${createToken({ id: "staff-9", role: "STAFF" })}`);
-    expect(otherStaff.status).toBe(404);
-    expect(otherStaff.body).toEqual({ error: "Item not found" });
+    expect(otherStaff.status).toBe(200);
+    expect(otherStaff.body.serialNumber).toBeUndefined();
+    expect(otherStaff.body.purchaseCost).toBeUndefined();
 
     // An account role sees no asset data, by the same rule as the listing.
     vi.mocked(prisma.user.findUnique).mockResolvedValue({

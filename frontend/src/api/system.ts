@@ -30,8 +30,15 @@ export function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
 export interface SystemStatus {
   environment: string;
   version: string;
+  /** Seconds the instance serving the request has been running. On a serverless
+   *  platform a cold start resets it — that is the honest answer, and it is
+   *  about the instance rather than about the deployment. */
   uptime: number;
-  lastDeploy: string;
+  /** When the running instance started. */
+  startedAt: string;
+  /** When this build ran, from the stamp the build writes. Null when the
+   *  deployment predates the stamp — the screen says so rather than guessing. */
+  builtAt: string | null;
   database: string;
 }
 

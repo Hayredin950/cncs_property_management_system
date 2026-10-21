@@ -294,6 +294,12 @@ export function RequestsListPage() {
                 <div className="flex-1 min-w-0">
                   <p className="truncate font-semibold text-slate-900">{request.item.name}</p>
                   <p className="tag-id text-xs text-slate-500">{request.item.tagId}</p>
+                  {/* Which department the item belongs to. A request that
+                      crossed departments is decided by two people in two
+                      departments, and neither could see which. */}
+                  {request.item.department && (
+                    <p className="truncate text-xs text-slate-500">{request.item.department}</p>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <RequestTypeBadge type={request.type} />

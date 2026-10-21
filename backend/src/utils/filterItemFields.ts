@@ -128,12 +128,59 @@ export function isAuthenticatedViewer(user?: RequestingUser | null): boolean {
   return Boolean(user);
 }
 
+/**
+ * The fields that only the college's administrators ever see.
+ *
+ * They are the **financial** ones — what the college paid and what it values
+ * the item at — and the custodian's own details. Everything else (the photo,
+ * the location, the condition, the make and model) is operational knowledge
+ * about an item in the college's own register, and the people who work in the
+ * college need it to do their jobs: a department head has to see where the
+ * equipment of the next department is, and a staff member looking for
+ * something to borrow needs to see what it is and what it looks like.
+ *
+ * The custodian's identity stays restricted because it is a person: the item
+ * is in a department's cupboard and the fact that it is *in* that cupboard is
+ * the department's business. The custodian's **name** is not — the staff
+ * register is the same list the college publishes.
+ */
+const ADMINISTRATOR_ONLY_FIELDS = new Set([
+  "purchaseCost",
+  "currentValue",
+  "owner",
+]);
+
 export function sanitizeItem(
   item: Record<string, unknown>,
   user?: RequestingUser | null,
 ): Record<string, unknown> {
   if (seesFullItemDetail(user, item as ItemCustody)) {
     return item;
+  }
+
+  // A **Department Head** looking at an item in another department gets the
+  // operational detail: the photo, the location, the condition, the make and
+  // model. They are a manager in the same college, and the equipment of the
+  // next department is on the same register they administer — the old view
+  // showed them a name and a building and nothing else.
+  //
+  // The **financial** fields stay with the administrators, and so does the
+  // custodian's own record: what the college paid, and who in particular is
+  // responsible for the item, are the Property Office's business.
+  //
+  // A staff member keeps the **restricted tier** the catalogue spec asks for
+  // (name, category, building, status, photo): they are looking for something
+  // to request, not administering it.
+  const isDepartmentHead = user?.role === "DEPARTMENT_HEAD";
+
+  if (isDepartmentHead) {
+    const operational: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(item)) {
+      if (!ADMINISTRATOR_ONLY_FIELDS.has(key)) {
+        operational[key] = value;
+      }
+    }
+    return operational;
   }
 
   const publicSafeFields: Record<string, unknown> = {};

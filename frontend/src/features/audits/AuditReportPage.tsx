@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, FileText, HelpCircle, MapPinOff } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import {Link, useLocation, useParams, useNavigate } from "react-router-dom";
 import { fetchAuditSession } from "../../api/audits";
 import { describeDownloadFailure, saveReport, downloadAuditReport } from "../../api/reports";
 import { Button } from "../../components/Button";
@@ -95,6 +95,7 @@ export function AuditReportPage() {
    * carries those, so the request exists for the table below and the summary
    * above never waits on it.
    */
+  const navigate = useNavigate();
   const sessionQuery = useQuery({
     queryKey: ["audit", id],
     queryFn: ({ signal }) => fetchAuditSession(id, signal),
@@ -175,11 +176,38 @@ export function AuditReportPage() {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Audit complete</h1>
+        {/* The heading states what actually happened to the session. It used to
+            say "Audit complete" whatever the truth was — including for a
+            session that was abandoned, and for one that was still open. A
+            report page that cannot say what it is reporting is worse than no
+            report page. */}
+        <h1 className="text-2xl font-bold text-slate-900">
+          {sessionQuery.data?.abandoned
+            ? "Audit abandoned"
+            : sessionQuery.data?.completed || cached
+              ? "Audit complete"
+              : "Audit in progress"}
+        </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Completed {formatDateTimeUTC(summary.completedAt)}
+          {sessionQuery.data?.abandoned
+            ? `Abandoned ${formatDateTimeUTC(sessionQuery.data.abandonedAt ?? sessionQuery.data.startedAt)}`
+            : sessionQuery.data?.completed || cached
+              ? `Completed ${formatDateTimeUTC(summary.completedAt)}`
+              : `Started ${formatDateTimeUTC(sessionQuery.data?.startedAt ?? summary.completedAt)}`}
           {walkthrough.scopeValue ? ` · ${walkthrough.scopeValue}` : ""}
         </p>
+        {sessionQuery.data?.abandoned && sessionQuery.data.abandonReason && (
+          <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            {sessionQuery.data.abandonReason}
+          </p>
+        )}
+        {sessionQuery.data && !sessionQuery.data.completed && !sessionQuery.data.abandoned && (
+          <div className="mt-3">
+            <Button size="sm" onClick={() => navigate(`/audit/${id}/scan`)}>
+              Continue scanning
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

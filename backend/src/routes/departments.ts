@@ -193,14 +193,39 @@ departmentsRouter.get(
           fullName: true,
           email: true,
           role: true,
-          _count: { select: { ownedItems: true } },
         },
         orderBy: { fullName: "asc" },
       });
 
+      /**
+       * How many items each person **holds**, counted by the holder model
+       * (`holderType` + `holderId`), which is the truth about custody.
+       *
+       * It used to be Prisma's `_count.ownedItems` — the legacy `ownerId`
+       * relation — and the client read a flat `itemCount` that the server never
+       * sent, so every person on the roster showed "0 items". The number was
+       * wrong twice over: the wrong field, and the wrong column behind it.
+       */
+      const held = await prisma.item.groupBy({
+        by: ["holderId"],
+        where: {
+          holderType: "STAFF",
+          holderId: { in: staff.map((member) => member.id) },
+          status: { notIn: ["DISPOSED", "VOIDED"] },
+        },
+        _count: { _all: true },
+      });
+      const heldCount = new Map(held.map((row) => [row.holderId, row._count._all]));
+
       res.status(200).json({
         department: { id: department.id, name: department.name },
-        staff,
+        staff: staff.map((member) => ({
+          id: member.id,
+          fullName: member.fullName,
+          email: member.email,
+          role: member.role,
+          itemCount: heldCount.get(member.id) ?? 0,
+        })),
       });
     } catch (err) {
       next(err);

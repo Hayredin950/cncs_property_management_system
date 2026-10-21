@@ -321,11 +321,17 @@ export function DepartmentDetailPage() {
                       <p className="text-sm text-slate-500">{staff.email}</p>
                     </div>
                   </div>
+                  {/* The number, and a way to see them. "5 items" that cannot
+                      be opened is a number, not a link — the head's next
+                      question is always "which five?". */}
                   <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <span className="flex items-center gap-1">
+                    <Link
+                      to={`/items?holder=${encodeURIComponent(staff.id)}&holderName=${encodeURIComponent(staff.fullName)}`}
+                      className="flex items-center gap-1 text-brand-700 underline-offset-4 hover:underline"
+                    >
                       <Package className="h-3 w-3" aria-hidden="true" />
                       {staff.itemCount ?? 0} items
-                    </span>
+                    </Link>
                   </div>
                 </Card>
               ))}

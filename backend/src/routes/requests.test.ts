@@ -402,7 +402,16 @@ describe("GET /requests", () => {
       string,
       unknown
     >;
-    expect(where.requestedById).toBe("staff-1");
+    // Their own requests, plus the ones they were asked about — a reviewer who
+    // was notified must be able to open what they were notified about.
+    expect(where.OR).toEqual(
+      expect.arrayContaining([
+        { requestedById: "staff-1" },
+        { stage1ApprovedById: "staff-1" },
+        { stage2ApprovedById: "staff-1" },
+        { reviewedById: "staff-1" },
+      ]),
+    );
     // The default window is **all time**. It was "this-week" until 20 Oct 2026,
     // and the web client hid the difference by always sending an explicit
     // window — but the mobile client sends none, so on mobile a staff
@@ -626,9 +635,19 @@ describe("GET /requests/:id", () => {
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: "Request not found" });
+    // The scope is part of the where clause, so the query finds nothing and the
+    // response cannot confirm that an id the caller may not see exists. A
+    // staff member's scope is their own requests plus the ones they were asked
+    // about — a reviewer who was notified must be able to open what they were
+    // notified about.
     expect(vi.mocked(prisma.request.findFirst).mock.calls[0]?.[0]?.where).toEqual({
       id: "req-someone-else",
-      requestedById: "staff-1",
+      OR: [
+        { requestedById: "staff-1" },
+        { stage1ApprovedById: "staff-1" },
+        { stage2ApprovedById: "staff-1" },
+        { reviewedById: "staff-1" },
+      ],
     });
   });
 });

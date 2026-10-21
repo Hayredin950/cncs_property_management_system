@@ -49,14 +49,35 @@ describe("/items tells the viewer which list they are looking at", () => {
     await screen.findByRole("navigation", { name: "Primary" });
     const main = screen.getByRole("main");
 
-    // The page is scoped to the viewer, and which scope that is depends on who
-    // is signed in — so the assertion waits for the authenticated render.
+    // The list opens on the **register** — "Browse Items" is the whole college's
+    // items, and a person looking for something to request starts there. The
+    // heading says so.
+    expect(await within(main).findByRole("heading", { name: "Browse items" })).toBeInTheDocument();
+    // An empty register says the register is empty. The scoped copy — "Nothing
+    // is assigned to you yet" — belongs to *your* list, and a person who has
+    // not chosen it should not be told they own nothing.
+    expect(await within(main).findByText(/No items registered yet/)).toBeInTheDocument();
+    expect(within(main).queryByText(/Nothing is assigned to you yet/)).not.toBeInTheDocument();
+  });
+
+  it("frames the list as their own when a Staff member chooses 'My items'", async () => {
+    server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: STAFF_USER })),
+      http.get(`${API}/items`, () => HttpResponse.json(ITEMS_LIST([]))),
+      http.get(`${API}/categories`, () => HttpResponse.json([])),
+    );
+    setToken("test-token");
+
+    renderWithProviders({ initialEntries: ["/items?scope=mine"] });
+
+    await screen.findByRole("navigation", { name: "Primary" });
+    const main = screen.getByRole("main");
+
     expect(await within(main).findByRole("heading", { name: "My items" })).toBeInTheDocument();
-    // The lie the new copy replaced: "the register is empty" is not what an empty
-    // scoped list means, and it is not what the user was being shown.
+    // The lie the new copy replaced: "the register is empty" is not what an
+    // empty list of your own holdings means.
     expect(await within(main).findByText(/Nothing is assigned to you yet/)).toBeInTheDocument();
     expect(within(main).queryByText("No items registered yet")).not.toBeInTheDocument();
-    expect(within(main).queryByRole("heading", { name: "Browse items" })).not.toBeInTheDocument();
   });
 
   it("still frames it as the register for the Property Officer", async () => {

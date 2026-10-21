@@ -90,4 +90,8 @@ export interface ItemsListQuery {
   orgUnitId?: string;
   mine?: boolean;
   scope?: string;
+  /** Narrow the list to the items one person holds. Only the roles that may
+   *  look at other people's holdings can use it; for anyone else the server
+   *  ignores it. */
+  holder?: string;
 }

@@ -12,6 +12,11 @@ export interface RequestItemSummary {
   tagId: string;
   name: string;
   status: ItemStatus;
+  /** Which department holds the item — the first thing a reviewer wants to
+   *  know about a request, and especially about one that crossed departments. */
+  department: string | null;
+  /** The building the item is in. */
+  building: string | null;
 }
 
 export interface RequestUserSummary {

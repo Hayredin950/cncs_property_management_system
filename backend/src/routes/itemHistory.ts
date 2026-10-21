@@ -7,6 +7,7 @@ import {
 import { z } from "zod";
 import { httpError } from "../lib/httpError.js";
 import { prisma } from "../lib/prisma.js";
+import { hasCapability } from "../services/permissions.js";
 import { authenticate, requireCapability, type AuthenticatedRequest, type UserRole } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
 import { allItemsWhere } from "../services/itemVisibility.js";
@@ -46,7 +47,11 @@ type HistoryQuery = z.infer<typeof historyQuerySchema>;
 itemHistoryRouter.get(
   "/:id/history",
   authenticate,
-  requireCapability("ITEM_READ_ALL"),
+  // The history of an item belongs to whoever may see the item. It used to
+  // require ITEM_READ_ALL — a college-wide capability — so the person who
+  // *holds* the item was told "Insufficient permissions" about their own
+  // laptop's history, at the bottom of their own item's page. The scope check
+  // below decides it, per item.
   validateQuery(historyQuerySchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
@@ -67,19 +72,44 @@ itemHistoryRouter.get(
         return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
       }
 
-      // Scope check: Department Heads can view history for items they can view
-      // This includes: their department items, cross-department items (from catalog),
-      // and items they personally hold. They CANNOT see department-held items from other departments.
+      // Scope check: whoever may see the item may see its history.
+      //
+      // The holder of an item always may — it is *their* laptop and *their*
+      // record of it. A Department Head may see their own department's items,
+      // the items they personally hold, and the cross-department items they
+      // found through the catalogue; they may NOT see items held by another
+      // department. The college-wide readers (a Property Officer, an Auditor)
+      // see everything.
       const user = req.user;
-      if (user?.role === "DEPARTMENT_HEAD") {
-        const isInDept = item.orgUnitId === user.orgUnitId;
-        const isOwnItem = item.ownerId === user.id || (item.holderType === "STAFF" && item.holderId === user.id);
-        const isDeptHeld = item.holderType === "DEPARTMENT" && item.holderId === user.orgUnitId;
-        const isCrossDept = item.orgUnitId !== user.orgUnitId && item.holderType !== "DEPARTMENT";
-        
-        const canView = isInDept || isOwnItem || isDeptHeld || isCrossDept;
-        if (!canView) {
-          return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
+      if (!user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const isOwnItem =
+        item.ownerId === user.id || (item.holderType === "STAFF" && item.holderId === user.id);
+      const canViewEverywhere = hasCapability(user.role, "ITEM_READ_ALL");
+
+      if (!canViewEverywhere) {
+        // A **staff** member reads the history of the items they hold. Their
+        // own laptop's record is theirs; a colleague's is not, and the
+        // department's holdings are the head's business, not every member's.
+        if (user.role === "STAFF") {
+          if (!isOwnItem) {
+            return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
+          }
+        } else {
+          const isInDept = Boolean(user.orgUnitId) && item.orgUnitId === user.orgUnitId;
+          const isDeptHeld = item.holderType === "DEPARTMENT" && item.holderId === user.orgUnitId;
+          const isCrossDept =
+            Boolean(user.orgUnitId) &&
+            item.orgUnitId !== user.orgUnitId &&
+            item.holderType !== "DEPARTMENT";
+
+          const canView = isOwnItem || isInDept || isDeptHeld || isCrossDept;
+          if (!canView) {
+            // The same answer as "it does not exist" — the history of an item
+            // you may not see should not be discoverable.
+            return res.status(404).json({ error: ERROR_ITEM_NOT_FOUND });
+          }
         }
       }
 

@@ -577,6 +577,12 @@ auditsRouter.get(
         where: {
           runById: req.user.id,
           completedAt: null,
+          // An abandoned session is not an active one: it was closed, on
+          // purpose, and it produced no report. Leaving it out of the "current
+          // audit" is the difference between "you have work in progress" and
+          // "you have work in progress" — and the dashboard said the second
+          // while showing the first.
+          abandonedAt: null,
         },
         include: {
           runBy: {

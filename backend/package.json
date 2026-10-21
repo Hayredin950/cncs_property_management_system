@@ -5,13 +5,14 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "prisma generate && tsc && mkdir -p dist/api && cp api/index.js dist/api/",
+    "build": "node scripts/write-build-info.mjs && prisma generate && tsc && mkdir -p dist/api && cp api/index.js dist/api/",
     "start": "node dist/server.js",
     "lint": "eslint .",
     "test": "vitest run",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "build:info": "node scripts/write-build-info.mjs"
   },
   "keywords": [],
   "author": "",

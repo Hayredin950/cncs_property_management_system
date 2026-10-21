@@ -106,6 +106,19 @@ export function RequestDetailPage() {
             </Link>
             <span className="tag-id ml-2 text-xs text-slate-500">{request.item.tagId}</span>
           </Detail>
+          {/* Which department holds the item, and where it is. A request that
+              crossed departments is decided by two people in two departments,
+              and neither could see which — the item was a name and a tag id. */}
+          {request.item.department && (
+            <Detail label="Department">{request.item.department}</Detail>
+          )}
+          {request.item.building && (
+            <Detail label="Current location">
+              {request.item.building}
+              {request.item.floor ? ` · ${request.item.floor}` : ""}
+              {request.item.room ? ` · ${request.item.room}` : ""}
+            </Detail>
+          )}
           <Detail label="Requested by">
             {request.requestedBy.fullName} ({request.requestedBy.email})
           </Detail>

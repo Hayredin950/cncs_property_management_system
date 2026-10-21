@@ -30,6 +30,7 @@ import {
 } from "../services/photoStorage.js";
 import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
 import { itemInScope, itemListScope } from "../services/itemScope.js";
+import { ITEM_LOCATION_SELECT, withLocationNames } from "../utils/itemLocation.js";
 import { isAuthenticatedViewer, sanitizeItem } from "../utils/filterItemFields.js";
 import { capabilitiesFor } from "../services/permissions.js";
 import { isPhotoSource } from "../utils/photoSource.js";
@@ -223,7 +224,7 @@ itemsRouter.get(
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
       const skip = (page - 1) * limit;
 
-      const { search, categoryId, orgUnitId, mine, scope } = req.query;
+      const { search, categoryId, orgUnitId, mine, scope, holder } = req.query;
 
       const filters: Prisma.ItemWhereInput = {};
       const conditions: Prisma.ItemWhereInput[] = [];
@@ -331,6 +332,29 @@ itemsRouter.get(
             case "all":
               roleScope = undefined; // No restriction - see all
               break;
+            case "other":
+              // The departments that are not the viewer's own — the answer to
+              // "what does the rest of the college have?" when you are looking
+              // for something to request.
+              if (req.user.orgUnitId) {
+                roleScope = {
+                  AND: [
+                    { NOT: { orgUnitId: req.user.orgUnitId } },
+                    { NOT: { holderType: "DEPARTMENT", holderId: req.user.orgUnitId } },
+                    { NOT: { ownerId: req.user!.id } },
+                    { NOT: { holderType: "STAFF", holderId: req.user!.id } },
+                  ],
+                };
+              } else {
+                // No unit of their own: everything that is not theirs.
+                roleScope = {
+                  AND: [
+                    { NOT: { ownerId: req.user!.id } },
+                    { NOT: { holderType: "STAFF", holderId: req.user!.id } },
+                  ],
+                };
+              }
+              break;
             default:
               // Invalid scope, fall back to role-based default
               roleScope = itemListScope(req.user);
@@ -364,6 +388,29 @@ itemsRouter.get(
             case "all":
               roleScope = undefined; // No restriction - see all
               break;
+            case "other":
+              // The departments that are not the viewer's own — the answer to
+              // "what does the rest of the college have?" when you are looking
+              // for something to request.
+              if (req.user.orgUnitId) {
+                roleScope = {
+                  AND: [
+                    { NOT: { orgUnitId: req.user.orgUnitId } },
+                    { NOT: { holderType: "DEPARTMENT", holderId: req.user.orgUnitId } },
+                    { NOT: { ownerId: req.user!.id } },
+                    { NOT: { holderType: "STAFF", holderId: req.user!.id } },
+                  ],
+                };
+              } else {
+                // No unit of their own: everything that is not theirs.
+                roleScope = {
+                  AND: [
+                    { NOT: { ownerId: req.user!.id } },
+                    { NOT: { holderType: "STAFF", holderId: req.user!.id } },
+                  ],
+                };
+              }
+              break;
             default:
               // Invalid scope, fall back to role-based default
               roleScope = itemListScope(req.user);
@@ -379,6 +426,30 @@ itemsRouter.get(
 
       if (roleScope) {
         conditions.push(roleScope);
+      }
+
+      /**
+       * `?holder=<userId>` — the items one person holds.
+       *
+       * It exists because the roster says "5 items" and the next question is
+       * always "which five?". It is **narrowing**, never widening: it is ANDed
+       * with the scope, so it can only ever return a subset of what the caller
+       * could already list.
+       *
+       * And it is only honoured for the roles that may look at other people's
+       * holdings at all — a property officer, a department head, and the
+       * system administrator. For anyone else it is ignored, because a staff
+       * member's list of another person's items is not theirs to read.
+       */
+      const holderId = typeof holder === "string" && holder.length > 0 ? holder : null;
+      if (holderId) {
+        const mayListOtherHoldings =
+          req.user?.role === "PROPERTY_OFFICER" ||
+          req.user?.role === "DEPARTMENT_HEAD" ||
+          req.user?.role === "SYSTEM_ADMIN";
+        if (mayListOtherHoldings) {
+          conditions.push({ OR: [{ holderType: "STAFF", holderId }, { ownerId: holderId }] });
+        }
       }
 
       if (conditions.length > 0) {
@@ -406,13 +477,25 @@ itemsRouter.get(
             owner: {
               select: { id: true, fullName: true, email: true },
             },
+            // The department and the building of each item. Without them the
+            // card could not say where the thing is: the list showed a name
+            // and a tag id, and the "department" the card renders was
+            // undefined — so the register looked like a list of things with
+            // no idea where any of them were.
+            ...ITEM_LOCATION_SELECT,
           },
         }),
         prisma.item.count({ where }),
       ]);
 
       const sanitizedItems = items.map((item) =>
-        sanitizeItem(item as unknown as Record<string, unknown>, req.user),
+        sanitizeItem(
+          withLocationNames(item as unknown as Parameters<typeof withLocationNames>[0]) as unknown as Record<
+            string,
+            unknown
+          >,
+          req.user,
+        ),
       );
 
       res.status(200).json({
@@ -596,9 +679,19 @@ itemsRouter.get(
        * transfer identification per catalog spec §9.1), but the response will
        * contain only restricted fields (name, category, building, status).
        */
-      const isCrossDeptView = req.user?.role === "DEPARTMENT_HEAD" &&
+      // A Department Head **and** a staff member may open an item from another
+      // department: the register is the college's, and "what does the rest of
+      // the college have?" is the question a person asks when they need to
+      // request an item. The response is field-filtered either way (the
+      // restricted tier for a staff member, the operational detail for a head),
+      // so opening it reveals no more than the browse list already does.
+      //
+      // Department-held items of **other** departments are excluded: a
+      // department's own pool is not a catalogue.
+      const isCrossDeptView =
+        (req.user?.role === "DEPARTMENT_HEAD" || req.user?.role === "STAFF") &&
         item.orgUnitId !== req.user.orgUnitId &&
-        item.holderType !== "DEPARTMENT"; // Exclude department-held items from other depts
+        item.holderType !== "DEPARTMENT";
 
       if (!itemInScope(req.user, item as unknown as Parameters<typeof itemInScope>[1]) && !isCrossDeptView) {
         res.status(404).json({ error: "Item not found" });

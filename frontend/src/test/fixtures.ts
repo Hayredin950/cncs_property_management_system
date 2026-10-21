@@ -248,7 +248,14 @@ export const REQUEST_FIXTURE: RequestSummary = {
   newOwnerId: null,
   requestedById: STAFF_USER.id,
   reviewedById: null,
-  item: { id: "item-1", tagId: "CNCS-AB12CD34", name: "Dell Latitude 5440", status: "ACTIVE" },
+  item: {
+    id: "item-1",
+    tagId: "CNCS-AB12CD34",
+    name: "Dell Latitude 5440",
+    status: "ACTIVE",
+    department: "Computer Science",
+    building: "CNCS Building",
+  },
   requestedBy: { id: STAFF_USER.id, fullName: STAFF_USER.fullName, email: STAFF_USER.email },
 };
 
@@ -561,7 +568,8 @@ export const SYSTEM_STATUS: SystemStatus = {
   environment: "production",
   version: "1.0.0",
   uptime: 4321,
-  lastDeploy: "2026-10-13T06:00:00.000Z",
+  startedAt: "2026-10-13T05:58:00.000Z",
+  builtAt: "2026-10-13T06:00:00.000Z",
   database: "connected",
 };
 

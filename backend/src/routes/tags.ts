@@ -1,5 +1,6 @@
 import { Router, type Response, type Router as ExpressRouter } from "express";
 import { prisma } from "../lib/prisma.js";
+import { itemInScope } from "../services/itemScope.js";
 import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import { generateTagQR, regenerateTagQR, readTagFile } from "../utils/qrGenerator.js";
 
@@ -27,7 +28,12 @@ async function getItemTagIdOr404(id: string, res: Response): Promise<string | nu
 tagsRouter.get(
   "/:id/tag",
   authenticate,
-  requireCapability("TAG_MANAGE"),
+  // **Reading** a tag is not tag *management*. The printable QR label of an item
+  // belongs to whoever may see the item — the holder needs it to reprint their
+  // own sticker. It used to require TAG_MANAGE (a Property Officer's
+  // capability), so every other role saw "Couldn't load the tag image" at the
+  // bottom of their own item's page. *Regenerating* a tag still does require
+  // it: that writes a file.
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const itemId = req.params.id;
@@ -38,8 +44,26 @@ tagsRouter.get(
         });
       }
 
-      const tagId = await getItemTagIdOr404(itemId, res);
-      if (!tagId) return;
+      const item = await prisma.item.findUnique({
+        where: { id: itemId },
+        select: {
+          tagId: true,
+          orgUnitId: true,
+          holderType: true,
+          holderId: true,
+          ownerId: true,
+        },
+      });
+      if (!item) {
+        res.status(404).json({ error: "Item not found" });
+        return;
+      }
+      if (!itemInScope(req.user, item)) {
+        // The same answer as "it does not exist".
+        res.status(404).json({ error: "Item not found" });
+        return;
+      }
+      const tagId = item.tagId;
 
       let file = await readTagFile(tagId);
       if (!file) {

@@ -52,7 +52,9 @@ export function SystemStatus() {
           <div className="flex items-center justify-between text-sm">
             <span className="text-slate-600">Last deploy:</span>
             <span className="font-medium text-slate-900">
-              {data?.lastDeploy ? formatDateUTC(data.lastDeploy) : "Unknown"}
+              {/* Null when the deployment predates the build stamp: the screen
+                  says "not recorded" rather than inventing a date. */}
+              {data?.builtAt ? formatDateUTC(data.builtAt) : "Not recorded"}
             </span>
           </div>
         </div>

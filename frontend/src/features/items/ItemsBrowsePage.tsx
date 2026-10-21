@@ -36,15 +36,14 @@ export function ItemsBrowsePage() {
   /**
    * The scope the list is showing.
    *
-   * A staff member's default is **"mine"**: their own holdings are what the
-   * screen is for, and that is where their nav item points. A staff member can
-   * still switch to "All departments" — the register, in its restricted form,
-   * so that they can find something to request — but the page they land on is
-   * their own.
+   * The default is **"all"** for everyone: the screen is called "Browse
+   * Items", and the register is what a college's property system is for — a
+   * person looks for what the college has, and filters down to their own when
+   * that is what they want. "My items" is one click away, and it is where the
+   * item they hold is.
    */
   const requestedScope = searchParams.get("scope");
-  const defaultScope = user?.role === "STAFF" ? "mine" : "all";
-  const scope = requestedScope ?? (mine ? "mine" : defaultScope);
+  const scope = requestedScope ?? (mine ? "mine" : "all");
 
   /**
    * Is the list narrowed to the viewer?
@@ -90,6 +89,11 @@ export function ItemsBrowsePage() {
 
   const categoriesQuery = useCategories();
   const departmentsQuery = useDepartments();
+  // Whose holdings are being shown — set from the roster, where a person's
+  // item count is a link to what they hold.
+  const holder = searchParams.get("holder") ?? "";
+  const holderName = searchParams.get("holderName") ?? "";
+
   const itemsQuery = useItems({
     page,
     limit: 20,
@@ -98,6 +102,7 @@ export function ItemsBrowsePage() {
     ...(effectiveOrgUnitId ? { orgUnitId: effectiveOrgUnitId } : {}),
     ...(scope ? { scope } : {}),
     ...(mine ? { mine: true } : {}),
+    ...(holder ? { holder } : {}),
   });
 
   function updateParam(key: string, value: string) {
@@ -148,12 +153,16 @@ export function ItemsBrowsePage() {
         { value: "mine", label: "My items" },
       ];
     }
-    // STAFF sees "My items", "My department", and "All departments" scopes
+    // A staff member sees the same four scopes a department head does: the
+    // whole register, their own holdings, their own department, and **the other
+    // departments** — which is the one that answers "what does the rest of the
+    // college have?" when you are looking for something to request.
     if (user?.role === "STAFF") {
       return [
         { value: "all", label: "All departments" },
         { value: "mine", label: "My items" },
         { value: "department", label: "My department" },
+        { value: "other", label: "Other departments" },
       ];
     }
     return [];
@@ -164,39 +173,27 @@ export function ItemsBrowsePage() {
   const showScopeDropdown = scopeOptions.length > 0;
 
   // Determine heading and description based on scope
+  /**
+   * The heading names the **view**.
+   *
+   * The whole register is called "Browse items" for everyone — it is the same
+   * screen whatever role is looking at it, and the scope dropdown beside it says
+   * which part of it is showing. "All departments" is what the dropdown says; as
+   * a page heading it reads like a filtered view of something else, and the nav
+   * item that leads here is called "Browse Items". A narrowed view is named for
+   * what it narrows to.
+   */
   const getHeading = () => {
-    if (user?.role === "DEPARTMENT_HEAD") {
-      switch (scope) {
-        case "mine":
-          return "My items";
-        case "department":
-          return "My department";
-        case "other":
-          return "Other departments";
-        case "all":
-          return "All departments";
-        default:
-          return "All departments";
-      }
+    switch (scope) {
+      case "mine":
+        return "My items";
+      case "department":
+        return "My department";
+      case "other":
+        return "Other departments";
+      default:
+        return "Browse items";
     }
-    if (user?.role === "PROPERTY_OFFICER" || user?.role === "AUDITOR") {
-      // The full register. "All departments" is what the scope dropdown says;
-      // as a page heading it reads like a filtered view of something else, and
-      // the nav item that leads here is called "Browse Items". The narrowed
-      // views keep their own names, because there the scope IS the subject.
-      return scope === "mine" ? "My items" : "Browse items";
-    }
-    if (user?.role === "STAFF") {
-      switch (scope) {
-        case "mine":
-          return "My items";
-        case "department":
-          return "My department";
-        default:
-          return "My items";
-      }
-    }
-    return "Browse items";
   };
 
   const getDescription = () => {
@@ -237,6 +234,26 @@ export function ItemsBrowsePage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">{getHeading()}</h1>
         <p className="mt-1 text-sm text-slate-500">{getDescription()}</p>
+        {/* Whose holdings these are. The roster sends a person here, and the
+            page has to say so — otherwise a list of somebody else's items looks
+            like the viewer's own. */}
+        {holderName && (
+          <p className="mt-2 inline-flex items-center gap-2 rounded-md border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm text-brand-800">
+            Showing the items held by {holderName}
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.delete("holder");
+                next.delete("holderName");
+                setSearchParams(next);
+              }}
+              className="font-medium underline underline-offset-4"
+            >
+              Show everything
+            </button>
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end">

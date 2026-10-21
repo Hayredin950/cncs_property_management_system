@@ -76,6 +76,91 @@ export function itemListScope(user?: ScopedUser | null): Prisma.ItemWhereInput |
   }
 }
 
+/**
+ * The scope a caller asked for, resolved into the same fragment the listing
+ * uses.
+ *
+ * It used to live inline in the list route, which meant the two item reads
+ * could disagree: the listing understood `?scope=all` and the "recently
+ * registered" tile behind `GET /items/recent` did not, so a staff member — who
+ * may read the whole register — was told 403 by a tile asking for three rows
+ * of it. One resolver, used by both, is the fix that cannot come back.
+ *
+ * `scopeParam` is the caller's `?scope=`. An unknown value falls back to the
+ * role's own scope rather than widening anything.
+ */
+export function resolveItemScope(
+  user: ScopedUser | null | undefined,
+  scopeParam?: string,
+): Prisma.ItemWhereInput | undefined {
+  if (!user) return MATCHES_NOTHING;
+  if (!scopeParam) return itemListScope(user);
+
+  switch (user.role) {
+    case "DEPARTMENT_HEAD":
+      switch (scopeParam) {
+        case "mine":
+          return { OR: [{ ownerId: user.id }, { holderType: "STAFF", holderId: user.id }] };
+        case "department":
+          return user.orgUnitId
+            ? {
+                OR: [
+                  { orgUnitId: user.orgUnitId },
+                  { holderType: "DEPARTMENT", holderId: user.orgUnitId },
+                  { ownerId: user.id },
+                ],
+              }
+            : { ownerId: user.id };
+        case "other":
+          return user.orgUnitId
+            ? {
+                NOT: {
+                  OR: [
+                    { orgUnitId: user.orgUnitId },
+                    { holderType: "DEPARTMENT", holderId: user.orgUnitId },
+                  ],
+                },
+              }
+            : undefined;
+        case "all":
+          return undefined;
+        default:
+          return itemListScope(user);
+      }
+    case "PROPERTY_OFFICER":
+    case "AUDITOR":
+      return scopeParam === "all" ? undefined : itemListScope(user);
+    case "STAFF":
+      switch (scopeParam) {
+        case "mine":
+          return { OR: [{ ownerId: user.id }, { holderType: "STAFF", holderId: user.id }] };
+        case "department":
+          return user.orgUnitId
+            ? {
+                OR: [
+                  { orgUnitId: user.orgUnitId },
+                  { holderType: "DEPARTMENT", holderId: user.orgUnitId },
+                  { ownerId: user.id },
+                ],
+              }
+            : { ownerId: user.id };
+        case "all":
+          return undefined;
+        case "other":
+          return {
+            AND: [
+              { NOT: { ownerId: user.id } },
+              { NOT: { holderType: "STAFF", holderId: user.id } },
+            ],
+          };
+        default:
+          return itemListScope(user);
+      }
+    default:
+      return itemListScope(user);
+  }
+}
+
 /** Equality under Prisma's rules: `null` and `undefined` are both "no value". */
 function sameValue(rowValue: unknown, filterValue: unknown): boolean {
   const normalise = (value: unknown) => (value === null || value === undefined ? null : value);

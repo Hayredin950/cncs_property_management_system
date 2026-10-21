@@ -29,7 +29,14 @@ skipped=0
 created_emails=()
 
 cleanup() {
-  local admin id
+  # An account this script created is closed at the end of the run.
+  #
+  # Some of them cannot be deleted, and that is the system working: an account
+  # somebody decided on is part of the record (the decision is in the account
+  # log), and the record is preserved rather than destroyed. Those are closed
+  # instead, which is the way out the API names. An account nobody decided on
+  # is deleted outright.
+  local admin id code
   admin=$(token_for admin@cncs.aau.edu.et 'Admin123!')
   [ -z "$admin" ] && return
   for email in "${created_emails[@]}"; do
@@ -41,7 +48,14 @@ try:
 except Exception:
     print(''); raise SystemExit
 print(next((u['id'] for u in d if u['email']=='$email'),''))" 2>/dev/null)
-    [ -n "$id" ] && curl -s -m 20 -X DELETE "$BASE/users/$id" -H "Authorization: Bearer $admin" >/dev/null 2>&1
+    [ -z "$id" ] && continue
+    code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X DELETE "$BASE/users/$id" \
+      -H "Authorization: Bearer $admin")
+    if [ "$code" = "409" ]; then
+      curl -s -m 20 -o /dev/null -X POST "$BASE/users/$id/deactivate" \
+        -H "Authorization: Bearer $admin" -H 'content-type: application/json' \
+        -d '{"reason":"A verification run created this account; it is closed again."}'
+    fi
   done
 }
 trap cleanup EXIT
@@ -107,8 +121,18 @@ user_id_of() { # email token
   body "next((u['id'] for u in d if u['email']=='$1'),'')"
 }
 in_queue_of() { # email token -> 1/0
-  status GET /users/approvals "$2" >/dev/null
-  body "sum(1 for u in d if u['email']=='$1')"
+  local code
+  code=$(status GET /users/approvals "$2")
+  local found
+  found=$(body "sum(1 for u in d if u['email']=='$1')")
+  if [ -z "$found" ]; then
+    # No answer at all — the queue did not come back. Say so rather than
+    # reporting it as "the request is not there".
+    note "the queue did not answer (HTTP $code) while looking for $1"
+    echo ""
+    return
+  fi
+  echo "$found"
 }
 register() { # email fullName staffId department -> prints the http code
   status POST /auth/account-requests '' \
@@ -196,7 +220,7 @@ say "9. A rejected account is told why"
 E5="v20.rejected.$RANDOM.$RANDOM@cncs.aau.edu.et"; created_emails+=("$E5")
 register "$E5" "Reject Probe" "V20Rej-$RANDOM" "Computer Science" >/dev/null
 U5=$(user_id_of "$E5" "$HEADCS")
-S=$(status POST "/users/$U5/reject" "$HEADCS" '{"rejectionReason":"The staff ID is not in the college personnel register."}')
+S=$(status POST "/users/$U5/reject" "$HEADCS" '{"reason":"The staff ID is not in the college personnel register."}')
 [ "$S" = "200" ] && ok "the rejection → 200" || bad "the rejection → $S"
 S=$(status POST /auth/login '' "{\"email\":\"$E5\",\"password\":\"V20Check123!\"}")
 [ "$S" = "403" ] && ok "a rejected account cannot sign in → 403" \
@@ -232,7 +256,9 @@ S=$(status POST /users/invite "$ADMIN" "{\"email\":\"officer@cncs.aau.edu.et\",\
 say "15. An administrator cannot approve their own account"
 ADMINID=$(status GET /users "$ADMIN" >/dev/null; body "next((u['id'] for u in d if u['email']=='admin@cncs.aau.edu.et'),'')")
 S=$(status POST "/users/$ADMINID/approve" "$ADMIN" '{"role":"SYSTEM_ADMIN"}')
-{ [ "$S" = "400" ] || [ "$S" = "403" ] || [ "$S" = "409" ]; } && ok "the self-approval → $S" || bad "the self-approval → $S"
+# The refusal is a 404 — the same answer the app gives for anything outside the
+# approver's scope, so it does not even confirm the account exists.
+{ [ "$S" = "400" ] || [ "$S" = "403" ] || [ "$S" = "404" ] || [ "$S" = "409" ]; } && ok "the self-approval → $S" || bad "the self-approval → $S"
 
 say "16. A closed account cannot sign in, and its items are unverified"
 E7="v20.closed.$RANDOM.$RANDOM@cncs.aau.edu.et"; created_emails+=("$E7")

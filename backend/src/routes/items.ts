@@ -29,7 +29,7 @@ import {
   uploadItemPhoto,
 } from "../services/photoStorage.js";
 import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
-import { canOpenItem, itemInScope, itemListScope } from "../services/itemScope.js";
+import { canOpenItem, itemInScope, itemListScope, resolveItemScope } from "../services/itemScope.js";
 import { ITEM_LOCATION_SELECT, withLocationNames } from "../utils/itemLocation.js";
 import { isAuthenticatedViewer, sanitizeItem } from "../utils/filterItemFields.js";
 import { capabilitiesFor } from "../services/permissions.js";
@@ -334,112 +334,14 @@ itemsRouter.get(
        * - "all": all campus items (PROPERTY_OFFICER/AUDITOR only)
        * If not provided, falls back to role-based default scope.
        */
-      let roleScope: Prisma.ItemWhereInput | undefined;
       const scopeParam = typeof scope === "string" ? scope : undefined;
 
-      if (scopeParam) {
-        // Explicit scope parameter provided - validate and apply
-        if (req.user?.role === "DEPARTMENT_HEAD") {
-          switch (scopeParam) {
-            case "mine":
-              roleScope = { OR: [{ ownerId: req.user!.id }, { holderType: "STAFF", holderId: req.user!.id }] };
-              break;
-            case "department":
-              if (req.user.orgUnitId) {
-                roleScope = {
-                  OR: [
-                    { orgUnitId: req.user.orgUnitId },
-                    { holderType: "DEPARTMENT", holderId: req.user.orgUnitId },
-                    { ownerId: req.user!.id },
-                  ],
-                };
-              } else {
-                roleScope = { ownerId: req.user!.id };
-              }
-              break;
-            case "other":
-              if (req.user.orgUnitId) {
-                roleScope = {
-                  NOT: {
-                    OR: [
-                      { orgUnitId: req.user.orgUnitId },
-                      { holderType: "DEPARTMENT", holderId: req.user.orgUnitId },
-                    ],
-                  },
-                };
-              }
-              break;
-            case "all":
-              roleScope = undefined; // No restriction - see all
-              break;
-            default:
-              // Invalid scope, fall back to role-based default
-              roleScope = itemListScope(req.user);
-          }
-        } else if (req.user?.role === "PROPERTY_OFFICER" || req.user?.role === "AUDITOR") {
-          // Property Officers and Auditors can use "all" scope explicitly
-          if (scopeParam === "all") {
-            roleScope = undefined;
-          } else {
-            roleScope = itemListScope(req.user);
-          }
-        } else if (req.user?.role === "STAFF") {
-          // STAFF can use "all", "mine", "department" scopes
-          switch (scopeParam) {
-            case "mine":
-              roleScope = { OR: [{ ownerId: req.user!.id }, { holderType: "STAFF", holderId: req.user!.id }] };
-              break;
-            case "department":
-              if (req.user.orgUnitId) {
-                roleScope = {
-                  OR: [
-                    { orgUnitId: req.user.orgUnitId },
-                    { holderType: "DEPARTMENT", holderId: req.user.orgUnitId },
-                    { ownerId: req.user!.id },
-                  ],
-                };
-              } else {
-                roleScope = { ownerId: req.user!.id };
-              }
-              break;
-            case "all":
-              roleScope = undefined; // No restriction - see all
-              break;
-            case "other":
-              // The departments that are not the viewer's own — the answer to
-              // "what does the rest of the college have?" when you are looking
-              // for something to request.
-              if (req.user.orgUnitId) {
-                roleScope = {
-                  AND: [
-                    { NOT: { orgUnitId: req.user.orgUnitId } },
-                    { NOT: { holderType: "DEPARTMENT", holderId: req.user.orgUnitId } },
-                    { NOT: { ownerId: req.user!.id } },
-                    { NOT: { holderType: "STAFF", holderId: req.user!.id } },
-                  ],
-                };
-              } else {
-                // No unit of their own: everything that is not theirs.
-                roleScope = {
-                  AND: [
-                    { NOT: { ownerId: req.user!.id } },
-                    { NOT: { holderType: "STAFF", holderId: req.user!.id } },
-                  ],
-                };
-              }
-              break;
-            default:
-              // Invalid scope, fall back to role-based default
-              roleScope = itemListScope(req.user);
-          }
-        } else {
-          // Other roles ignore scope parameter, use role-based default
-          roleScope = itemListScope(req.user);
-        }
-      } else {
-        // No explicit scope parameter - use role-based default
-        roleScope = itemListScope(req.user);
-      }
+      /**
+       * The scope rules live in one place (`resolveItemScope`), so this
+       * listing and every other item read cannot drift apart. The inline
+       * switch that used to be here was the only copy of them.
+       */
+      const roleScope = resolveItemScope(req.user, scopeParam);
 
       if (roleScope) {
         conditions.push(roleScope);
@@ -545,18 +447,27 @@ itemsRouter.get(
 itemsRouter.get(
   "/recent",
   authenticate,
-  requireCapability("ITEM_READ_ALL"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 5));
 
-      // Scoped like every other item read. The tile asks "what was registered
-      // recently?" — for a Property Officer that is the college, and for a
-      // Department Head it is their own department. It used to answer for the
-      // whole college to anyone holding `ITEM_READ_ALL`, which handed a head
-      // the names and tag ids of items registered in other departments — the
-      // one item read in the app that did not go through the scope rules.
-      const scope = itemListScope(req.user);
+      /**
+       * Scoped like every other item read, through the same resolver the
+       * listing uses, and it takes the same `?scope=`.
+       *
+       * It used to need `ITEM_READ_ALL`, which a staff member does not hold —
+       * so the tile on the phone asked a staff member's dashboard for three
+       * rows of a register they are allowed to read, and was told 403. The
+       * question "what was registered recently?" is answered for whoever may
+       * read the register, and the answer is limited by the scope rules, not
+       * by a capability that was never about this question.
+       *
+       * The scope still does the limiting: a SYSTEM_ADMIN matches nothing, a
+       * head sees their own department unless they ask for all of it, and a
+       * staff member sees their own holdings unless they ask for the college.
+       */
+      const scopeParam = typeof req.query.scope === "string" ? req.query.scope : undefined;
+      const scope = resolveItemScope(req.user, scopeParam);
       const items = await prisma.item.findMany({
         where: { status: "ACTIVE", ...(scope ?? {}) },
         take: limit,

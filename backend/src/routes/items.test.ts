@@ -928,8 +928,63 @@ describe("mount paths", () => {
     expect(vi.mocked(prisma.item.findMany).mock.calls[0]?.[0]?.take).toBe(5);
   });
 
+  /**
+   * The "recently registered" tile answers for whoever may read the register.
+   *
+   * It used to need `ITEM_READ_ALL`, which a staff member does not hold — so
+   * the tile on the phone asked a staff member's dashboard for three rows of a
+   * register they are allowed to read, and was told 403. The scope rules do
+   * the limiting; the capability never was about this question.
+   */
+  it("answers /items/recent for a staff member, scoped to their own holdings", async () => {
+    vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
+
+    const res = await request(app)
+      .get("/items/recent")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    const where = vi.mocked(prisma.item.findMany).mock.calls[0]?.[0]?.where as Record<
+      string,
+      unknown
+    >;
+    expect(where).toEqual({
+      status: "ACTIVE",
+      OR: [{ ownerId: "staff-1" }, { holderType: "STAFF", holderId: "staff-1" }],
+    });
+  });
+
+  it("lets a staff member ask for the whole college's recent registrations", async () => {
+    vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
+
+    const res = await request(app)
+      .get("/items/recent?scope=all")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    const where = vi.mocked(prisma.item.findMany).mock.calls[0]?.[0]?.where as Record<
+      string,
+      unknown
+    >;
+    expect(where).toEqual({ status: "ACTIVE" });
+  });
+
+  it("shows the system administrator nothing, because it sees no asset data", async () => {
+    vi.mocked(prisma.item.findMany).mockResolvedValue([] as never);
+
+    const res = await request(app)
+      .get("/items/recent")
+      .set("Authorization", `Bearer ${createToken({ id: "admin-1", role: "SYSTEM_ADMIN" })}`);
+
+    expect(res.status).toBe(200);
+    const where = vi.mocked(prisma.item.findMany).mock.calls[0]?.[0]?.where as Record<
+      string,
+      unknown
+    >;
+    expect(where).toEqual({ status: "ACTIVE", id: { in: [] } });
+  });
+
   it("does not shadow the two-segment item routes", async () => {
-    // `GET /:tagId` is a single-segment pattern and itemsRouter is mounted last,
     // so /items/:id/history still belongs to itemHistoryRouter. If this breaks,
     // a tag lookup is answering history requests.
     const res = await request(app).get("/items/item-1/history");

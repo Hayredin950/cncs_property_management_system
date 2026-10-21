@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/misc.dart';
 
 import '../../core/files.dart';
 import '../../models/history.dart';
+import '../../models/enums.dart';
 import '../../models/item.dart';
+import 'auth_provider.dart';
 import 'core_providers.dart';
 
 /// Items: the register's list state, the two detail lookups, and the history.
@@ -98,7 +100,17 @@ final itemListProvider = AsyncNotifierProvider<ItemListNotifier, ItemsListRespon
 /// It asks `GET /items/recent` rather than the first page of the list: a
 /// dashboard wants three rows and was downloading twenty to show three.
 final recentItemsProvider = FutureProvider<List<Item>>((ref) {
-  return ref.watch(itemsApiProvider).recent(limit: 3);
+  final role = ref.watch(currentUserProvider)?.role;
+
+  /**
+   * A staff member's tile asks for the college's recent registrations, not
+   * their own three: the register is the college's, and the server's scope
+   * rules decide what each role may see. Asking for `all` is the same word
+   * the register screen uses, so the two cannot disagree about what the
+   * staff member may read.
+   */
+  final scope = role == Role.staff ? 'all' : null;
+  return ref.watch(itemsApiProvider).recent(limit: 3, scope: scope);
 });
 
 /// What the signed-in person holds — the dashboard's "my holdings".

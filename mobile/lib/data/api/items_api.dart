@@ -74,10 +74,10 @@ class ItemsApi {
   /// A separate endpoint rather than a page of the list sorted by date: the
   /// server keeps this one cheap, and it is the only one that answers "what
   /// arrived lately" for every role at once.
-  Future<List<Item>> recent({int limit = 5}) async {
+  Future<List<Item>> recent({int limit = 5, String? scope}) async {
     final json = await _client.get<Map<String, dynamic>>(
       '/items/recent',
-      query: {'limit': limit},
+      query: {'limit': limit, if (scope != null) 'scope': scope},
     );
     return [for (final row in asMapList(json)) Item.fromJson(row)];
   }

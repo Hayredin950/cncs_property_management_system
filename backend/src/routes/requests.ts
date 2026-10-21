@@ -37,6 +37,58 @@ import {
 } from "../services/requestWorkflow.js";
 import { REQUEST_STATUSES } from "../constants/requestStatus.js";
 
+
+/**
+ * The names behind a custody change.
+ *
+ * A request's `fromHolderId` is a **user** id and its `toHolderId` may be a
+ * user id or an **org unit** id, depending on who holds the item — one
+ * polymorphic pair, two tables. The client cannot resolve them on its own, and
+ * it used to print the first eight characters of a UUID, which tells a person
+ * nothing at all about who is handing what to whom.
+ *
+ * The college pool (a null holder id) is the item sitting in the Property
+ * Office's cupboard, and it reads as "the college pool".
+ */
+async function holderNames(row: {
+  fromHolderType: string | null;
+  fromHolderId: string | null;
+  toHolderType: string | null;
+  toHolderId: string | null;
+}): Promise<{ fromHolderName: string | null; toHolderName: string | null }> {
+  const ids = [row.fromHolderId, row.toHolderId].filter(
+    (id): id is string => typeof id === "string" && id.length > 0,
+  );
+  // A holder id is a user id or an org unit id; both are looked up and the
+  // label picks the right one, so the two lists are the same ids.
+  const userIds = ids;
+  const unitIds = ids;
+
+  const [users, units] = await Promise.all([
+    userIds.length
+      ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, fullName: true } })
+      : Promise.resolve([]),
+    unitIds.length
+      ? prisma.orgUnit.findMany({ where: { id: { in: unitIds } }, select: { id: true, name: true } })
+      : Promise.resolve([]),
+  ]);
+
+  const label = (holderType: string | null, holderId: string | null): string | null => {
+    if (!holderType) return null;
+    if (!holderId) return "The college pool";
+    // A holder is a person when the type says so; a department otherwise.
+    if (holderType.toUpperCase() === "USER" || holderType.toUpperCase() === "STAFF") {
+      return users.find((u) => u.id === holderId)?.fullName ?? null;
+    }
+    return units.find((u) => u.id === holderId)?.name ?? null;
+  };
+
+  return {
+    fromHolderName: label(row.fromHolderType, row.fromHolderId),
+    toHolderName: label(row.toHolderType, row.toHolderId),
+  };
+}
+
 /**
  * Transfer and disposal requests (SRS F6, F7).
  *
@@ -741,7 +793,9 @@ requestsRouter.get(
         return res.status(404).json({ error: ERROR_REQUEST_NOT_FOUND });
       }
 
-      res.status(200).json({ request: withRowItemNames(request) });
+      // The custody change, with the names behind it.
+      const holderLabels = await holderNames(request);
+      res.status(200).json({ request: { ...withRowItemNames(request), ...holderLabels } });
     } catch (err) {
       next(err);
     }

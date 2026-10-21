@@ -543,6 +543,8 @@ export const REQUEST_DETAIL_FIXTURE: RequestDetail = {
   fromHolderId: null,
   toHolderType: null,
   toHolderId: null,
+  fromHolderName: null,
+  toHolderName: null,
   stage1ApprovedAt: null,
   stage2ApprovedAt: null,
   withdrawnAt: null,

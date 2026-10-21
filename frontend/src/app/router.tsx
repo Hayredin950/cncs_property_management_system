@@ -10,7 +10,6 @@ import { AcceptInvitePage } from "../features/auth/AcceptInvitePage";
 import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { RequestAccountPage } from "../features/auth/RequestAccountPage";
-import { CatalogPage } from "../features/catalog/CatalogPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { ItemFormPage } from "../features/items/ItemFormPage";
 import { ItemStaffPage } from "../features/items/ItemStaffPage";
@@ -132,8 +131,6 @@ export const appRoutes: RouteObject[] = [
           // password change here from every other screen.
           { path: "/change-password", element: <ChangePasswordPage /> },
           { path: "/notifications", element: <NotificationsPage /> },
-          // §9.1: Staff restricted catalog browse
-{ path: "/catalog", element: <CatalogPage /> },
           // Department detail page (DEPARTMENT_HEAD only)
           {
             element: <RequireAuth roles={["DEPARTMENT_HEAD"]}><Outlet /></RequireAuth>,

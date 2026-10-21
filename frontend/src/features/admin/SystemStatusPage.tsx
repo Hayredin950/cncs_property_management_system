@@ -1,9 +1,12 @@
+import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
+import { OfflineState } from "../../components/ErrorState";
 import { SkeletonText } from "../../components/Skeleton";
 import { useSystemStatus } from "../../hooks/useSystem";
+import { NetworkError } from "../../types/api";
 
 export function SystemStatusPage() {
-  const { data, isPending, isError } = useSystemStatus();
+  const { data, isPending, isError, error, refetch } = useSystemStatus();
 
   return (
     <div className="space-y-6">
@@ -19,8 +22,24 @@ export function SystemStatusPage() {
           </div>
         </Card>
       ) : isError ? (
-        <Card>
-          <p className="text-sm text-slate-500">Couldn't load system status</p>
+        /* A failure here is a failure to reach the server, and every other
+           screen in the app says so with an offline state and a way to try
+           again. This one just said "couldn't load" and left the administrator
+           with nothing to do. */
+        <Card className="flex flex-col gap-4">
+          {error instanceof NetworkError ? (
+            <OfflineState />
+          ) : (
+            <p className="text-sm text-slate-500">
+              Couldn't load the system status
+              {error instanceof Error ? `: ${error.message}` : ""}.
+            </p>
+          )}
+          <div>
+            <Button size="sm" onClick={() => void refetch()}>
+              Try again
+            </Button>
+          </div>
         </Card>
       ) : (
         <Card className="flex flex-col gap-4">

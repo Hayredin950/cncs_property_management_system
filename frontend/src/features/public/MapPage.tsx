@@ -130,8 +130,9 @@ export function MapPage() {
       )}
 
       <p className="text-xs text-slate-400">
-        Showing up to 100 items — the first page of the register. Buildings with more items than that are split
-        across the list view instead.
+        {/* The map pages through the whole register, so it shows every item —
+            the caption said "up to 100" because that is what it used to load. */}
+        Showing all {itemsQuery.data?.data.length ?? 0} items in the register, grouped by building.
       </p>
     </div>
   );

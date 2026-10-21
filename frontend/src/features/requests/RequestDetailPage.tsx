@@ -1,3 +1,4 @@
+import { SearchX } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -61,7 +62,7 @@ export function RequestDetailPage() {
     if (error instanceof NetworkError) return <OfflineState />;
     return (
       <ErrorState
-        icon={<SearchXIfNeeded />}
+        icon={<SearchX className="h-8 w-8" aria-hidden="true" />}
         heading={error instanceof ApiError && error.status === 404 ? "Request not found" : "Couldn't load this request"}
         body={
           error instanceof ApiError && error.status === 404
@@ -134,15 +135,22 @@ export function RequestDetailPage() {
               <div className="text-sm">
                 {request.fromHolderType && (
                   <span className="text-slate-600">
-                    From: {request.fromHolderType === "USER" ? "Individual" : request.fromHolderType}
-                    {request.fromHolderId && ` (${request.fromHolderId.slice(0, 8)}...)`}
+                    From:{" "}
+                    {/* The name, not a UUID. The id is still there for
+                        anyone who needs to look it up, but it is not the
+                        thing a person reads. */}
+                    <span className="font-medium text-slate-800">
+                      {request.fromHolderName ?? "The college pool"}
+                    </span>
                   </span>
                 )}
                 {request.fromHolderType && request.toHolderType && <span className="mx-2">→</span>}
                 {request.toHolderType && (
                   <span className="text-slate-600">
-                    To: {request.toHolderType === "USER" ? "Individual" : request.toHolderType}
-                    {request.toHolderId && ` (${request.toHolderId.slice(0, 8)}...)`}
+                    To:{" "}
+                    <span className="font-medium text-slate-800">
+                      {request.toHolderName ?? "The college pool"}
+                    </span>
                   </span>
                 )}
               </div>
@@ -647,6 +655,4 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
 }
 
 /** Imported lazily below to keep the icon import list tidy. */
-function SearchXIfNeeded() {
-  return null;
-}
+

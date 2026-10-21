@@ -70,6 +70,10 @@ export interface RequestDetail extends Omit<RequestSummary, "item"> {
   fromHolderId: string | null;
   toHolderType: string | null;
   toHolderId: string | null;
+  /** The people and departments behind the custody change — a holder id is a
+   *  user id or an org unit id, and a UUID tells a person nothing. */
+  fromHolderName: string | null;
+  toHolderName: string | null;
   stage1ApprovedAt: string | null;
   stage2ApprovedAt: string | null;
   withdrawnAt: string | null;

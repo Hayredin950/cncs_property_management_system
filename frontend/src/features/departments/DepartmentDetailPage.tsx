@@ -12,6 +12,7 @@ import { Pagination } from "@/components/Pagination";
 import { SkeletonCard } from "@/components/Skeleton";
 import { fetchDepartmentRoster, fetchDepartmentStaff } from "@/api/departments";
 import { useQuery } from "@tanstack/react-query";
+import { useCategories } from "@/hooks/useCategories";
 import { useItems } from "@/hooks/useItems";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState, OfflineState } from "@/components/ErrorState";
@@ -56,6 +57,10 @@ export function DepartmentDetailPage() {
   });
 
   // Staff query for department staff
+  // Above the early return below: a hook called after one is called
+  // conditionally, and React notices.
+  const categoriesQuery = useCategories();
+
   const staffQuery = useQuery({
     queryKey: ["department-staff", id],
     queryFn: () => fetchDepartmentStaff(id),
@@ -77,6 +82,9 @@ export function DepartmentDetailPage() {
 
   const departmentName = rosterQuery.data?.department?.name ?? "Loading...";
   const staffMembers = staffQuery.data?.staff ?? [];
+  // The staff list carries roles, so the head can be named without another
+  // request.
+  const headName = staffMembers.find((member) => member.role === "DEPARTMENT_HEAD")?.fullName;
 
   function updateParam(key: string, value: string) {
     if (activeTab === "items") {
@@ -96,11 +104,16 @@ export function DepartmentDetailPage() {
     navigate(`?${params.toString()}`);
   }
 
+  // The real categories, from the server. The three hardcoded ones had ids
+  // "1", "2" and "3" — which are not category ids, so choosing a category
+  // filtered for an item that does not exist and the list came back empty with
+  // no explanation.
   const categoryOptions = [
     { value: "", label: "All categories" },
-    { value: "1", label: "Electronics" },
-    { value: "2", label: "Furniture" },
-    { value: "3", label: "Lab Equipment" },
+    ...(categoriesQuery.data ?? []).map((category) => ({
+      value: category.id,
+      label: category.name,
+    })),
   ];
 
   return (
@@ -132,12 +145,17 @@ export function DepartmentDetailPage() {
             </div>
             <div>
               <p className="text-sm text-slate-500">Department Head</p>
-              <p className="font-semibold text-slate-900">{departmentName}</p>
+              {/* The head is a person. This used to print the department's
+                  own name under the label "Department Head", which told a
+                  department head nothing they did not already know. */}
+              <p className="font-semibold text-slate-900">
+                {headName ?? "Not appointed"}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-              <Users className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100">
+              <Users className="h-5 w-5 text-brand-600" aria-hidden="true" />
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-900">{rosterQuery.data?.staffCount ?? 0}</p>
@@ -145,8 +163,8 @@ export function DepartmentDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
-              <Package className="h-5 w-5 text-amber-600" aria-hidden="true" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-100">
+              <Package className="h-5 w-5 text-accent-600" aria-hidden="true" />
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-900">{itemsQuery.data?.pagination?.total ?? 0}</p>
@@ -293,8 +311,8 @@ export function DepartmentDetailPage() {
               {staffMembers.map((staff) => (
                 <Card key={staff.id} className="flex flex-col gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                      <span className="text-xl font-bold text-emerald-600">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-100">
+                      <span className="text-xl font-bold text-brand-600">
                         {staff.fullName?.charAt(0) ?? "?"}
                       </span>
                     </div>

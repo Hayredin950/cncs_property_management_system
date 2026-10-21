@@ -372,29 +372,6 @@ itemsRouter.get(
             case "all":
               roleScope = undefined; // No restriction - see all
               break;
-            case "other":
-              // The departments that are not the viewer's own — the answer to
-              // "what does the rest of the college have?" when you are looking
-              // for something to request.
-              if (req.user.orgUnitId) {
-                roleScope = {
-                  AND: [
-                    { NOT: { orgUnitId: req.user.orgUnitId } },
-                    { NOT: { holderType: "DEPARTMENT", holderId: req.user.orgUnitId } },
-                    { NOT: { ownerId: req.user!.id } },
-                    { NOT: { holderType: "STAFF", holderId: req.user!.id } },
-                  ],
-                };
-              } else {
-                // No unit of their own: everything that is not theirs.
-                roleScope = {
-                  AND: [
-                    { NOT: { ownerId: req.user!.id } },
-                    { NOT: { holderType: "STAFF", holderId: req.user!.id } },
-                  ],
-                };
-              }
-              break;
             default:
               // Invalid scope, fall back to role-based default
               roleScope = itemListScope(req.user);

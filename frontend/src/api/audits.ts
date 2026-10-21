@@ -34,6 +34,8 @@ export function fetchAudits(
     page?: number; 
     status?: string; 
     search?: string; 
+    /** The scope the session counted — a department or a building. */
+    scope?: string; 
     sortBy?: string; 
     sortOrder?: string 
   } = {},

@@ -1,5 +1,6 @@
 import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
+import type { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { authenticate, requireCapability, type AuthenticatedRequest } from "../middleware/auth.js";
 import { validateQuery, validatedQuery } from "../middleware/validate.js";
@@ -383,6 +384,10 @@ function scopeItemFilter(
 const listQuerySchema = z.object({
   mine: z.enum(["true", "false"]).optional(),
   status: z.enum(["completed", "in-progress", "abandoned", "all"]).optional(),
+  /** The scope the session counted — a department or a building. */
+  scope: z.string().trim().min(1).optional(),
+  /** Free text over the scope and the person who ran it. */
+  search: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -474,11 +479,24 @@ auditsRouter.get(
         return;
       }
 
-      const where = {
+      const where: Prisma.AuditSessionWhereInput = {
         // Anyone with AUDIT_VIEW (an auditor or the property officer acting on
         // findings) sees the college's audit history; `mine=true` narrows to
         // their own sessions and nothing widens it back.
         ...(query.mine === "true" ? { runById: user.id } : {}),
+        // Which department (or building) the session counted, and a search over
+        // it and the person who ran it. The history is a list of sessions
+        // against a scope, and "which scope" is the first question anyone
+        // asking it has.
+        ...(query.scope ? { scopeValue: { equals: query.scope, mode: "insensitive" } } : {}),
+        ...(query.search
+          ? {
+              OR: [
+                { scopeValue: { contains: query.search, mode: "insensitive" } },
+                { runBy: { is: { fullName: { contains: query.search, mode: "insensitive" } } } },
+              ],
+            }
+          : {}),
         // Status filter: completed, in-progress, abandoned, or all.
         // "in-progress" means *still open*, so an abandoned session is not one —
         // an abandoned session produced no report and must not be read as if it

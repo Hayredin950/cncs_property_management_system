@@ -170,7 +170,10 @@ describe("GET /items", () => {
     const args = vi.mocked(prisma.item.findMany).mock.calls[0]?.[0];
     expect(args?.skip).toBe(0);
     expect(args?.take).toBe(20);
-    expect(args?.orderBy).toEqual({ registeredAt: "desc" });
+    // Newest first by default, and the tag id breaks the tie so the order is
+    // stable — two items registered in the same second must not swap places
+    // between two pages.
+    expect(args?.orderBy).toEqual([{ registeredAt: "desc" }, { tagId: "asc" }]);
     // F7.2 — a disposed item disappears from the default listing. This is the
     // route-level half of the exit criterion; services/itemVisibility.test.ts
     // covers the rule itself.

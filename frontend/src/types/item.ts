@@ -94,4 +94,9 @@ export interface ItemsListQuery {
    *  look at other people's holdings can use it; for anyone else the server
    *  ignores it. */
   holder?: string;
+  /** The order the register is listed in. */
+  sort?: string;
+  order?: string;
+  /** The building whose items to list, by name. */
+  building?: string;
 }

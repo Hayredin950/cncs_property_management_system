@@ -159,6 +159,30 @@ usersRouter.get(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const user = req.user!;
+
+      /**
+       * `?decided=true` — the accounts **this** viewer has already decided.
+       *
+       * A department head approves their unit's staff, and then the queue is
+       * empty: the request they filed is gone, with no record of what they
+       * decided and no way to see it again. The decisions are the second half
+       * of the job, and they deserve the same screen as the queue.
+       */
+      const wantDecided = req.query.decided === "true";
+      if (wantDecided) {
+        const decidedWhere: Prisma.UserWhereInput = {
+          reviewedById: user.id,
+          accountStatus: { not: "PENDING_APPROVAL" },
+        };
+        const decided = await prisma.user.findMany({
+          where: decidedWhere,
+          orderBy: { reviewedAt: "desc" },
+          select: userListSelect,
+        });
+        res.status(200).json(decided.map((u) => toAdminUser(u, user.role)));
+        return;
+      }
+
       let where: Prisma.UserWhereInput = { accountStatus: "PENDING_APPROVAL" };
 
       // SYSTEM_ADMIN sees everything: escalated, headless-unit, and stale requests

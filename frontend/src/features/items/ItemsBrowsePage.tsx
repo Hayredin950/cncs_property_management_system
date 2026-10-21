@@ -8,6 +8,7 @@ import { ItemActions } from "../../components/ItemActions";
 import { ItemCard } from "../../components/ItemCard";
 import { Pagination } from "../../components/Pagination";
 import { SearchBar } from "../../components/SearchBar";
+import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
 import { SkeletonCard } from "../../components/Skeleton";
 import { useAuth } from "../../app/AuthContext";
@@ -92,6 +93,11 @@ export function ItemsBrowsePage() {
   // Whose holdings are being shown — set from the roster, where a person's
   // item count is a link to what they hold.
   const holder = searchParams.get("holder") ?? "";
+  // The order the register is listed in.
+  const sort = searchParams.get("sort") ?? "";
+  const order = searchParams.get("order") ?? "";
+  // The building whose items to list, by name.
+  const building = searchParams.get("building") ?? "";
   const holderName = searchParams.get("holderName") ?? "";
 
   const itemsQuery = useItems({
@@ -103,6 +109,9 @@ export function ItemsBrowsePage() {
     ...(scope ? { scope } : {}),
     ...(mine ? { mine: true } : {}),
     ...(holder ? { holder } : {}),
+    ...(sort ? { sort } : {}),
+    ...(order ? { order } : {}),
+    ...(building ? { building } : {}),
   });
 
   function updateParam(key: string, value: string) {
@@ -268,6 +277,33 @@ export function ItemsBrowsePage() {
             className="sm:w-56"
           />
         )}
+        {/* The order the register is listed in. "Newest first" is the default
+            because that is what a working register wants; by name and oldest
+            first are the ones people actually ask for. */}
+        <Select
+          label="Sort by"
+          options={[
+            { value: "", label: "Newest first" },
+            { value: "name", label: "Name (A–Z)" },
+            { value: "cost", label: "Value" },
+            { value: "status", label: "Status" },
+            { value: "oldest", label: "Oldest first" },
+          ]}
+          value={sort}
+          onChange={(event) => updateParam("sort", event.target.value)}
+          className="sm:w-48"
+        />
+        {/* Which building. The register is everybody's to read, so the filter
+            is the building's name — the list of buildings is a Property
+            Officer's to manage, and asking "what is in the Science Complex?"
+            must not need an office's permission. */}
+        <Input
+          label="Building"
+          placeholder="Any building"
+          value={building}
+          onChange={(event) => updateParam("building", event.target.value)}
+          className="sm:w-48"
+        />
         <Select
           label="Category"
           options={categoryOptions}

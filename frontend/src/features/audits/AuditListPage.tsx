@@ -50,10 +50,19 @@ export function AuditListPage() {
   const page = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
   const status = searchParams.get("status") || "";
   const searchQuery = searchParams.get("search") || "";
+  const scopeQuery = searchParams.get("scope") || "";
   const sortBy = searchParams.get("sort") || "startedAt";
   const sortOrder = searchParams.get("order") || "desc";
 
-  const auditsQuery = useAuditsList({ mine, page, status, search: searchQuery, sortBy, sortOrder });
+  const auditsQuery = useAuditsList({
+    mine,
+    page,
+    status,
+    search: searchQuery,
+    scope: scopeQuery,
+    sortBy,
+    sortOrder,
+  });
 
   function setParam(key: string, value: string | null) {
     setSearchParams((previous) => {
@@ -154,6 +163,16 @@ export function AuditListPage() {
             value={status}
             onChange={(event) => setParam("status", event.target.value || null)}
             className="sm:w-40"
+          />
+          {/* Which department (or building) the session counted. The history
+              is a list of sessions against a scope, and "which scope" is the
+              first question anyone asking it has. */}
+          <Input
+            label="Scope"
+            placeholder="A department or a building"
+            value={scopeQuery}
+            onChange={(event) => setParam("scope", event.target.value || null)}
+            className="sm:w-56"
           />
           {canBrowseAll && (
             <Select

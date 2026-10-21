@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchInvitableUnits } from "../api/departments";
-import { fetchApprovals, fetchUsers, fetchApprovalsCount } from "../api/users";
+import { fetchApprovals, fetchDecidedAccounts, fetchUsers, fetchApprovalsCount } from "../api/users";
 
 /**
  * `GET /users` — Admin only. The admin screen is the only caller; `enabled`
@@ -27,6 +27,16 @@ export function useApprovals(enabled = true) {
   return useQuery({
     queryKey: ["users", "approvals"],
     queryFn: ({ signal }) => fetchApprovals(signal),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+/** The accounts this viewer has already decided. */
+export function useDecidedAccounts(enabled = true) {
+  return useQuery({
+    queryKey: ["users", "approvals", "decided"],
+    queryFn: ({ signal }) => fetchDecidedAccounts(signal),
     enabled,
     staleTime: 15_000,
   });

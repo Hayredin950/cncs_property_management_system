@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import {Check, ClipboardCopy, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X, KeyRound } from "lucide-react";
+import {Check, ClipboardCopy, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X, KeyRound, ClipboardCheck } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -7,6 +7,7 @@ import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { IconButton } from "../../components/IconButton";
 import { Input } from "../../components/Input";
@@ -14,6 +15,7 @@ import { Modal } from "../../components/Modal";
 import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
 import { Textarea } from "../../components/Textarea";
+import { Badge } from "../../components/Badge";
 import { RoleBadge } from "../../components/StatusBadges";
 import { INVITABLE_ROLES, ROLE_LABELS, ROLES, type InvitableRole, type Role } from "../../types/enums";
 import {
@@ -24,9 +26,9 @@ import {
   useRejectUser,
   useUpdateUser,
 } from "../../hooks/useAuthMutations";
-import { useApprovals, useInvitableUnits, useUsers } from "../../hooks/useUsers";
+import { useApprovals, useDecidedAccounts, useInvitableUnits, useUsers } from "../../hooks/useUsers";
 import { requestPasswordReset } from "../../api/auth";
-import { formatDateUTC } from "../../lib/formatters";
+import { formatDateUTC, formatRelativeTime } from "../../lib/formatters";
 import { ApiError } from "../../types/api";
 import type { InviteAccountResponse, UserSummary } from "../../types/user";
 
@@ -107,6 +109,8 @@ export function AdminUsersPage() {
   // for the list they may not read only earned a 403 on every visit.
   const usersQuery = useUsers(isSystemAdmin);
   const approvalsQuery = useApprovals(isSystemAdmin || isDeptHead);
+  const decidedQuery = useDecidedAccounts(isSystemAdmin || isDeptHead);
+  const decidedAccounts = decidedQuery.data ?? [];
   const unitsQuery = useInvitableUnits(isSystemAdmin);
   const inviteMutation = useInviteUser();
   const updateMutation = useUpdateUser();
@@ -116,7 +120,7 @@ export function AdminUsersPage() {
   // landing them on a queue they also own was leaving them one click away
   // from the work they do most. (Both branches used to be "approvals" — a
   // leftover from when the screen had no tabs at all.)
-  const [activeTab, setActiveTab] = useState<"approvals" | "invite" | "accounts">(
+  const [activeTab, setActiveTab] = useState<"approvals" | "decided" | "invite" | "accounts">(
     isDeptHead ? "approvals" : "accounts",
   );
 
@@ -338,6 +342,19 @@ export function AdminUsersPage() {
         >
           Waiting for Approval {pending.length > 0 && `(${pending.length})`}
         </button>
+        {/* The decisions half of the job. The queue empties itself as the work
+            gets done, so without this the only trace of a decision is the
+            notification that went out with it. */}
+        <button
+          onClick={() => setActiveTab("decided")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "decided"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Decided {decidedAccounts.length > 0 && `(${decidedAccounts.length})`}
+        </button>
         {showInviteTab && (
           <button
             onClick={() => setActiveTab("invite")}
@@ -363,6 +380,53 @@ export function AdminUsersPage() {
           </button>
         )}
       </div>
+
+      {/* The accounts this viewer has already decided. */}
+      {activeTab === "decided" && (
+        <section>
+          {decidedQuery.isPending ? (
+            <p className="text-sm text-slate-500">Loading the accounts you decided…</p>
+          ) : decidedQuery.isError ? (
+            <ErrorState
+              heading="Couldn't load your decisions"
+              body={decidedQuery.error instanceof Error ? decidedQuery.error.message : undefined}
+            />
+          ) : decidedAccounts.length === 0 ? (
+            <EmptyState
+              icon={<ClipboardCheck className="h-8 w-8" />}
+              heading="You haven't decided any accounts yet"
+              body="The accounts you approve or decline will be listed here, with the decision you made."
+            />
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {decidedAccounts.map((account) => (
+                <li
+                  key={account.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-4"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-900">{account.fullName}</p>
+                    <p className="truncate text-sm text-slate-500">{account.email}</p>
+                    {account.reviewNote && (
+                      <p className="mt-1 text-xs text-slate-500">{account.reviewNote}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={account.accountStatus === "ACTIVE" ? "success" : "neutral"}>
+                      {account.accountStatus === "ACTIVE" ? "Approved" : account.accountStatus}
+                    </Badge>
+                    {account.reviewedAt && (
+                      <span className="text-xs text-slate-400">
+                        {formatRelativeTime(account.reviewedAt)}
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* Tab 1: Waiting for Approval */}
       {activeTab === "approvals" && (

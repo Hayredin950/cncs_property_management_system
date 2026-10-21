@@ -29,6 +29,16 @@ export function fetchApprovals(signal?: AbortSignal): Promise<UserSummary[]> {
 }
 
 /**
+ * The accounts this viewer has already decided.
+ *
+ * The queue empties itself as the work gets done, so without this the only
+ * trace of a decision is the notification that went out with it.
+ */
+export function fetchDecidedAccounts(signal?: AbortSignal): Promise<UserSummary[]> {
+  return apiClient.get<UserSummary[]>("/users/approvals", { decided: "true" }, signal);
+}
+
+/**
  * `GET /users/approvals/count` — count of accounts waiting for approval.
  * Used for the Accounts nav badge.
  */

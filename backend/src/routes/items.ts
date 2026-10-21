@@ -207,6 +207,33 @@ function cleanDefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return result;
 }
 
+/**
+ * The order the register is listed in.
+ *
+ * "Newest first" is the default because that is the order a working register
+ * wants (what arrived last). The alternatives are the ones people actually ask
+ * for: by name, and the oldest first when someone is looking for something
+ * that has been here a long time.
+ */
+function itemOrderBy(
+  sort: unknown,
+  order: unknown,
+): Prisma.ItemOrderByWithRelationInput[] {
+  const direction = order === "asc" ? "asc" : "desc";
+  switch (sort) {
+    case "name":
+      return [{ name: direction }, { tagId: "asc" }];
+    case "cost":
+      return [{ purchaseCost: direction }, { tagId: "asc" }];
+    case "status":
+      return [{ status: direction }, { name: "asc" }];
+    case "oldest":
+      return [{ registeredAt: "asc" }, { tagId: "asc" }];
+    default:
+      return [{ registeredAt: direction }, { tagId: "asc" }];
+  }
+}
+
 itemsRouter.get(
   "/",
   /**
@@ -224,7 +251,7 @@ itemsRouter.get(
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
       const skip = (page - 1) * limit;
 
-      const { search, categoryId, orgUnitId, mine, scope, holder } = req.query;
+      const { search, categoryId, orgUnitId, mine, scope, holder, building } = req.query;
 
       const filters: Prisma.ItemWhereInput = {};
       const conditions: Prisma.ItemWhereInput[] = [];
@@ -242,6 +269,19 @@ itemsRouter.get(
 
       if (typeof orgUnitId === "string") {
         filters.orgUnitId = orgUnitId;
+      }
+
+      /**
+       * `?building=` — the items in one building.
+       *
+       * It matches the building's **name**, like the department filter matches
+       * the unit's name, because the list of buildings is a Property Officer's
+       * to manage (`BUILDING_MANAGE`) and the register is everybody's to read:
+       * asking "what is in the Science Complex?" must not need an office's
+       * permission to see the name of a building.
+       */
+      if (typeof building === "string" && building.length > 0) {
+        filters.buildingRef = { is: { name: { equals: building, mode: "insensitive" } } };
       }
 
       /**
@@ -471,7 +511,7 @@ itemsRouter.get(
           where,
           skip,
           take: limit,
-          orderBy: { registeredAt: "desc" },
+          orderBy: itemOrderBy(req.query.sort, req.query.order),
           include: {
             category: true,
             owner: {

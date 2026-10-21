@@ -116,6 +116,7 @@ export function useAuditsList({
   page = 1, 
   status, 
   search, 
+  scope, 
   sortBy, 
   sortOrder 
 }: { 
@@ -123,17 +124,20 @@ export function useAuditsList({
   page?: number; 
   status?: string; 
   search?: string; 
+  /** The scope the session counted — a department or a building. */
+  scope?: string; 
   sortBy?: string; 
   sortOrder?: string 
 } = {}) {
   return useQuery({
-    queryKey: ["audits", mine, page, status, search, sortBy, sortOrder],
+    queryKey: ["audits", mine, page, status, search, scope, sortBy, sortOrder],
     queryFn: ({ signal }) => fetchAudits(
       {
         mine,
         page,
         ...(status !== undefined ? { status } : {}),
         ...(search !== undefined ? { search } : {}),
+        ...(scope !== undefined ? { scope } : {}),
         ...(sortBy !== undefined ? { sortBy } : {}),
         ...(sortOrder !== undefined ? { sortOrder } : {}),
       },

@@ -26,9 +26,24 @@ export function useSystemStatus() {
  * expected answer until the account flows write `AdminActionLog` (T5–T7); the
  * widget shows an empty state for it rather than a spinner or a zero.
  */
-export function useRecentSystemEvents() {
+/**
+ * The account log, newest first.
+ *
+ * `limit` is the dashboard's own ("the last few") and the events page asks for
+ * a page of its own; the key includes the query so the two never share a
+ * cache entry.
+ */
+export function useRecentSystemEvents(limit = 5) {
   return useQuery({
-    queryKey: ["system", "events"],
-    queryFn: ({ signal }) => fetchSystemEvents(10, signal),
+    queryKey: ["system", "events", { limit }],
+    queryFn: ({ signal }) => fetchSystemEvents(limit, signal),
+  });
+}
+
+/** One page of the account log, with the filters the events page offers. */
+export function useSystemEvents(query: { limit?: number; offset?: number; action?: string; search?: string }) {
+  return useQuery({
+    queryKey: ["system", "events", query],
+    queryFn: ({ signal }) => fetchSystemEvents(query.limit ?? 20, signal, query),
   });
 }

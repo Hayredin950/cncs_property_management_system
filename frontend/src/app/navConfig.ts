@@ -9,6 +9,7 @@ import {
   ScanLine,
   ShieldCheck,
   Tag,
+  ScrollText,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "../types/enums";
@@ -82,6 +83,8 @@ export const NAV_ITEMS: NavItem[] = [
   // "Waiting for approval" panel sits above "Create an account" on `/admin/users`.
   { label: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN", "DEPARTMENT_HEAD"], phase: 2, badge: "approvals-count" },
   { label: "System Status", to: "/admin/system", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN"], phase: 3 },
+  // The account log, in full. The dashboard shows the last few; this is the rest.
+  { label: "System Events", to: "/admin/events", icon: ScrollText, roles: ["SYSTEM_ADMIN"], phase: 3 },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
 ];
 

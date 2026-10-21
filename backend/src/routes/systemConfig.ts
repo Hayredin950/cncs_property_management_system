@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router, type NextFunction, type Response, type Router as ExpressRouter } from "express";
 import { z } from "zod";
+import type { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
@@ -106,7 +107,12 @@ systemConfigRouter.get(
  * worse failure than showing ten rows.
  */
 const eventsQuerySchema = z.object({
-  limit: z.coerce.number().int().catch(10).default(10),
+  limit: z.coerce.number().int().min(1).max(100).catch(10).default(10),
+  offset: z.coerce.number().int().min(0).catch(0).default(0),
+  /** Filter by the action slug (`ACCOUNT_APPROVED`). */
+  action: z.string().trim().min(1).optional(),
+  /** A free-text search over the action and the person's name. */
+  search: z.string().trim().min(1).optional(),
 });
 type EventsQuery = z.infer<typeof eventsQuerySchema>;
 
@@ -130,25 +136,63 @@ systemConfigRouter.get(
       const query = validatedQuery<EventsQuery>(req);
       const limit = Math.min(50, Math.max(1, query.limit));
 
-      const events = await prisma.adminActionLog.findMany({
-        take: limit,
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          action: true,
-          createdAt: true,
-          targetUser: { select: { fullName: true } },
-        },
-      });
+      const where: Prisma.AdminActionLogWhereInput = {
+        ...(query.action ? { action: query.action } : {}),
+        ...(query.search
+          ? {
+              OR: [
+                { action: { contains: query.search, mode: "insensitive" } },
+                { targetUser: { is: { fullName: { contains: query.search, mode: "insensitive" } } } },
+                { actor: { is: { fullName: { contains: query.search, mode: "insensitive" } } } },
+              ],
+            }
+          : {}),
+      };
 
-      res.status(200).json(
-        events.map((event) => ({
+      const [events, total] = await Promise.all([
+        prisma.adminActionLog.findMany({
+          where,
+          take: limit,
+          skip: query.offset,
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            action: true,
+            createdAt: true,
+            // The whole record: who did it, who it was about, what changed, and
+            // the authority it was done under. A log row that says "account
+            // approved" and nothing else is a title, not a record — the point of
+            // an append-only log is that the detail can be read back.
+            before: true,
+            after: true,
+            authorizedBy: true,
+            authorizationRef: true,
+            actor: { select: { fullName: true, email: true } },
+            targetUser: { select: { fullName: true, email: true } },
+            unit: { select: { name: true } },
+          },
+        }),
+        prisma.adminActionLog.count({ where }),
+      ]);
+
+      res.status(200).json({
+        events: events.map((event) => ({
           id: event.id,
           type: event.action,
           message: describeAction(event.action, event.targetUser?.fullName ?? null),
           timestamp: event.createdAt,
+          actor: event.actor,
+          target: event.targetUser,
+          unit: event.unit?.name ?? null,
+          before: event.before,
+          after: event.after,
+          authorizedBy: event.authorizedBy,
+          authorizationRef: event.authorizationRef,
         })),
-      );
+        total,
+        limit,
+        offset: query.offset,
+      });
     } catch (err) {
       next(err);
     }

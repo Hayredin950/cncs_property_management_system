@@ -53,6 +53,25 @@ export interface SystemEvent {
   type: string;
   message: string;
   timestamp: string;
+  /** Who did it. */
+  actor: { fullName: string; email: string } | null;
+  /** Who it was about. */
+  target: { fullName: string; email: string } | null;
+  /** The unit it concerned. */
+  unit: string | null;
+  /** What the record looked like before and after — the detail the log exists for. */
+  before: unknown;
+  after: unknown;
+  /** The authority an invitation or a decision was made under. */
+  authorizedBy: string | null;
+  authorizationRef: string | null;
+}
+
+export interface SystemEventsResponse {
+  events: SystemEvent[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export function fetchSystemStatus(signal?: AbortSignal): Promise<SystemStatus> {
@@ -64,6 +83,10 @@ export function fetchSystemStatus(signal?: AbortSignal): Promise<SystemStatus> {
  * an out-of-range value comes back as the nearest legal page rather than a 400
  * on a tile refresh.
  */
-export function fetchSystemEvents(limit = 10, signal?: AbortSignal): Promise<SystemEvent[]> {
-  return apiClient.get<SystemEvent[]>("/system/events", { limit }, signal);
+export function fetchSystemEvents(
+  limit = 10,
+  signal?: AbortSignal,
+  query: { offset?: number; action?: string; search?: string } = {},
+): Promise<SystemEventsResponse> {
+  return apiClient.get<SystemEventsResponse>("/system/events", { limit, ...query }, signal);
 }

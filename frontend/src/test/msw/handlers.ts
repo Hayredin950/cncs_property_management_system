@@ -485,5 +485,9 @@ export const handlers = [
    * object (see `routes/systemConfig.ts`).
    */
   http.get(`${API}/system/status`, () => (getToken() ? HttpResponse.json(SYSTEM_STATUS) : unauthorized())),
-  http.get(`${API}/system/events`, () => (getToken() ? HttpResponse.json(SYSTEM_EVENTS) : unauthorized())),
+  http.get(`${API}/system/events`, () =>
+    getToken()
+      ? HttpResponse.json({ events: SYSTEM_EVENTS, total: SYSTEM_EVENTS.length, limit: 10, offset: 0 })
+      : unauthorized(),
+  ),
 ];

@@ -35,7 +35,12 @@ describe("the System Admin's system tiles", () => {
     server.use(
       http.get(`${API}/system/events`, ({ request }) => {
         authorization = request.headers.get("Authorization");
-        return HttpResponse.json(SYSTEM_EVENTS);
+        return HttpResponse.json({
+          events: SYSTEM_EVENTS,
+          total: SYSTEM_EVENTS.length,
+          limit: 10,
+          offset: 0,
+        });
       }),
     );
 

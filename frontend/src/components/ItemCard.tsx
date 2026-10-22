@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { categoryFallbackPhoto } from "../lib/categoryPhotos";
 import type { Item } from "../types/item";
 import { PhotoFrame } from "./PhotoFrame";
-import { ConditionBadge } from "./StatusBadges";
+import { ConditionBadge, ItemStatusBadge } from "./StatusBadges";
 
 /**
  * Used on `/` and `/items` — one card component, so both lists render identically.
@@ -39,6 +39,14 @@ export function ItemCard({ item, actions }: { item: Item; actions?: ReactNode })
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ConditionBadge condition={item.condition} />
+          {/* The status, when it is anything but "in service".
+              The register lists the college's live assets, which now includes
+              the ones waiting for a confirmation and the ones out on loan —
+              and an item in one of those states is indistinguishable from an
+              ordinary one without it. */}
+          {item.status && item.status !== "ACTIVE" && (
+            <ItemStatusBadge status={item.status} />
+          )}
           <span className="line-clamp-1 text-xs text-slate-500">{item.department}</span>
         </div>
       </Link>

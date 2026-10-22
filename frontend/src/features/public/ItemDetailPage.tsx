@@ -8,6 +8,7 @@ import { ItemActions } from "../../components/ItemActions";
 import { ItemDetailView } from "../../components/ItemDetailView";
 import { Skeleton, SkeletonText } from "../../components/Skeleton";
 import { ItemHistorySection } from "../items/ItemHistorySection";
+import { ItemCustodyActions } from "../items/ItemCustodyActions";
 import { AccessoriesSection, TagRegenerateSection } from "../items/ItemStaffSections";
 import { useItemByTagId } from "../../hooks/useItems";
 import { ApiError, NetworkError } from "../../types/api";
@@ -153,6 +154,20 @@ export function ItemDetailPage() {
                 File transfer / disposal
               </Button>
             </Link>
+          </div>
+
+          {/*
+            The custody actions, on this page.
+
+            They used to live only on the staff workbench (`/items/:id`), and
+            the register's cards, the QR sticker and the notification all lead
+            *here*. So the person who was asked to confirm they have an item —
+            the one action with a deadline on it — had no way to take it from
+            the page they arrived at. The component decides for itself what the
+            viewer may do; it renders nothing for a viewer who may do nothing.
+          */}
+          <div className="mt-4">
+            <ItemCustodyActions item={item} />
           </div>
 
           {staffOpen && (

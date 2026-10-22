@@ -26,11 +26,23 @@ export function useDecideRequest(requestId: string) {
     mutationFn: ({ decision, rejectionReason }: { decision: "APPROVED" | "REJECTED"; rejectionReason?: string }) =>
       decision === "APPROVED" ? approveRequest(requestId) : rejectRequest(requestId, rejectionReason ?? ""),
     onSuccess: (result) => {
-      if (result.request.status === "APPROVED") {
+      /*
+        What the approver is told has to be what actually happened.
+        It used to be one message for "APPROVED" and one for everything else,
+        so approving a transfer at stage 1 — which moves the request to
+        `PENDING_STAGE2` for the receiving head — and approving a loan —
+        which leaves the item `PENDING_CLAIM` until the borrower confirms it
+        — both said **"Request rejected"**. The approver had been told the
+        opposite of the truth about their own decision.
+      */
+      const status = result.request.status;
+      if (status === "APPROVED") {
         const cascaded = result.cascadedItemIds.length;
         toast.success(
           `Request approved — item updated${cascaded > 0 ? ` (plus ${cascaded} cascaded accessor${cascaded === 1 ? "y" : "ies"})` : ""}.`,
         );
+      } else if (status === "PENDING_STAGE2") {
+        toast.success("Approved — the request now waits for the receiving head.");
       } else {
         toast.success("Request rejected — the reviewer's reason was sent to the requester.");
       }

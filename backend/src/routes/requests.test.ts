@@ -872,7 +872,7 @@ describe("POST /requests/:id/approve", () => {
       .set("Authorization", `Bearer ${officerToken}`);
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: "Item is already disposed" });
+    expect(res.body).toEqual({ error: "Item is no longer in service" });
     // The throw rolls the whole transaction back, request CAS included.
     expect(prisma.itemEditLog.createMany).not.toHaveBeenCalled();
   });

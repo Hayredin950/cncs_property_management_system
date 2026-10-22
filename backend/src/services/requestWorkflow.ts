@@ -55,6 +55,15 @@ export type ItemStatusValue =
 export const ERROR_SELF_DECISION = "You cannot decide your own request";
 export const ERROR_ALREADY_DECIDED = "Request has already been decided";
 export const ERROR_ITEM_DISPOSED = "Item is already disposed";
+/**
+ * The item's status is no longer `ACTIVE`, so the change cannot be applied.
+ *
+ * It used to reuse `ERROR_ITEM_DISPOSED` — "Item is already disposed" — for
+ * *any* item that was not in service. An item that is out on loan is not
+ * disposed, and an approver reading "it was disposed" when it is on loan is
+ * being told something false about the college's register.
+ */
+export const ERROR_ITEM_NOT_ACTIVE = "Item is no longer in service";
 export const ERROR_ITEM_HAS_PENDING = "This item already has a pending request";
 export const ERROR_DANGLING_OWNER = "newOwnerId does not match an existing user";
 export const ERROR_REQUEST_NOT_FOUND = "Request not found";
@@ -579,7 +588,7 @@ export async function applyDecision(
       data: itemChanges as Prisma.ItemUpdateManyMutationInput,
     });
     if (itemUpdate.count === 0) {
-      throw httpError(409, ERROR_ITEM_DISPOSED);
+      throw httpError(409, ERROR_ITEM_NOT_ACTIVE);
     }
 
     // Invalidate pending requests on this item (workflow-completeness-spec.md §1.4)

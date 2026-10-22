@@ -56,10 +56,27 @@ export function ConditionBadge({ condition, className }: { condition: Condition;
 }
 
 /**
- * `ACTIVE` renders as a plain dot, not a full chip — disposal is a normal
- * lifecycle end, not an error, and constantly badging "in service" would just be
- * noise (§3.2). `DISPOSED` gets the full calm-slate chip.
+ * The status chip.
+ *
+ * `ACTIVE` renders as a plain dot, not a full chip — an item in service is the
+ * normal case, and constantly badging it would just be noise (§3.2). Every
+ * other state gets its own chip *and its own label*.
+ *
+ * It used to hard-code `ITEM_STATUS_LABELS.DISPOSED` for everything non-active,
+ * so a loan read "Disposed", an item awaiting its holder's confirmation read
+ * "Disposed", and a lost item read "Disposed". The label is the only part of
+ * this component a person can actually read; a wrong one is worse than no badge
+ * at all, because it states something the record does not say.
  */
+const ITEM_STATUS_TONE: Record<Exclude<ItemStatus, "ACTIVE">, BadgeTone> = {
+  PENDING_CLAIM: "warning",
+  REVERTED_UNVERIFIED: "orange",
+  LOANED: "info",
+  LOST: "danger",
+  DISPOSED: "neutral",
+  VOIDED: "neutral",
+};
+
 export function ItemStatusBadge({ status, className }: { status: ItemStatus; className?: string }) {
   if (status === "ACTIVE") {
     return (
@@ -70,8 +87,8 @@ export function ItemStatusBadge({ status, className }: { status: ItemStatus; cla
     );
   }
   return (
-    <Badge tone="neutral" icon={<Archive className="h-3.5 w-3.5" aria-hidden="true" />} className={className}>
-      {ITEM_STATUS_LABELS.DISPOSED}
+    <Badge tone={ITEM_STATUS_TONE[status]} icon={<Archive className="h-3.5 w-3.5" aria-hidden="true" />} className={className}>
+      {ITEM_STATUS_LABELS[status]}
     </Badge>
   );
 }

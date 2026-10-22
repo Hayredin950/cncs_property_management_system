@@ -1206,6 +1206,25 @@ const ITEMS: ItemSpec[] = [
     claimDueInDays: 7,
   },
   {
+    // A second one for the same person: the handshake has two answers —
+    // "I have it" and "I never received it" — and a person can only show
+    // both if there are two items to answer for.
+    tagId: "CNCS-CLAIM-0003",
+    name: "Projector (awaiting confirmation)",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "202",
+    owner: "cs1",
+    holder: "STAFF",
+    cost: 18000,
+    condition: Condition.NEW,
+    notes: "Registered and assigned; the holder has not confirmed receipt yet.",
+    pendingClaim: true,
+    claimDueInDays: 7,
+  },
+  {
     // The same handshake, for another person, so a second account can be seen
     // refusing one rather than only claiming one.
     tagId: "CNCS-CLAIM-0002",

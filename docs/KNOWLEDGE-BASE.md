@@ -774,6 +774,44 @@ by writing the date back, not by waiting — and a check that needs the
 database is proved against a real database, not against a mocked suite (the
 mocked suite said the approval queue worked, and it did not).
 
+### 17.2 The two open decisions, now closed (21 Oct)
+
+**The legacy objects (P2-7) — decided: gone, except one that stays on purpose.**
+
+The contract migration (`20261019000000_align_schema_with_datamodel`) already
+did most of it. The live database has **no `Department` table**, **no
+`Item.department`**, **no `Item.building`** and **no `User.departmentId`**
+(verified against the live Neon database, 21 Oct). What is left is
+`Item.ownerId`, and it **stays**:
+
+- the scope rules read it — `itemListScope` finds a person's own items by
+  `ownerId` *or* by the holder fields, so an item somebody owns without
+  holding it is still in their list;
+- the item form writes it — "Owner (custodian)" is a real field a person fills
+  in, not a leftover;
+- dropping it is not a cleanup but a **contract step**: every item would need
+  a holder before the column could go, and the holder model is not complete
+  for the historical rows.
+
+So: the free-text columns and the old table are gone, and the one column
+that is still read and still written is kept, with the reason written here
+rather than in a comment nobody finds.
+
+**The `updatedAt` default (P2-9) — decided: keep it.**
+
+The bridge was there for the *old deployed Prisma client* — the server build
+that does not know the column exists and therefore sends no value for it.
+That build is gone from the deployment, but **Vercel keeps the previous
+deployment and can roll back to it**, and a rollback to a pre-`updatedAt`
+build with the default dropped would fail every insert of an item or a
+request — the whole app, in one migration.
+
+The default costs one column default and buys the ability to roll back
+without thinking about it. That is a good trade, so the default stays, and
+the reason is written here: the condition for dropping it is "the deployment
+can no longer be rolled back to a build that predates the column", which is
+not a condition anyone can schedule.
+
 ## 18. Schema design decisions — do NOT re-open without a written reason
 
 | Decision | Rationale |

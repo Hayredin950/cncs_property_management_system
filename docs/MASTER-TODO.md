@@ -130,11 +130,11 @@
   6. Re-run the Phase 1 probes against production; paste the results here.
   *Evidence:* the four production 500s are gone.
 
-- [ ] **P2-9 Drop the `updatedAt` database default.**
+- [x] **P2-9 Drop the `updatedAt` database default.** — **decided 21 Oct: keep it, and here is why.** The old deployed Prisma client is gone from the deployment, but Vercel keeps the previous deployment and can roll back to it, and a rollback to a pre-`updatedAt` build with the default dropped would fail every insert of an item or a request. One column default buys a rollback nobody has to think about. The condition for dropping it is "the deployment can no longer be rolled back to a build that predates the column" — not a condition anyone can schedule. The reasoning is in KB §17.2.
   *Why it is still there:* the old deployed Prisma client does not know the column exists, so it sends no value for it. With the default dropped, the moment the migration runs, every insert of an item or a request on the live database would fail. The default is the bridge that makes the rollout safe; the new client writes the value itself.
   *Do it when:* no deployed client writes without the column (i.e. after the new build is live and the old one is gone), in a separate contract migration. `prisma migrate dev` will keep proposing the drop — the deviation is deliberate until then.
 
-- [ ] **P2-7 Decide the fate of the legacy objects.**
+- [x] **P2-7 Decide the fate of the legacy objects.** — **decided 21 Oct: gone, except `Item.ownerId`, which stays on purpose.** The contract migration already dropped the `Department` table, `Item.department`, `Item.building` and `User.departmentId` — verified against the live database, 21 Oct. `Item.ownerId` stays because the scope rules still read it (it is one of the two ways a person's own items are found) and the item form still writes it ("Owner (custodian)"). Dropping it is a contract step, not a cleanup: every item would need a holder first. The reasoning is in KB §17.2.
   *Still in the live database and now inert:* the `Department` table, `Item.department`, `Item.building`, `User.departmentId`, `Item.ownerId`.
   *Decide:* drop them in a reviewed contract migration (the `ownerId` column still has live readers — KB §3.1.2), or keep them and document why. Write the decision here.
   *Evidence:* a note in this file + the matching KB update.

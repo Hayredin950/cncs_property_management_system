@@ -20,9 +20,10 @@ The five roles, and what each one must be able to do:
                        (confirm + flag) → their department's roster → a
                        request from **another** unit must be refused
   P9-3 PROPERTY_OFFICER register an item → print its tag → approve a transfer,
-                       a disposal and a loan → reverse a disposal → run an
-                       audit end to end → the inventory report (CSV and PDF) →
-                       manage a category and a building
+                       a disposal and a loan → reverse a disposal → read the
+                       audit history (running an audit is the auditor's job,
+                       and this role must be kept out of it) → the inventory
+                       report (CSV and PDF) → manage a category and a building
   P9-4 AUDITOR         start an audit → scan items → complete it → read the
                        report → the evidence pack → a completed session is
                        read-only → an action they must not do is refused
@@ -35,19 +36,43 @@ Usage:  scripts/role-walkthroughs.py [base-url] [role ...]
 
 It writes against the live database, so the entities it creates are named
 "WALKTHROUGH …" and can be found and removed afterwards.
+
+It expects a freshly seeded database. The walkthroughs decide requests, claim
+items, refuse claims and close accounts — state the seed will not put back,
+because the seed only adds and updates its own rows. Running the suite twice
+against the same data therefore fails for reasons that have nothing to do
+with the app. Reset the database first:
+
+    cd backend
+    ./node_modules/.bin/prisma migrate reset --force   # local test DB only
+    ./node_modules/.bin/tsx prisma/seed.ts
 """
 
 import json
+import os
 import re
 import sys
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 
 from playwright.sync_api import sync_playwright
 
 _arg1 = sys.argv[1] if len(sys.argv) > 1 else ""
 BASE = (_arg1 if _arg1.startswith("http") else "https://cncs-pms-web.vercel.app").rstrip("/")
-API = "https://cncs-pms-api.vercel.app/api/v1"
+
+# The API the script reads from. Against the deployment it is the deployment's
+# own API; against a local dev server (`pnpm dev` + `pnpm exec vite`) it is the
+# local backend, because a walkthrough that writes locally and reads production
+# would compare two different databases. `WALKTHROUGH_API` overrides both.
+_api_override = os.environ.get("WALKTHROUGH_API", "").strip()
+if _api_override:
+    API = _api_override.rstrip("/")
+elif re.match(r"^https?://(localhost|127\.0\.0\.1)(:|/|$)", BASE):
+    API = "http://localhost:4000/api/v1"
+else:
+    API = "https://cncs-pms-api.vercel.app/api/v1"
 WANTED = [a for a in sys.argv[2:] if not a.startswith("http")]
 
 # ── The five demo accounts, and what each one is allowed to do ───────────────
@@ -96,12 +121,25 @@ def sign_in(page, email, password):
 
 
 def api_get(path, token):
-    """The API, used only to *read* what the UI could not tell us."""
+    """The API, used only to *read* what the UI could not tell us.
+
+    A refusal is an answer, not a crash: the head asking for the whole
+    college's requests gets a 403, and that 403 is one of the things the
+    walkthrough is here to observe. So an error is a result, not an exception.
+    """
     if not token:
         return {}
     req = urllib.request.Request(f"{API}{path}", headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return json.loads(response.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        try:
+            return json.loads(exc.read())
+        except Exception:
+            return {"error": f"HTTP {exc.code}"}
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 TOKEN_CACHE = {}
@@ -137,31 +175,56 @@ def login_token(email, password):
     return token
 
 
-def free_item_tag(items_token, requests_token, wanted_status=None):
-    """The tag of an item that has no pending request on it.
+PENDING_STATUSES = ("PENDING", "PENDING_STAGE1", "PENDING_STAGE2")
 
-    The register lists everything, including the items somebody has already
-    promised, so a person has to pick one that is free — and the app answers
-    409 ("this item already has a pending request") if they do not. This finds
-    one, the way a person would by looking.
+
+def promised_ids(requests):
+    """The item ids that already carry a request under consideration.
+
+    The request carries the item nested, not as a flat `itemId`.
     """
-    items = api_get("/items?limit=50", items_token)
+    rows = requests.get("requests") or requests.get("data") or []
+    return {
+        (r.get("item") or {}).get("id") or r.get("itemId")
+        for r in rows
+        if r.get("status") in PENDING_STATUSES
+    }
+
+
+def pick_free_item(items_token, requests_token, wanted_status=None):
+    """A row from *this person's* register that no request has promised yet.
+
+    The dropdown on `/requests/new` lists what the signed-in person may file a
+    request against — their own items — so the choice has to come from the same
+    list. Asking the Property Officer's register instead used to return items
+    the staff member's form did not offer, and the select was left empty: the
+    form refused to submit and the walkthrough blamed the app.
+    """
+    items = api_get("/items?scope=mine&limit=100", items_token)
     rows = items.get("data") or items.get("items") or []
     requests = api_get("/requests?limit=100", requests_token)
-    pending = requests.get("requests") or requests.get("data") or []
-    # The request carries the item nested, not as a flat `itemId`.
-    promised = {
-        (r.get("item") or {}).get("id") or r.get("itemId")
-        for r in pending
-        if r.get("status") in ("PENDING", "PENDING_STAGE1", "PENDING_STAGE2")
-    }
+    promised = promised_ids(requests)
     for item in rows:
         if item.get("id") in promised:
             continue
         if wanted_status and item.get("status") != wanted_status:
             continue
-        return item.get("tagId")
+        return item
     return None
+
+
+def select_item(page, item):
+    """Choose an item in the form's Item select, by the row's own id."""
+    if not item:
+        return False
+    for select in page.query_selector_all("select"):
+        options = select.query_selector_all("option")
+        for option in options:
+            if option.get_attribute("value") == item.get("id"):
+                select.select_option(item["id"])
+                page.wait_for_timeout(400)
+                return True
+    return False
 
 
 def go(page, path, settle=1200):
@@ -181,27 +244,6 @@ def go(page, path, settle=1200):
             last = exc
             page.wait_for_timeout(2500)
     raise last
-
-
-def promised_item_tag(items_token, requests_token):
-    """The tag of an item somebody has already asked for.
-
-    The register lists it, and filing a second request on it is refused —
-    which is a thing a person meets, and the screen has to answer it.
-    """
-    items = api_get("/items?limit=50", items_token)
-    rows = items.get("data") or items.get("items") or []
-    requests = api_get("/requests?limit=100", requests_token)
-    pending = requests.get("requests") or requests.get("data") or []
-    promised = {
-        (r.get("item") or {}).get("id") or r.get("itemId")
-        for r in pending
-        if r.get("status") in ("PENDING", "PENDING_STAGE1", "PENDING_STAGE2")
-    }
-    for item in rows:
-        if item.get("id") in promised:
-            return item.get("tagId")
-    return None
 
 
 def wait_for_url(page, path, timeout=45_000):
@@ -279,6 +321,73 @@ def choose_option(page, select_index, preferred=None):
     return chosen.get_attribute("value")
 
 
+def select_by_label(page, label, preferred=None):
+    """Pick an option in the select whose label says this.
+
+    A form's selects are addressed by their visible label, not by their
+    position in the page: the item form has four of them (category,
+    department, owner, condition) and picking by index meant the walkthrough
+    chose the category where it meant the owner.
+    """
+    control = page.get_by_label(label, exact=True)
+    if not control.count():
+        return None
+    handle = control.first.element_handle()
+    if handle is None:
+        return None
+    options = [o for o in handle.query_selector_all("option") if o.get_attribute("value")]
+    if not options:
+        return None
+    chosen = None
+    if preferred:
+        for option in options:
+            if preferred.lower() in (option.inner_text() or "").lower():
+                chosen = option
+                break
+    if chosen is None:
+        chosen = options[0]
+    handle.select_option(chosen.get_attribute("value"))
+    page.wait_for_timeout(400)
+    return chosen.get_attribute("value")
+
+
+def withdraw_own_walkthrough_requests(page):
+    """Withdraw the requests a previous run of this walkthrough filed.
+
+    A pending request promises its item: the app refuses a second request on
+    it, and it stays that way until somebody decides it. A walkthrough that
+    files requests and never withdraws them therefore eats the account's own
+    register — after two runs there is nothing left to ask about, and the
+    walkthrough fails for a reason that has nothing to do with the app.
+
+    Only the walkthrough's own rows are touched: they are the ones whose
+    reason says "Walkthrough:". The seeded requests stay pending, because the
+    queue they make is what the next roles decide.
+    """
+    withdrawn = 0
+    go(page, "/requests?status=PENDING", settle=1500)
+    # The links are read *before* anything is clicked: after the first
+    # navigation the handles of the list are gone.
+    candidates = []
+    for link in page.query_selector_all("a[href^='/requests/']"):
+        href = link.get_attribute("href")
+        if href and "Walkthrough:" in (link.inner_text() or ""):
+            candidates.append(href)
+    for href in candidates:
+        go(page, href, settle=900)
+        trigger = page.get_by_role("button", name="Withdraw Request", exact=True)
+        if not trigger.count():
+            continue
+        trigger.first.click()
+        page.wait_for_timeout(700)
+        dialog = page.get_by_role("dialog")
+        if dialog.count():
+            dialog.get_by_role("button", name="Withdraw", exact=True).first.click()
+            page.wait_for_timeout(2500)
+            withdrawn += 1
+    return withdrawn
+
+
 # ── P9-1 STAFF ──────────────────────────────────────────────────────────────
 def walkthrough_staff(page):
     say("P9-1 STAFF — sign up, request, claim, refuse, read, change password")
@@ -292,18 +401,19 @@ def walkthrough_staff(page):
     step("sees their own requests", has_text(page, "My Requests") or has_text(page, "Request"),
          "the request screen opens")
 
-    # File a transfer.
+    # Clear away what a previous run left behind, so this run starts where the
+    # last one did.
+    withdrawn_before = withdraw_own_walkthrough_requests(page)
+    step("clears its own earlier requests", True, f"{withdrawn_before} withdrawn")
+
+    # File a transfer. The item is chosen from the form's own dropdown, and
+    # kept so the next step can ask for the same one again.
     go(page, "/requests/new", settle=500)
     wait_for(page, "select")
     step("the request form opens", has_text(page, "File a request"), "")
     choose_option(page, 0, "transfer")
-    free = free_item_tag(token, login_token(*ACCOUNTS["PROPERTY_OFFICER"]))
-    item_selects = page.query_selector_all("select")
-    if len(item_selects) > 1 and free:
-        for option in item_selects[1].query_selector_all("option"):
-            if free in (option.inner_text() or ""):
-                item_selects[1].select_option(option.get_attribute("value"))
-                break
+    transfer_item = pick_free_item(token, token)
+    select_item(page, transfer_item)
     # A transfer must change the location or the owner: the form says so, and
     # the server refuses it otherwise.
     for name, value in (("newLocationBuilding", "CNCS"), ("newLocationFloor", "1"), ("newLocationRoom", "G1")):
@@ -312,42 +422,83 @@ def walkthrough_staff(page):
             field.fill(value)
     page.fill('textarea[name="reason"]', "Walkthrough: the laptop moves to the ground-floor office.")
     page.click('button[type="submit"]')
-    filed = wait_for_url(page, "/requests")
+    page.wait_for_timeout(3000)
+    # `/requests/new` also starts with `/requests`, so the address alone would
+    # call a form that never submitted a success.
+    filed = page.url.rstrip("/").endswith("/requests") and not page.query_selector("form")
     step("files a transfer request", filed, page.url)
+
+    # Withdraw it again, so the walkthrough can be run twice. A request that
+    # stays pending would promise that item for good, and the next run would
+    # find nothing free to ask about — the walkthrough would slowly eat the
+    # account's own register.
+    withdrawn = False
+    if transfer_item:
+        go(page, f"/requests?search={urllib.parse.quote(transfer_item['tagId'])}", settle=1200)
+        hrefs = [a.get_attribute("href") for a in page.query_selector_all("a[href^='/requests/']")]
+        for href in hrefs[:4]:
+            go(page, href, settle=900)
+            trigger = page.get_by_role("button", name="Withdraw Request", exact=True)
+            if not trigger.count():
+                continue
+            trigger.first.click()
+            page.wait_for_timeout(800)
+            dialog = page.get_by_role("dialog")
+            if dialog.count():
+                dialog.get_by_role("button", name="Withdraw", exact=True).first.click()
+                page.wait_for_timeout(3000)
+                withdrawn = True
+                break
+    step("withdraws a request", withdrawn, "")
 
     # File a disposal.
     go(page, "/requests/new", settle=500)
     wait_for(page, "select")
     choose_option(page, 0, "disposal")
-    free = free_item_tag(token, login_token(*ACCOUNTS["PROPERTY_OFFICER"]))
-    selects = page.query_selector_all("select")
-    if len(selects) > 1 and free:
-        for option in selects[1].query_selector_all("option"):
-            if free in (option.inner_text() or ""):
-                selects[1].select_option(option.get_attribute("value"))
-                break
+    disposal_item = pick_free_item(token, token)
+    select_item(page, disposal_item)
     page.fill('textarea[name="reason"]', "Walkthrough: the chair is broken beyond repair.")
     page.click('button[type="submit"]')
     page.wait_for_timeout(3000)
     filed = page.url.rstrip("/").endswith("/requests") and not page.query_selector("form")
     step("files a disposal request", filed, page.url)
 
-    # The item already promised: the app refuses it, in words, and points at
-    # the page where the request is. This is the refusal a person meets.
+    # The same item again: the app refuses it, in words. This is deterministic
+    # — it is the very item the disposal above promised — rather than hoping a
+    # seeded pending request happens to be one this person may file against.
     go(page, "/requests/new", settle=500)
     wait_for(page, "select")
     choose_option(page, 0, "transfer")
-    promised = promised_item_tag(token, login_token(*ACCOUNTS["PROPERTY_OFFICER"]))
-    if promised:
-        for name, value in (("newLocationBuilding", "CNCS"), ("newLocationFloor", "1"), ("newLocationRoom", "G1")):
-            field = page.query_selector(f'input[name="{name}"]')
-            if field:
-                field.fill(value)
-        page.fill('textarea[name="reason"]', "Walkthrough: the same item twice.")
-        page.click('button[type="submit"]')
-        page.wait_for_timeout(2500)
-        told = has_text(page, "already has a pending request")
-        step("is told when the item is already promised", told, "")
+    # The disposal above is still waiting, so its item is the promised one.
+    if disposal_item:
+        select_item(page, disposal_item)
+    for name, value in (("newLocationBuilding", "CNCS"), ("newLocationFloor", "1"), ("newLocationRoom", "G1")):
+        field = page.query_selector(f'input[name="{name}"]')
+        if field:
+            field.fill(value)
+    page.fill('textarea[name="reason"]', "Walkthrough: the same item twice.")
+    page.click('button[type="submit"]')
+    page.wait_for_timeout(3000)
+    told = wait_for_text(page, "already has a pending request", timeout=15_000)
+    step("is told when the item is already promised", told, "" if told else page.url)
+
+    # And the disposal is withdrawn too, so the next run starts from the same
+    # place this one did.
+    if disposal_item:
+        go(page, f"/requests?search={urllib.parse.quote(disposal_item['tagId'])}", settle=1200)
+        hrefs = [a.get_attribute("href") for a in page.query_selector_all("a[href^='/requests/']")]
+        for href in hrefs[:4]:
+            go(page, href, settle=900)
+            trigger = page.get_by_role("button", name="Withdraw Request", exact=True)
+            if not trigger.count():
+                continue
+            trigger.first.click()
+            page.wait_for_timeout(800)
+            dialog = page.get_by_role("dialog")
+            if dialog.count():
+                dialog.get_by_role("button", name="Withdraw", exact=True).first.click()
+                page.wait_for_timeout(2500)
+                break
 
     # Claim an item that is waiting for them.
     claimed = False
@@ -355,17 +506,21 @@ def walkthrough_staff(page):
     # *findable*, or the person holding it has no way to answer.
     go(page, "/items?scope=mine", settle=500)
     wait_for(page, "a[href^='/item/']")
-    waiting = page.query_selector("text=Waiting for claim")
-    step("finds the item waiting for them in the register", waiting is not None, "")
+    step("finds the item waiting for them in the register",
+         wait_for_text(page, "Waiting for claim", timeout=10_000), "")
     hrefs = [a.get_attribute("href") for a in page.query_selector_all("a[href^='/item/']")]
     for href in hrefs:
         go(page, href, settle=900)
-        if page.query_selector("text=I have this item"):
-            page.click("text=I have this item")
-            page.wait_for_timeout(2500)
-            claimed = True
-            step("claims an item assigned to them", True, href)
-            break
+        claim_button = page.get_by_role("button", name="I have this item", exact=True)
+        try:
+            claim_button.first.wait_for(state="visible", timeout=12_000)
+        except Exception:
+            continue
+        claim_button.first.click()
+        page.wait_for_timeout(3000)
+        claimed = True
+        step("claims an item assigned to them", True, href)
+        break
     if not claimed:
         step("claims an item assigned to them", False, "no item was waiting for them")
 
@@ -376,62 +531,72 @@ def walkthrough_staff(page):
     refuse_hrefs = [a.get_attribute("href") for a in page.query_selector_all("a[href^='/item/']")]
     for href in refuse_hrefs:
         go(page, href, settle=900)
-        if page.query_selector("text=I never received it"):
-            page.click("text=I never received it")
-            page.wait_for_timeout(800)
-            reason = page.query_selector("textarea")
-            if reason:
-                reason.fill("Walkthrough: this item never arrived at my desk.")
-            page.wait_for_timeout(400)
-            buttons = page.query_selector_all("button")
-            for button in buttons:
-                if re.search(r"^refuse|confirm", button.inner_text().strip(), re.I):
-                    button.click()
-                    break
+        never = page.get_by_role("button", name="I never received it", exact=True)
+        try:
+            never.first.wait_for(state="visible", timeout=12_000)
+        except Exception:
+            continue
+        never.first.click()
+        page.wait_for_timeout(800)
+        reason = page.query_selector("textarea")
+        if reason:
+            reason.fill("Walkthrough: this item never arrived at my desk.")
+        page.wait_for_timeout(400)
+        confirm = page.get_by_role("button", name="Refuse the item", exact=True)
+        if confirm.count():
+            confirm.first.click()
             page.wait_for_timeout(3000)
             refused = True
-            step("refuses a claim and gives a reason", True, "")
+            step("refuses a claim and gives a reason", True, href)
             break
     if not refused:
         step("refuses a claim and gives a reason", False, "no item offered a refusal")
 
-    # Read and dismiss a notification.
-    go(page, "/notifications", settle=500)
-    wait_for(page, "li, main")
+    # Read and dismiss a notification. The X is labelled with the message it
+    # removes ("Remove notification: …"), which is what a screen reader hears;
+    # matching on the word "dismiss" missed every one of them.
+    go(page, "/notifications", settle=800)
+    # Wait for a message, not for the page chrome: `li` (and `main`) exist
+    # before the list has answered, which made the count read 2 and the X look
+    # absent.
+    has_message = wait_for(page, "button[aria-label^='Remove notification']", timeout=20_000)
     before = len(page.query_selector_all("li"))
-    dismiss = page.query_selector("button[aria-label*='ismiss' i], button[title*='ismiss' i]")
+    dismiss = page.query_selector("button[aria-label^='Remove notification']")
+    dismissed = False
     if dismiss:
         dismiss.click()
-        page.wait_for_timeout(1500)
-    step("reads and dismisses a notification", True, f"{before} on screen")
+        page.wait_for_timeout(2500)
+        dismissed = len(page.query_selector_all("li")) < before
+    step("reads and dismisses a notification", has_message and dismissed,
+         f"{before} on screen" + ("" if dismissed else " — nothing was removed"))
 
     # Change their password — and change it back.
     go(page, "/change-password")
-    step("the change-password screen opens", has_text(page, "password"), "")
+    has_form = wait_for(page, 'input[type="password"]', timeout=15_000)
+    step("the change-password screen opens", has_form and has_text(page, "password"), "")
     fields = page.query_selector_all('input[type="password"]')
     if len(fields) >= 3:
         fields[0].fill(password)
         fields[1].fill(TEMP_PASSWORD)
         fields[2].fill(TEMP_PASSWORD)
         page.click('button[type="submit"]')
-        page.wait_for_timeout(3000)
-        changed = "password" in page_text(page).lower() or "/dashboard" in page.url
-        # Put it back, so the next run and the next person can sign in.
-        #
-        # A password change ends every session the account had — the token
-        # carries a version, and the change bumps it — so the person is signed
-        # out by the very thing they just did. Signing in again is part of
-        # the flow, not a workaround: without it the account is left with a
-        # password nobody knows, and the demo stops working for everyone.
-        sign_in(page, email, TEMP_PASSWORD)
+        changed = wait_for_text(page, "Password changed", timeout=20_000)
+        page.wait_for_timeout(1200)
+        # Put it back through the same screen. The first change returns a fresh
+        # token and `setSession` installs it, so *this* session stays signed in;
+        # signing in again on top of it was the fragile part (and, when the
+        # login limiter had been hit, the reason this step failed).
         go(page, "/change-password", settle=800)
+        wait_for(page, 'input[type="password"]', timeout=15_000)
         fields = page.query_selector_all('input[type="password"]')
+        restored = False
         if len(fields) >= 3:
             fields[0].fill(TEMP_PASSWORD)
             fields[1].fill(password)
             fields[2].fill(password)
             page.click('button[type="submit"]')
-            page.wait_for_timeout(3000)
+            restored = wait_for_text(page, "Password changed", timeout=20_000)
+            page.wait_for_timeout(1200)
         # The proof: the original password works again.
         back = False
         try:
@@ -444,7 +609,7 @@ def walkthrough_staff(page):
         except Exception:
             back = False
         TOKEN_CACHE.pop(email, None)
-        step("changes their password and changes it back", changed and back, "")
+        step("changes their password and changes it back", changed and restored and back, "")
     else:
         step("changes their password and changes it back", False, "the form was not as expected")
 
@@ -454,52 +619,175 @@ def walkthrough_staff(page):
 
 
 # ── P9-2 DEPARTMENT_HEAD ───────────────────────────────────────────────────
+def approve_on_page(page, expect=None):
+    """Approve what the page is offering, the way a person does.
+
+    The approval is two clicks: the button on the page opens a dialog that
+    states the consequence, and the dialog's own button carries it out. Clicking
+    a second button "with approve in it" from the page behind the dialog was
+    the old way, and the dialog's backdrop swallowed it.
+
+    Returns the label of the approval that was carried out, or None.
+    """
+    trigger = page.get_by_role("button", name=re.compile(r"^Approve"))
+    if not trigger.count():
+        return None
+    trigger.first.click()
+    page.wait_for_timeout(900)
+    # The dialog's own confirm button is inside the dialog, so it is looked up
+    # there — a page-wide search finds the trigger again and clicks the
+    # backdrop instead.
+    dialog = page.get_by_role("dialog")
+    if not dialog.count():
+        return None
+    confirm = dialog.get_by_role("button", name=re.compile(r"^Approve"))
+    if not confirm.count():
+        return None
+    label = confirm.first.inner_text().strip()
+    confirm.first.click()
+    page.wait_for_timeout(3000)
+    if expect:
+        return label if expect.lower() in label.lower() else None
+    return label
+
+
+def approve_and_check(page, request, token, allowed=("PENDING_STAGE2", "APPROVED")):
+    """Approve a request on the screen, and prove the server agreed.
+
+    Clicking the dialog's confirm button is not an approval: the server can
+    still refuse — the item may be on loan, the request may have been decided
+    by somebody else in the meantime — and the walkthrough would report a
+    success that never happened. So the request is read back afterwards, and
+    the step only passes when the status really moved.
+    """
+    before = request.get("status")
+    go(page, f"/requests/{request['id']}", settle=900)
+    label = approve_on_page(page)
+    if not label:
+        return None
+    page.wait_for_timeout(2000)
+    after = api_get(f"/requests/{request['id']}", token).get("request", {})
+    status = after.get("status")
+    if status in allowed and status != before:
+        return label, status
+    return None
+
+
 def walkthrough_head(page):
     say("P9-2 DEPARTMENT_HEAD — decide, verify, and be refused another unit's work")
     email, password = ACCOUNTS["DEPARTMENT_HEAD"]
     sign_in(page, email, password)
     step("signs in with their own account", "/dashboard" in page.url, page.url)
+    token = login_token(email, password)
 
-    # Their department's roster and items.
+    # Their department's items, and the roster of the college's units.
     go(page, "/items?scope=department")
     step("sees their department's items", has_text(page, "item"), "")
+    go(page, "/admin/departments")
+    step("sees the college's departments and their staff counts",
+         has_text(page, "staff") and has_text(page, "Head"), "")
+
+    # The queue of things waiting for them.
+    go(page, "/requests?status=PENDING")
+    wait_for(page, "a[href^='/requests/']", timeout=20_000)
+    queued = len(page.query_selector_all("a[href^='/requests/']"))
+    step("sees a queue of requests waiting for them", queued > 0, f"{queued} in it")
 
     # Approve a staff request from their own unit.
-    go(page, "/requests?status=PENDING")
     approved = False
     request_hrefs = [a.get_attribute("href") for a in page.query_selector_all("a[href^='/requests/']")]
     for href in request_hrefs:
-        go(page, href, settle=900)
-        if page.query_selector("text=/approve/i"):
-            page.click("text=/approve/i >> nth=0")
-            page.wait_for_timeout(1200)
-            note = page.query_selector("textarea")
-            if note:
-                note.fill("Walkthrough: approved.")
-            page.wait_for_timeout(300)
-            for button in page.query_selector_all("button"):
-                if "approve" in button.inner_text().lower() and "request" not in button.inner_text().lower():
-                    button.click()
-                    break
-            page.wait_for_timeout(2500)
+        request_id = href.rstrip("/").rsplit("/", 1)[-1]
+        outcome = approve_and_check(page, {"id": request_id}, token)
+        if outcome:
             approved = True
-            step("approves a staff request from their own unit", True, "")
+            step("approves a staff request from their own unit", True,
+                 f"{outcome[0]} — now {outcome[1]}")
             break
     if not approved:
         step("approves a staff request from their own unit", False, "the queue was empty")
 
+    # Approve a stage-1 transfer: the releasing head agrees to let it go.
+    stage1 = False
+    for request in api_get("/requests?status=PENDING_STAGE1&limit=50", token).get("requests", []):
+        outcome = approve_and_check(page, request, token, allowed=("PENDING_STAGE2",))
+        if outcome:
+            stage1 = True
+            step("approves a stage-1 transfer", True, f"{outcome[0]} — {request['id']}")
+            break
+    if not stage1:
+        step("approves a stage-1 transfer", False, "no stage-1 transfer was waiting")
+
+    # Approve a stage-2 transfer: the receiving head takes it over.
+    stage2 = False
+    for request in api_get("/requests?status=PENDING_STAGE2&limit=50", token).get("requests", []):
+        outcome = approve_and_check(page, request, token, allowed=("APPROVED",))
+        if outcome:
+            stage2 = True
+            step("approves a stage-2 transfer", True, f"{outcome[0]} — {request['id']}")
+            break
+    if not stage2:
+        step("approves a stage-2 transfer", False, "no stage-2 transfer was waiting")
+
+    # Verify a handover item — confirm one, and flag another.
+    items = api_get("/items?limit=200", token).get("data", [])
+    unverified = [i for i in items if i.get("status") == "REVERTED_UNVERIFIED"]
+    verified = False
+    flagged = False
+    for item in unverified:
+        go(page, f"/item/{item['tagId']}", settle=900)
+        confirm_button = page.get_by_role("button", name="I have verified this item", exact=True)
+        if confirm_button.count() and not verified:
+            confirm_button.first.click()
+            page.wait_for_timeout(2500)
+            verified = True
+            step("verifies a handover item", True, item["tagId"])
+            continue
+        flag_button = page.get_by_role("button", name="Flag it for review", exact=True)
+        if flag_button.count() and not flagged:
+            flag_button.first.click()
+            page.wait_for_timeout(800)
+            reason = page.query_selector("textarea")
+            if reason:
+                reason.fill("Walkthrough: this item is not in the office and nobody has signed for it.")
+            page.wait_for_timeout(300)
+            dialog = page.get_by_role("dialog")
+            if dialog.count():
+                dialog.get_by_role("button", name="Flag it", exact=True).first.click()
+                page.wait_for_timeout(2500)
+                flagged = True
+                step("flags a handover item for review", True, item["tagId"])
+    if not verified:
+        step("verifies a handover item", False, "no item was waiting to be verified")
+    if not flagged:
+        step("flags a handover item for review", False, "no item was waiting to be flagged")
+
     # A request from another unit must be refused.
-    token = login_token(email, password)
+    #
+    # The id comes from the Property Officer, who can read the whole college's
+    # requests: a head cannot even *list* another unit's work, so asking the
+    # head for the list would prove nothing about opening one.
     refused = False
-    other = api_get("/requests?scope=all", token)
-    for request in (other.get("requests") or other.get("data") or [])[:6]:
+    officer_token = login_token(*ACCOUNTS["PROPERTY_OFFICER"])
+    everything = api_get("/requests?limit=100", officer_token)
+    for request in (everything.get("requests") or everything.get("data") or []):
+        if request.get("status") not in PENDING_STATUSES:
+            continue
+        requester = ((request.get("requestedBy") or {}).get("email") or "").lower()
+        # "Another unit" means another unit: the head's own unit is CS, so a
+        # request from Biology, Chemistry or Physics is another unit's work.
+        if not re.search(r"bio|chem|phys", requester):
+            continue
         go(page, f"/requests/{request['id']}", settle=900)
-        if page.query_selector("text=/approve/i"):
-            page.click("text=/approve/i >> nth=0")
-            page.wait_for_timeout(1500)
-            text = page_text(page).lower()
-            refused = "not" in text and ("department" in text or "scope" in text or "cannot" in text)
-            step("is refused a request from another unit", refused, text[:120].replace("\n", " "))
+        text = page_text(page).lower()
+        if "not found" in text or "couldn't load" in text or "access" in text:
+            refused = True
+            step("is refused a request from another unit", True,
+                 f"the screen says the request ({requester}) is not there")
+            break
+        if page.get_by_role("button", name=re.compile(r"^Approve")).count():
+            step("is refused a request from another unit", False,
+                 "the page offered an approval for another unit's request")
             break
     if not refused:
         step("is refused a request from another unit", False, "no foreign request was in reach")
@@ -514,70 +802,124 @@ def walkthrough_officer(page):
 
     # Register an item.
     go(page, "/items/new")
-    step("the item form opens", has_text(page, "Register"), "")
+    wait_for(page, "select", timeout=20_000)
+    step("the item form opens", has_text(page, "Register") or has_text(page, "Identity"), "")
     page.fill('input[name="name"]', "WALKTHROUGH Item")
-    selects = page.query_selector_all("select")
-    if selects:
-        options = [o for o in selects[0].query_selector_all("option") if o.get_attribute("value")]
-        if options:
-            selects[0].select_option(options[0].get_attribute("value"))
-    page.fill('input[name="building"]', "Main Block")
+    select_by_label(page, "Category")
+    select_by_label(page, "Department")
+    select_by_label(page, "Building")
+    select_by_label(page, "Owner (custodian)")
     page.fill('input[name="floor"]', "1")
     page.fill('input[name="room"]', "W1")
     page.fill('input[name="purchaseCost"]', "1000")
+    select_by_label(page, "Condition")
     page.click('button[type="submit"]')
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(4000)
     registered = "/items/" in page.url or has_text(page, "WALKTHROUGH Item")
     step("registers an item", registered, page.url)
 
     # Its tag, and the sticker that can be printed.
     token = login_token(email, password)
-    items = api_get("/items?search=WALKTHROUGH&limit=3", token)
+    items = api_get("/items?search=WALKTHROUGH&limit=5", token)
     tag = None
     for item in (items.get("data") or items.get("items") or []):
         if item["name"].startswith("WALKTHROUGH"):
             tag = item["tagId"]
             break
     if tag:
-        go(page, f"/item/{tag}", settle=900)
+        go(page, f"/item/{tag}", settle=1200)
         step("opens the item it just registered", has_text(page, tag), tag)
-        # The sticker, and the print path.
+        # The sticker lives behind the "staff detail & tag" disclosure.
+        toggle = page.query_selector("text=View staff detail & tag")
+        if toggle:
+            toggle.click()
+            page.wait_for_timeout(2500)
         printable = page.query_selector("[data-print-tag]")
         step("the QR sticker is on the screen", printable is not None, tag)
     else:
         step("opens the item it just registered", False, "the item was not found")
 
+    # Decide the three kinds of request: a transfer, a disposal and a loan.
+    # Each is read back afterwards: a disposal of an item that is out on loan
+    # is refused by the server, and the screen would otherwise look like it had
+    # worked.
+    disposed_tag = None
+    for kind, label, allowed in (
+        ("TRANSFER", "transfer", ("PENDING_STAGE2", "APPROVED")),
+        ("DISPOSAL", "disposal", ("APPROVED",)),
+        # A loan's *item* waits for the borrower to claim it (`PENDING_CLAIM`);
+        # the request itself is approved.
+        ("LOAN", "loan", ("APPROVED",)),
+    ):
+        decided = False
+        for request in api_get(f"/requests?status=PENDING&type={kind}&limit=50", token).get("requests", []):
+            outcome = approve_and_check(page, request, token, allowed=allowed)
+            if outcome:
+                decided = True
+                step(f"approves a {label}", True, f"{outcome[0]} — now {outcome[1]}")
+                if kind == "DISPOSAL":
+                    # The item this decision retired — the one to reverse next.
+                    disposed_tag = ((request.get("item") or {}).get("tagId"))
+                break
+        if not decided:
+            step(f"approves a {label}", False, f"no {label} was waiting")
+
+    # Reverse a disposal: the item was retired, and the decision is undone
+    # with a reason.
+    #
+    # The item is the one the disposal above retired — the register never
+    # lists a disposed item, so asking the register for one finds nothing.
+    reversed_ok = False
+    if disposed_tag:
+        go(page, f"/item/{disposed_tag}", settle=1200)
+        reverse = page.get_by_role("button", name="Reverse this disposal", exact=True)
+        try:
+            reverse.first.wait_for(state="visible", timeout=15_000)
+        except Exception:
+            reverse = None
+        if reverse:
+            reverse.first.click()
+            page.wait_for_timeout(800)
+            reason = page.query_selector("textarea")
+            if reason:
+                reason.fill("Walkthrough: disposed in error — the item is in service and in use.")
+            page.wait_for_timeout(300)
+            dialog = page.get_by_role("dialog")
+            if dialog.count():
+                dialog.get_by_role("button", name="Reverse the disposal", exact=True).first.click()
+                page.wait_for_timeout(3000)
+                reversed_ok = True
+                step("reverses a disposal", True, disposed_tag)
+    if not reversed_ok:
+        step("reverses a disposal", False, "no disposed item offered the action")
+
+    # The audit history. The officer reads it — running a session is the
+    # auditor's alone (`AUDIT_RUN`), and the nav draws that line.
+    go(page, "/audits")
+    step("reads the audit history", wait_for_text(page, "audit", timeout=15_000), "")
+    go(page, "/audit/new")
+    step("is kept out of starting an audit", "not found" in page_text(page).lower()
+         or "/dashboard" in page.url, page.url)
+
     # The inventory report, in both formats.
     go(page, "/reports")
     step("the reports screen opens", has_text(page, "report"), "")
-    try:
-        with page.expect_download(timeout=30_000) as info:
-            page.click("text=/inventory/i >> nth=0")
-        download = info.value
-        size = download.path() and __import__("os").path.getsize(download.path())
-        step("downloads the inventory report as CSV", bool(size), download.suggested_filename)
-    except Exception as exc:
-        step("downloads the inventory report as CSV", False, f"{type(exc).__name__}")
+    for label, what in (("Download inventory CSV", "inventory report as CSV"),
+                        ("Download inventory PDF", "inventory report as PDF")):
+        try:
+            with page.expect_download(timeout=45_000) as info:
+                page.get_by_role("button", name=label, exact=True).click()
+            download = info.value
+            size = download.path() and os.path.getsize(download.path())
+            step(f"downloads the {what}", bool(size), download.suggested_filename)
+        except Exception as exc:
+            step(f"downloads the {what}", False, f"{type(exc).__name__}")
 
     # The categories and the buildings.
     go(page, "/admin/categories")
     step("manages the categories", has_text(page, "categor"), "")
     go(page, "/admin/buildings")
-    step("manages the buildings", has_text(page, "building"), "")
-
-    # An audit, end to end.
-    go(page, "/audit/new")
-    step("the audit form opens", has_text(page, "audit"), "")
-    choose_option(page, 0, "department")
-    choose_option(page, 1)
-    page.wait_for_timeout(800)
-    for button in page.query_selector_all("button[type=submit]"):
-        if re.search(r"start|begin|open", button.inner_text().lower()):
-            button.click()
-            break
-    page.wait_for_timeout(3000)
-    started = "/audit/" in page.url
-    step("starts an audit session", started, page.url)
+    step("manages the buildings", wait_for_text(page, "Building", timeout=15_000), "")
 
 
 # ── P9-4 AUDITOR ────────────────────────────────────────────────────────────
@@ -586,59 +928,124 @@ def walkthrough_auditor(page):
     email, password = ACCOUNTS["AUDITOR"]
     sign_in(page, email, password)
     step("signs in with their own account", "/dashboard" in page.url, page.url)
+    token = login_token(email, password)
 
     # The dashboard's own tiles.
     step("sees the current-audit tile", wait_for_text(page, "Current audit"), "")
     step("sees the open-findings tile", wait_for_text(page, "findings"), "")
 
-    # Start an audit.
+    # Start an audit, by department.
     go(page, "/audit/new")
-    choose_option(page, 0, "department")
-    choose_option(page, 1)
-    page.wait_for_timeout(800)
-    for button in page.query_selector_all("button[type=submit]"):
-        if re.search(r"start|begin|open", button.inner_text().lower()):
-            button.click()
-            break
-    page.wait_for_timeout(3000)
+    select_by_label(page, "Audit by", "department")
+    wait_for(page, "select", timeout=15_000)
+    select_by_label(page, "Department to audit")
+    page.wait_for_timeout(600)
+    start = page.get_by_role("button", name="Start audit", exact=True)
+    if start.count():
+        start.first.click()
+    page.wait_for_timeout(4000)
     scan_url = page.url
-    step("starts an audit session", "/audit/" in scan_url, scan_url)
+    step("starts an audit session", "/audit/" in scan_url and "scan" in scan_url, scan_url)
+
+    # Which department is being walked, and an item that is in it.
+    scope = ""
+    match = re.search(r"Scanning items in ([^.]+)\.", page_text(page))
+    if match:
+        scope = match.group(1).strip()
+    items = api_get("/items?limit=100", token).get("data", [])
+    in_scope = [i for i in items if i.get("status") == "ACTIVE" and i.get("department") == scope]
+    outside = [i for i in items if i.get("status") == "ACTIVE" and i.get("department") != scope]
 
     # Scan an item by typing its tag — the manual entry that is always there.
-    token = login_token(email, password)
-    items = api_get("/items?limit=3", token)
-    tag = None
-    for item in (items.get("data") or items.get("items") or []):
-        if item.get("status") == "ACTIVE":
-            tag = item["tagId"]
+    scanned = 0
+    for item in in_scope[:2]:
+        field = page.query_selector('input[placeholder="CNCS-XXXXXXXX"]')
+        if not field:
             break
-    if tag and "/scan" in scan_url:
-        page.fill('input[placeholder="CNCS-XXXXXXXX"]', tag)
-        page.click('button[type="submit"]')
+        field.fill(item["tagId"])
+        page.get_by_role("button", name="Scan", exact=True).first.click()
         page.wait_for_timeout(2500)
-        step("scans an item into the session", has_text(page, "scanned") or has_text(page, "found")
-             or has_text(page, tag), tag)
+        if has_text(page, item["tagId"]):
+            scanned += 1
+    step("scans items into the session", scanned > 0, f"{scanned} of {len(in_scope)} in {scope}")
+
+    # An item from outside the scope is counted as the wrong location.
+    if outside:
+        field = page.query_selector('input[placeholder="CNCS-XXXXXXXX"]')
+        if field:
+            field.fill(outside[0]["tagId"])
+            page.get_by_role("button", name="Scan", exact=True).first.click()
+            page.wait_for_timeout(2500)
+            step("counts an item from another department as the wrong location",
+                 has_text(page, outside[0]["tagId"]), outside[0]["tagId"])
+
+    # Complete the audit.
+    complete = page.get_by_role("button", name="Complete audit", exact=True)
+    completed = False
+    if complete.count() and complete.first.is_enabled():
+        complete.first.click()
+        page.wait_for_timeout(900)
+        dialog = page.get_by_role("dialog")
+        if dialog.count():
+            dialog.get_by_role("button", name="Complete audit", exact=True).first.click()
+            page.wait_for_timeout(4000)
+            completed = wait_for_text(page, "completed", timeout=15_000)
+    step("completes the audit", completed, page.url)
 
     # The report.
     if "/audit/" in page.url:
         report_url = re.sub(r"/scan$", "/report", page.url)
-        go(page, report_url[len(BASE):], settle=1500)
+        go(page, report_url[len(BASE):], settle=2000)
         step("reads the report", has_text(page, "report") or has_text(page, "Audit"), report_url)
         # The report is copied out of the page, so the download is a blob the
         # page hands to the browser — the download event is the proof.
-        try:
-            with page.expect_download(timeout=30_000) as info:
-                page.click("text=Download audit CSV")
-            download = info.value
-            size = download.path() and __import__("os").path.getsize(download.path())
-            step("downloads the audit report as CSV", bool(size), download.suggested_filename)
-        except Exception as exc:
-            step("downloads the audit report as CSV", False, f"{type(exc).__name__}")
+        for label, what in (("Download audit CSV", "audit report as CSV"),
+                             ("Download audit PDF", "audit report as PDF")):
+            try:
+                with page.expect_download(timeout=45_000) as info:
+                    page.get_by_role("button", name=label, exact=True).click()
+                download = info.value
+                size = download.path() and os.path.getsize(download.path())
+                step(f"downloads the {what}", bool(size), download.suggested_filename)
+            except Exception as exc:
+                step(f"downloads the {what}", False, f"{type(exc).__name__}")
+
+    # A completed session is read-only: the page says so, and the server
+    # refuses a scan into it.
+    if "/audit/" in page.url:
+        go(page, re.sub(r"/report$", "/scan", page.url)[len(BASE):], settle=2000)
+        read_only = wait_for_text(page, "can't be scanned into any more", timeout=15_000)
+        refused_scan = False
+        if in_scope:
+            field = page.query_selector('input[placeholder="CNCS-XXXXXXXX"]')
+            if field:
+                field.fill(in_scope[0]["tagId"])
+                page.get_by_role("button", name="Scan", exact=True).first.click()
+                page.wait_for_timeout(3000)
+                refused_scan = "completed" in page_text(page).lower()
+        step("a completed session is read-only", read_only and refused_scan, "")
+
+    # The evidence pack — the whole month's evidence, out of the reports screen.
+    go(page, "/reports?tab=evidence", settle=1500)
+    from_field = page.get_by_label("From", exact=True)
+    to_field = page.get_by_label("To", exact=True)
+    if from_field.count() and to_field.count():
+        from_field.first.fill("2026-01-01")
+        to_field.first.fill("2026-12-31")
+        page.wait_for_timeout(400)
+    try:
+        with page.expect_download(timeout=45_000) as info:
+            page.get_by_role("button", name="Download evidence pack PDF", exact=True).first.click()
+        download = info.value
+        size = download.path() and os.path.getsize(download.path())
+        step("downloads the evidence pack", bool(size), download.suggested_filename)
+    except Exception as exc:
+        step("downloads the evidence pack", False, f"{type(exc).__name__}")
 
     # An action they must not do.
     go(page, "/items/new")
     step("is refused the item registration screen",
-         "not" in page_text(page).lower() or "/dashboard" in page.url, page.url)
+         "not found" in page_text(page).lower() or "/dashboard" in page.url, page.url)
 
 
 # ── P9-5 SYSTEM_ADMIN ──────────────────────────────────────────────────────
@@ -654,37 +1061,54 @@ def walkthrough_admin(page):
 
     # Invite a privileged account, with the authorization fields.
     invite_email = f"walkthrough.invite.{int(time.time())}@cncs.aau.edu.et"
-    page.click("text=/invite/i >> nth=0")
-    page.wait_for_timeout(1200)
-    fields = page.query_selector_all("input")
-    email_field = None
-    for field in fields:
-        if field.get_attribute("type") == "email":
-            email_field = field
+    invite_tab = page.get_by_role("button", name="Invite an Account", exact=True)
+    if invite_tab.count():
+        invite_tab.first.click()
+        page.wait_for_timeout(1200)
+    page.get_by_label("Email", exact=True).first.fill(invite_email)
+    select_by_label(page, "Role", "auditor")
+    page.get_by_label("Authorized by", exact=True).first.fill("Walkthrough: the principal's office")
+    page.get_by_label("Authorization reference", exact=True).first.fill("WALKTHROUGH-LETTER-1")
+    page.get_by_role("button", name="Send invite", exact=True).first.click()
+    page.wait_for_timeout(3500)
+    invited = has_text(page, invite_email) and has_text(page, "Invitation")
+    step("invites a privileged account with the authorization fields", invited, invite_email)
+
+    # The single-use link, as the administrator hands it over.
+    invite_url = ""
+    for code in page.query_selector_all("code"):
+        text = (code.inner_text() or "").strip()
+        if "/accept-invite?token=" in text:
+            invite_url = text
             break
-    if email_field:
-        email_field.fill(invite_email)
-        selects = page.query_selector_all("select")
-        for select in selects:
-            options = [o for o in select.query_selector_all("option") if o.get_attribute("value")]
-            if options and any("auditor" in (o.inner_text() or "").lower() for o in options):
-                for option in options:
-                    if "auditor" in (option.inner_text() or "").lower():
-                        select.select_option(option.get_attribute("value"))
-                        break
-        textareas = page.query_selector_all("textarea")
-        for area in textareas:
-            area.fill("Walkthrough authorization")
-        for field in fields:
-            if field.get_attribute("type") == "text" and not field.get_attribute("value"):
-                field.fill("WALKTHROUGH-LETTER-1")
-                break
-        page.click("text=/send|invite/i >> nth=0")
+    step("the invitation link is on the screen", bool(invite_url), invite_url[:60])
+
+    # Resend it: the endpoint reissues the token, so a link that leaked is dead.
+    accounts_tab = page.get_by_role("button", name=re.compile("^Existing Accounts"), exact=False)
+    if accounts_tab.count():
+        accounts_tab.first.click()
+        page.wait_for_timeout(1500)
+    resend = page.get_by_role("button", name=re.compile("Resend the invitation"))
+    resent = False
+    if resend.count():
+        resend.first.click()
         page.wait_for_timeout(2500)
-        invited = has_text(page, invite_email) or has_text(page, "invited") or has_text(page, "sent")
-        step("invites a privileged account with the authorization fields", invited, invite_email)
-    else:
-        step("invites a privileged account with the authorization fields", False, "the dialog had no field")
+        resent = has_text(page, "new invitation link") or has_text(page, "resent")
+    step("resends the invitation", resent, "")
+
+    # Accept the invitation, the way the invited person does.
+    accepted = False
+    if invite_url:
+        go(page, invite_url[len(BASE):], settle=1500)
+        name_field = page.get_by_label("Your full name", exact=True)
+        if name_field.count():
+            name_field.first.fill("Walkthrough Invitee")
+            page.get_by_label("New password", exact=True).first.fill("WalkthroughInvite123!")
+            page.get_by_label("Confirm password", exact=True).first.fill("WalkthroughInvite123!")
+            page.get_by_role("button", name=re.compile("set|password|accept|continue", re.I)).first.click()
+            page.wait_for_timeout(4000)
+            accepted = "/login" in page.url or "/dashboard" in page.url or has_text(page, "password")
+    step("accepts the invitation", accepted, "")
 
     # The account log.
     go(page, "/admin/events")
@@ -693,49 +1117,49 @@ def walkthrough_admin(page):
     # Approve a staff request.
     go(page, "/admin/users")
     approved = False
-    for link in page.query_selector_all("a[href*='/admin/users']"):
-        pass
-    pending = page.query_selector("text=/waiting for approval/i")
-    if pending:
-        buttons = page.query_selector_all("button")
-        for button in buttons:
-            if "approve" in button.inner_text().lower():
-                button.click()
-                page.wait_for_timeout(1500)
-                for confirm in page.query_selector_all("button"):
-                    if "approve" in confirm.inner_text().lower():
-                        confirm.click()
-                        break
-                page.wait_for_timeout(2000)
-                approved = True
-                break
-    step("approves a staff request", approved or pending is None,
-         "no request was waiting" if pending is None else "")
+    waiting_tab = page.get_by_role("button", name=re.compile("^Waiting for Approval"))
+    if waiting_tab.count():
+        waiting_tab.first.click()
+        page.wait_for_timeout(1500)
+    approve_button = page.get_by_role("button", name="Approve", exact=True)
+    if approve_button.count():
+        approve_button.first.click()
+        page.wait_for_timeout(1200)
+        dialog = page.get_by_role("dialog")
+        if dialog.count():
+            dialog.get_by_role("button", name="Approve", exact=True).first.click()
+            page.wait_for_timeout(3000)
+            approved = True
+    step("approves a staff request", approved, "" if approved else "no request was waiting")
 
-    # Close an account.
-    go(page, "/admin/users")
+    # Close an account — the one this walkthrough created, so no demo account
+    # is closed by accident.
+    go(page, "/admin/users", settle=1500)
+    accounts_tab = page.get_by_role("button", name=re.compile("^Existing Accounts"))
+    if accounts_tab.count():
+        accounts_tab.first.click()
+        page.wait_for_timeout(1500)
     closed = False
-    for button in page.query_selector_all("button"):
-        if re.search(r"close|deactivate", button.inner_text().lower()):
-            button.click()
-            page.wait_for_timeout(1000)
-            area = page.query_selector("textarea")
-            if area:
-                area.fill("Walkthrough: closed and reopened by the walkthrough.")
-            for confirm in page.query_selector_all("button"):
-                if re.search(r"close|deactivate", confirm.inner_text().lower()):
-                    confirm.click()
-                    break
-            page.wait_for_timeout(2000)
+    close_button = page.get_by_role("button", name="Close the account of Walkthrough Invitee", exact=True)
+    if not close_button.count():
+        close_button = page.get_by_role("button", name=re.compile(r"^Close the account of "))
+    if close_button.count():
+        close_button.first.click()
+        page.wait_for_timeout(1000)
+        reason = page.query_selector("textarea")
+        if reason:
+            reason.fill("Walkthrough: the account is closed by the walkthrough.")
+        page.wait_for_timeout(300)
+        dialog = page.get_by_role("dialog")
+        if dialog.count():
+            dialog.get_by_role("button", name="Close the account", exact=True).first.click()
+            page.wait_for_timeout(3000)
             closed = True
-            step("closes an account", True, "")
-            break
-    if not closed:
-        step("closes an account", False, "no account offered the action")
+    step("closes an account", closed, "")
 
     # No asset data anywhere.
     for path in ("/items", "/requests", "/audits", "/reports", "/map"):
-        go(page, path, settle=900)
+        go(page, path, settle=1200)
         text = page_text(page).lower()
         empty = (
             "no items" in text
@@ -745,6 +1169,7 @@ def walkthrough_admin(page):
             or "not authorized" in text
             or "no asset" in text
             or "no audits" in text
+            or "page not found" in text
         )
         step(f"sees no asset data on {path}", empty, "")
 

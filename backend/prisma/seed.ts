@@ -1243,6 +1243,41 @@ const ITEMS: ItemSpec[] = [
     claimDueInDays: 7,
   },
   {
+    // The other handshake: an item that changed hands without anybody checking
+    // it — a new head took over, or the holder was deactivated. The unit's
+    // head has to confirm it is there, or flag it for the officer to trace.
+    // Two of them, because "I have verified this item" ends the wait and
+    // "Flag it for review" starts it: one item can only be answered one way.
+    tagId: "CNCS-VERIFY-0001",
+    name: "Conference Microphone Set (needs verification)",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "210",
+    owner: "headCS",
+    holder: "DEPARTMENT",
+    cost: 5400,
+    condition: Condition.GOOD,
+    notes: "Held by the unit since the previous head left; nobody has confirmed it is still here.",
+    status: ItemStatus.REVERTED_UNVERIFIED,
+  },
+  {
+    tagId: "CNCS-VERIFY-0002",
+    name: "Whiteboard Projector (needs verification)",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "211",
+    owner: "headCS",
+    holder: "DEPARTMENT",
+    cost: 21000,
+    condition: Condition.GOOD,
+    notes: "Held by the unit since the previous head left; nobody has confirmed it is still here.",
+    status: ItemStatus.REVERTED_UNVERIFIED,
+  },
+  {
     tagId: "CNCS-STAFF-0002",
     name: "iPad Pro 12.9\"",
     category: "Electronics",
@@ -2537,6 +2572,25 @@ const REQUESTS: RequestSpec[] = [
     reviewer: "officer",
     decidedDaysAgo: 22,
     loanDueInDays: -20,
+  },
+  {
+    // A loan waiting for the officer. Without one, "approve a loan" is a
+    // button nobody can reach: the other loan requests are all decided, so the
+    // decision screen had nothing of that kind to show.
+    //
+    // The item is one that is **in service**: an approval moves the item to
+    // `PENDING_CLAIM` for the borrower, and the server's compare-and-swap
+    // only applies that to an item that is `ACTIVE`. A loan over an item that
+    // is already out on loan is refused — correctly, and with an error the
+    // officer has to be able to read.
+    id: "seed-req-cs1-loan-pending",
+    type: RequestType.LOAN,
+    status: RequestStatus.PENDING,
+    item: "CNCS-DEMO-0014",
+    by: "cs1",
+    reason: "Borrowing the oscilloscope for the electronics lab practical.",
+    createdDaysAgo: 1,
+    loanDueInDays: 14,
   },
   {
     id: "seed-req-cs1-loan-return-pending",

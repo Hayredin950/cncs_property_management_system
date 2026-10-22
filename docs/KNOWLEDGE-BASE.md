@@ -134,7 +134,12 @@ Everything else matches exactly (STAFF, AUDITOR, PROPERTY_OFFICER sets are ident
 |---|---|---|
 | `scripts/check-api-contract.mjs` | compares every client call with every server route; fails the build on a mismatch | `frontend.yaml` |
 | `scripts/e2e-flows.sh` | builds a real database from the migrations, seeds it, starts the real server against it and drives the real flows over HTTP | `e2e.yaml` |
+| `scripts/role-walkthroughs.py` | the five role walkthroughs (P9-1…P9-5) in Chromium, **through the UI only**: sign in, file and withdraw a request, claim and refuse, decide stage 1 and stage 2, verify and flag, register and print, audit and complete, download reports, invite and resend, and the refusals each role must meet. It reads the API only to confirm what the screen claims (a closed dialog is not an approval). Each request it files is withdrawn again, so the run can be repeated on the same seed. `python3 scripts/role-walkthroughs.py <web-base>`; the API follows the base unless `WALKTHROUGH_API` overrides it. | against the deployment; locally with `WALKTHROUGH_API=http://localhost:4000/api/v1` |
 | `scripts/responsive-check.py` | drives the **deployed** app in Chromium at 390px and 1440px, for every screen every role can reach: does it render, does anything overflow sideways, are the tap targets big enough, was any request refused | run it by hand; it needs a browser |
+| `scripts/states-check.py` | P5-6, for every list each role can reach: the data requests are **held** (a skeleton must appear), **refused** (a written failure and a retry must appear), then re-fetched and every array **emptied** (a written empty state must appear). It never interferes with `/auth/*`, so the screen is what is being observed, not the session. **91/91** on the local build. | run it by hand; it needs a browser |
+| `scripts/a11y-check.py` | P5-7: `lang`, a single named `h1`, alt text, an accessible name on every visible control, real booleans on `aria-expanded`, Tab and a painted focus ring, the skip link landing in `<main>`, the phone menu announcing open/closed, the two-script AAU wordmark and its loaded font, and measured WCAG AA contrast. **277/277** on the local build, plus a phone pass per role. | run it by hand; it needs a browser |
+| `scripts/scan-check.py` | P6-3 with the camera **denied**: the refusal is explained, the manual Tag ID field is beside it, a typed tag survives the sign-in gate and lands on the item, and an unknown tag says so. **11/11** local and on the deployment. | run it by hand; it needs a browser |
+| `scripts/print-check.py` | P6-5: the sticker page, its printable region and QR payload, the print path and the sticker PDF. **9/9** on the deployment. | run it by hand; it needs a browser |
 | `scripts/live-walkthrough.sh` | walks the **deployed** app role by role — what each role sees, the account-approval flow end to end, and the refusals | run it by hand (it signs in as seven accounts, so the login rate limiter is the reason it caches its tokens) |
 
 All three exist because the unit suites **mock Prisma** and never open a browser: they cannot see a query that is wrong in SQL, a column that does not exist, a route that was renamed, a client asking for something the server will refuse, or a layout that breaks on a phone.
@@ -422,7 +427,7 @@ Dual-mount note: every router is mounted at BOTH `/api/v1/<name>` AND `/<name>` 
 
 - **Blocked statuses:** `POST /users/invite` and its siblings are `DONE unit-tested` in code but cannot run against the live DB until the `AccountRequest.authorizedBy` columns exist (see §4.2 / Backlog B01).
 - AdminActionLog IS written on invite/resend/accept (invites service) and on approve/reject/escalate (users.ts) as of the current tree — the "log is empty" claims in old docs are stale; but append-only is still not DB-enforced.
-- `GET /buildings` has a backend route; the nav row was removed until a Buildings screen exists (Backlog F12). When built, re-add the row.
+- `GET /buildings` has a backend route **and a screen** (`/admin/buildings`, Property Officer): add, rename, delete, with `itemCount` on each row and a refusal to delete a building that holds items. The nav row is back (Backlog F12, 22 Oct).
 
 ### 6.2 Remaining endpoint inventory pointer
 
@@ -448,7 +453,7 @@ Badge types: `"pending-count"` (requests decision queue), `"approvals-count"` (a
 
 ### 7.2 Ruling on removed nav rows
 
-`navConfig.ts` documents four intentionally removed rows (`/account-requests`, `/buildings`, `/admin/account-requests`, `/admin/system`-as-queue): those screens remain unbuilt, so the rows are removed. When you build any of them, re-add the nav row **and** the real screen in the same slice.
+`navConfig.ts` documents the intentionally removed rows (`/account-requests`, `/admin/account-requests`, `/admin/system`-as-queue): those screens remain unbuilt, so the rows are removed. When you build any of them, re-add the nav row **and** the real screen in the same slice. `/buildings` left this list on 22 Oct — the screen exists and the row is back.
 - The `Accounts` nav row on `/admin/users` is the shared DEPARTMENT_HEAD + SYSTEM_ADMIN surface — DEPARTMENT_HEAD sees the approvals tab only; invite/accounts tabs are SYSTEM_ADMIN-only.
 - The `/admin/users` password-reset modal exists but **no button opens it** (dead UI — see Backlog F15).
 
@@ -635,6 +640,13 @@ An endpoint is `[DONE]` only when it appears with **Wired=Yes** in this file AND
 - frontend **the audit list's filter row overflowed sideways** (fixed 21 Oct) — five fixed-width filters on one line (`sm:flex-row` from 640px) need more room than a tablet has, so at 768 and 1024 pixels the row ran past the edge and the whole screen scrolled horizontally. The row now wraps (`xl:flex-row xl:flex-wrap`), and the same goes for the account log's and the department page's filter rows. `scripts/responsive-check.py` found it: 4 of 92 screens failed, and now 98 of 98 pass.
 - backend **the seeded pending requests named nobody** (fixed 21 Oct) — every pending request was created without a `reviewedById`, so the escalation could not reach it and the queue showed requests with no one answerable for them. A pending request now names the head of the unit its item sits in, or the property officer when the unit has no head or the head filed it themselves.
 - backend **a freshly seeded college changed its own state** (fixed 21 Oct) — fourteen of the thirty-three seeded pending requests were older than the seven-day escalation threshold, so the first administrator to run the expiry check moved them all to the property officer. The pending requests now wait inside the window, with one deliberate exception (`seed-req-head-cs-transfer-pending`, 9 days) so the demo can show an escalation.
+- frontend **registering an item through the screen always failed** (fixed 22 Oct) — the form sent `department`/`building` *names*, while `POST /items` takes `orgUnitId`/`buildingId` **ids** and answers 400 ("Invalid input: expected string, received undefined"). Not one item could be registered through the UI. The form now has id-based pickers (`DepartmentIdPicker`, `BuildingPicker`), sends the keys the schema names, and the edit form reads `item.orgUnitId`/`item.buildingId` back. The unit tests were asserting the broken contract (selecting "Biology" by name), so they were rewritten against the wire the server accepts — a test in the old language would have kept the bug forever (§3.1.1b, the same lesson).
+- frontend **every non-active item said "Disposed"** (fixed 22 Oct) — `ItemStatusBadge` had one hardcoded phrase for every status that was not `ACTIVE`, so a loaned laptop, an item awaiting claim and an item under audit all read "Disposed". It now maps each status to its own label and tone.
+- frontend **a stage-1 approval toasted "Request rejected"** (fixed 22 Oct) — `useDecideRequest` treated every non-`APPROVED` response as a rejection, so approving a transfer's first stage (which answers `PENDING_STAGE2`) told the reviewer the opposite of what happened. The `PENDING_STAGE2` branch now says the request waits for the receiving head.
+- backend **the CAS miss blamed disposal for any non-active item** (fixed 22 Oct) — a loaned or awaiting-claim item that lost the status race answered 409 "Item is already disposed", which is false and points at a workflow nobody is in. The message is now "Item is no longer in service"; `requests.test.ts` pins it.
+- frontend **an invitation could not be resent** (fixed 22 Oct) — `POST /users/invites/:id/resend` existed and the screen had no control for it, so a lost invitation meant a new one from scratch. The pending-invite row now offers Resend.
+- frontend **the failure states had no way out** (fixed 22 Oct) — `SystemEventsPage` rendered a failed read as "No events match", so an outage looked like an empty log; `DepartmentsPage`, the `SystemStatusPage` statistics card, `RequestDetailPage` and every dashboard tile named the failure but offered no retry; the `ReportsPage` lookups failed silently (the selects simply went empty); and `OfflineState` was a dead end by construction. Every one now says what failed and offers "Try again", and `scripts/states-check.py` keeps them that way — it loads each list with the data **held**, **refused** and **emptied** (91/91).
+- frontend **accessibility had no regression test** (22 Oct) — the shell was hand-checked, but nothing stopped an icon-only button from losing its name or a page from losing its `lang`. `scripts/a11y-check.py` now measures names, focus, `aria-expanded`, the skip link, the phone drawer, the two-script wordmark and AA contrast on every screen each role can reach (277/277); the AAU blue on white measures 5.6:1.
 
 ---
 
@@ -669,7 +681,7 @@ Legend — priority: **P0** = blocking (deploy or required production correctnes
 - [x] **F09:** Three-way capability sync — the web and mobile matrices now match the backend exactly, and `frontend/src/test/capabilityParity.test.ts` fails the build on any drift (it was verified to fail when a grant is removed by hand).
 - [x] **F10:** (21 Oct) the public tag read is gone — every item route needs a token, so there is no anonymous response to leak a location from. Strip remaining location leak (`building/floor/room`) from anonymous responses (last open S1 gap).
 - [x] **F11:** (21 Oct) one file, `backend/src/services/expiry.ts`, answers every window. Consolidate the two divergent expiry services into ONE file; one configurable window framework everywhere (see §5.1 windows).
-- [ ] **F12:** Buildings page — backend route exists; build the screen + nav row (PO only).
+- [x] **F12:** (22 Oct) Buildings page — `/admin/buildings` (Property Officer) adds, renames and deletes buildings; `GET /buildings` now carries `itemCount`, and the delete is refused while the building holds items. Nav row restored.
 - [ ] **F13:** Add pagination to `GET /users`.
 - [ ] **F14:** Decide + implement `mustChangePassword` retirement (legacy field) now that the invite/self-service flow exists.
 - [ ] **F15:** Remove the dead admin password-reset UI (per C10 ruling: no admin ever sees or sets a password); replace with "admin triggers a reset-token email for the target user" — admin never sees the token.
@@ -768,6 +780,8 @@ Run these against a real deployment after the P0/P1 fixes. Paste the actual resp
 | `scripts/live-walkthrough.sh` | 45 checks against the deployment: every role signs in, the scope rules hold, the account-approval flow works, the refusals are refusals. | as above. |
 | `scripts/responsive-check.py` | the screens in a real Chromium at 390 / 768 / 1024 / 1440 — they render, nothing overflows sideways, the tap targets are big enough, no request is refused. | as above. |
 | `scripts/check-api-contract.mjs` | every call the web client makes has a matching route on the server (96 of 96), and the other way round (the server declares 204 routes; 141 have no web caller — most are the mobile-only or admin-only ones). | `.github/workflows/frontend.yaml`. |
+| `scripts/states-check.py` | every list screen under held, refused and emptied responses — skeleton, written error with retry, written empty state. | run it by hand. |
+| `scripts/a11y-check.py` | the mechanical half of accessibility: names, focus, `aria-*`, skip link, contrast and the AAU wordmark in both scripts. | run it by hand. |
 
 **The two rules they taught.** A check that needs a week of waiting is proved
 by writing the date back, not by waiting — and a check that needs the

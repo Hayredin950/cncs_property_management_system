@@ -70,6 +70,39 @@ describe("Audit Endpoints", () => {
       expect(prisma.auditSession.findUnique).not.toHaveBeenCalled();
     });
 
+    /**
+     * The dashboard tile says "2 / 5 scanned" and nothing else, so an auditor
+     * walking a department could not tell whether anything was missing without
+     * opening the report. The server counts it, and the tile shows it — so the
+     * count has to be on the endpoint.
+     */
+    it("counts the items that are missing in the open session", async () => {
+      vi.mocked(prisma.auditSession.findFirst).mockResolvedValueOnce({
+        id: "audit-1",
+        scopeType: "DEPARTMENT",
+        scopeValue: "Computer Science",
+        startedAt: new Date("2026-10-01T00:00:00.000Z"),
+        runBy: { id: "user-auditor-9", fullName: "Auditor" },
+        results: [
+          { result: "FOUND" },
+          { result: "FOUND" },
+          { result: "MISSING" },
+          { result: "PENDING" },
+        ],
+      } as never);
+      vi.mocked(prisma.auditItemResultRow.count).mockResolvedValueOnce(4 as never);
+
+      const res = await request(app).get("/api/v1/audits/active").set(auditorAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.progress).toEqual({
+        scanned: 2,
+        total: 4,
+        remaining: 2,
+        missing: 1,
+      });
+    });
+
     it("answers GET /audits/findings?status=OPEN instead of a session named \"findings\"", async () => {
       vi.mocked(prisma.auditItemResultRow.count).mockResolvedValueOnce(3 as never);
 

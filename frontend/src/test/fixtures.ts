@@ -351,7 +351,7 @@ export const ACTIVE_AUDIT: ActiveAuditResponse = {
     scopeType: AUDIT_SESSION.scopeType,
     scopeValue: AUDIT_SESSION.scopeValue,
   },
-  progress: { scanned: 2, total: 5, remaining: 3 },
+  progress: { scanned: 2, total: 5, remaining: 3, missing: 1 },
 };
 
 /** `GET /audits/findings?status=OPEN` — the count alone, which is all the tile shows. */

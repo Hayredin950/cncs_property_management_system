@@ -72,7 +72,14 @@ export function AuditHistoryQuickList() {
                 </p>
                 <p className="text-xs text-slate-500">
                   {audit.runBy.fullName}
-                  {audit.completed ? "" : " · in progress"}
+                  {/* The three states, in the words the register uses. An
+                      abandoned session produced no report, and saying "in
+                      progress" about it would be a lie — it is closed. */}
+                  {audit.completed
+                    ? ""
+                    : audit.abandoned
+                      ? " · abandoned"
+                      : " · in progress"}
                 </p>
               </div>
               <span className="text-xs text-slate-400">

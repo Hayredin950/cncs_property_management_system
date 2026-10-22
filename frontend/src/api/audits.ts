@@ -115,13 +115,22 @@ export interface ActiveAudit {
   scope: string;
   scanned: number;
   total: number;
+  /**
+   * How many of the items in scope are not where the register says they are.
+   *
+   * It is the number the auditor wants while walking the department, so it is
+   * on the tile rather than only in the report. The server counts it; a
+   * client-side count of the rows it happens to hold would be a different
+   * number for a different reason.
+   */
+  missing: number;
 }
 
 /** `GET /audits/active` — the shape the route answers with, before mapping. */
 export interface ActiveAuditResponse {
   active: boolean;
   session?: { id: string; scopeType: string; scopeValue: string | null };
-  progress?: { scanned: number; total: number; remaining: number };
+  progress?: { scanned: number; total: number; remaining: number; missing?: number };
 }
 
 /**
@@ -139,6 +148,7 @@ export async function fetchActiveAudit(signal?: AbortSignal): Promise<ActiveAudi
     scope: res.session.scopeValue ?? res.session.scopeType,
     scanned: res.progress.scanned,
     total: res.progress.total,
+    missing: res.progress.missing ?? 0,
   };
 }
 

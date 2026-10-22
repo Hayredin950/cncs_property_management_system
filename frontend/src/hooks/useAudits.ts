@@ -91,6 +91,22 @@ export function useAuditHistoryList(limit = 3) {
 }
 
 /**
+ * How many audit sessions there are in total — the auditor's "sessions run".
+ *
+ * It reads the same cache entry as the history card (`["audits", "history",
+ * "quick", limit]` is keyed on the same query function), so the number on the
+ * dashboard and the list on the card are one request, not two.
+ */
+export function useAuditSessionCount(limit = 3) {
+  return useQuery({
+    queryKey: ["audits", "history", "quick", limit],
+    queryFn: ({ signal }) => fetchAudits({ page: 1 }, signal),
+    select: (data) => data.total,
+    retry: false,
+  });
+}
+
+/**
  * One stored session and its result rows (`GET /audits/:id`).
  *
  * Shares the `["audit", id]` key with the report page's own fetch, so the two

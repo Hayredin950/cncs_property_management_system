@@ -143,6 +143,50 @@ describe("dashboard tiles", () => {
     expect(findings.getByText(/missing items awaiting review/)).toBeInTheDocument();
   });
 
+  /**
+   * The auditor's dashboard had no number on it at all — the other roles have
+   * one in the header slot (the officer's "Pending review"), and the auditor's
+   * opened on a set of tiles with no count anywhere. "Sessions run" is the
+   * number the server answers exactly.
+   */
+  it("gives the Auditor a count of the sessions they have run", async () => {
+    setToken("test-token");
+    server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: AUDITOR_USER } as MeResponse)),
+    );
+    renderWithProviders({ initialEntries: ["/dashboard"] });
+
+    const count = await screen.findByText("Sessions run");
+    expect(count).toBeInTheDocument();
+    // `GET /audits` answers `{ audits, total }`; the fixture's total is 2.
+    // The number is scoped to the card, because "2" also appears in the
+    // progress line of the session tile.
+    const card = count.closest("div")?.parentElement as HTMLElement;
+    // The number arrives with the request, so it is waited for: until it does,
+    // the card shows a dash.
+    expect(await within(card).findByText("2")).toBeInTheDocument();
+  });
+
+  /**
+   * The tile said "2 / 5 scanned" and nothing else, so an auditor walking a
+   * department could not tell whether anything was missing without opening the
+   * report. The server counts it, and the tile shows it.
+   */
+  it("shows how many items are missing in the Auditor's open session", async () => {
+    setToken("test-token");
+    server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: AUDITOR_USER } as MeResponse)),
+    );
+    renderWithProviders({ initialEntries: ["/dashboard"] });
+
+    await screen.findByRole("heading", { name: "Current audit" });
+    const current = within(tile("Current audit"));
+    // The count is inside a <strong>, so the sentence is split across
+    // elements — the tile is asked for its whole text.
+    const missing = await current.findByText(/still to scan/);
+    expect(missing).toHaveTextContent("1 item missing");
+  });
+
   it("renders a failure as a failure instead of as an empty state", async () => {
     setToken("test-token");
     server.use(

@@ -621,6 +621,7 @@ auditsRouter.get(
       }
 
       const scannedCount = activeSession.results.filter((r) => r.result === "FOUND").length;
+      const missingCount = activeSession.results.filter((r) => r.result === "MISSING").length;
       const totalInScope = await prisma.auditItemResultRow.count({
         where: { auditSessionId: activeSession.id },
       });
@@ -638,6 +639,13 @@ auditsRouter.get(
           scanned: scannedCount,
           total: totalInScope,
           remaining: totalInScope - scannedCount,
+          /**
+           * How many of the items in scope are *not* where the register says they
+           * are. The auditor's tile can say "12 found, 2 missing" without opening
+           * the report, which is the question they actually have while walking a
+           * department.
+           */
+          missing: missingCount,
         },
       });
     } catch (err) {

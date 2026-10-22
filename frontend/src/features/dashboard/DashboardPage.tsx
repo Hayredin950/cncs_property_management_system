@@ -1,4 +1,4 @@
-import { ClipboardList, Package, ScanLine } from "lucide-react";
+import { ClipboardCheck, ClipboardList, Package, ScanLine } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { PortalPageHeader, PortalTile } from "../../components/aau/PortalPageHeader";
@@ -10,6 +10,7 @@ import { SkeletonText } from "../../components/Skeleton";
 import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBadges";
 import { StatCard } from "../../components/StatCard";
 import { usePendingCount, useRequests, usePendingRequests } from "../../hooks/useRequests";
+import { useAuditSessionCount } from "../../hooks/useAudits";
 import { formatRelativeTime } from "../../lib/formatters";
 import {
   canDecideRequests,
@@ -54,6 +55,7 @@ export function DashboardPage() {
   const isAuditor = canRunAudits(user?.role);
 
   const pendingQuery = usePendingCount();
+  const auditCountQuery = useAuditSessionCount();
   // For "Needs your review", use the same logic as pending-count: pendingForUser (no date window)
   const needsReviewQuery = usePendingRequests(5);
   const requestsQuery = useRequests({ limit: 5 });
@@ -76,6 +78,21 @@ export function DashboardPage() {
               icon={<ClipboardList className="h-5 w-5" />}
               tone="warning"
               to="/requests?status=PENDING"
+              className="w-52"
+            />
+          ) : isAuditor ? (
+            /* The auditor's number. The other roles have one in this slot —
+               the officer's "Pending review" — and the auditor's dashboard
+               used to have none at all, so it opened on a set of tiles with
+               no count anywhere on it. "Sessions run" is the number the
+               server answers exactly, and it is the one an auditor is asked
+               for. */
+            <StatCard
+              label="Sessions run"
+              value={auditCountQuery.data ?? "\u2014"}
+              icon={<ClipboardCheck className="h-5 w-5" />}
+              tone="brand"
+              to="/audits"
               className="w-52"
             />
           ) : null

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ClipboardCheck } from "lucide-react";
+import { AlertTriangle, ClipboardCheck } from "lucide-react";
 import { Card } from "../../../components/Card";
 import { EmptyState } from "../../../components/EmptyState";
 import { SkeletonText } from "../../../components/Skeleton";
@@ -82,6 +82,25 @@ export function CurrentAuditProgress() {
               {data.scanned} / {data.total} scanned
             </span>
           </div>
+          {/* The shape of the audit so far, without opening the report. An
+              auditor walking a department wants to know whether anything is
+              missing, and that is the one number the tile used to hide. */}
+          {data.missing > 0 ? (
+            <p className="flex items-center gap-2 rounded-md bg-warning-50 px-3 py-2 text-sm text-warning-800">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-warning-600" aria-hidden="true" />
+              <span>
+                <strong className="font-semibold">{data.missing}</strong> item
+                {data.missing === 1 ? "" : "s"} missing
+                {data.total - data.scanned > 0
+                  ? ` · ${data.total - data.scanned} still to scan`
+                  : ""}
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm text-slate-600">
+              Nothing missing so far.
+            </p>
+          )}
           <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
             <div
               className="h-full bg-brand-600 transition-all"

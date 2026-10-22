@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -66,16 +66,17 @@ describe("item edit form — transfer-owned columns", () => {
     const department = screen.getByLabelText("Department");
     expect(department).toBeEnabled();
     expect(department).not.toHaveAttribute("readonly");
+    await waitFor(() => expect(within(department).getAllByRole("option").length).toBeGreaterThan(1));
 
-    await user.selectOptions(department, "Biology");
+    await user.selectOptions(department, "unit-bio");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(body).not.toBeNull());
-    expect(body).toMatchObject({ department: "Biology" });
+    expect(body).toMatchObject({ orgUnitId: "unit-bio" });
     // The transfer-only columns still ride along unchanged — that is what the
     // server compares to decide whether the body is an unapproved move.
     expect(body).toMatchObject({
-      building: PRIVILEGED_ITEM.building,
+      buildingId: PRIVILEGED_ITEM.buildingId,
       floor: PRIVILEGED_ITEM.floor,
       room: PRIVILEGED_ITEM.room,
       ownerId: PRIVILEGED_ITEM.ownerId,
@@ -112,7 +113,7 @@ describe("item edit form — transfer-owned columns", () => {
     expect(PRIVILEGED_ITEM.ownerId).toBe(STAFF_USER.id);
     // The location rides along unchanged, which is what the server compares.
     expect(body).toMatchObject({
-      building: PRIVILEGED_ITEM.building,
+      buildingId: PRIVILEGED_ITEM.buildingId,
       floor: PRIVILEGED_ITEM.floor,
       room: PRIVILEGED_ITEM.room,
     });

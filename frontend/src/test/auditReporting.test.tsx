@@ -442,8 +442,12 @@ describe("full walkthrough", () => {
     const category = await screen.findByLabelText("Category");
     await waitFor(() => expect(within(category).getAllByRole("option").length).toBeGreaterThan(1));
     await user.selectOptions(category, "cat-1");
-    await user.selectOptions(screen.getByLabelText("Department"), "Computer Science");
-    await user.type(screen.getByLabelText("Building"), "Building 1");
+    const department = screen.getByLabelText("Department");
+    await waitFor(() => expect(within(department).getAllByRole("option").length).toBeGreaterThan(1));
+    await user.selectOptions(department, "unit-cs");
+    const building = screen.getByLabelText("Building");
+    await waitFor(() => expect(within(building).getAllByRole("option").length).toBeGreaterThan(1));
+    await user.selectOptions(building, "bld-1");
     await user.type(screen.getByLabelText("Floor"), "Floor 2");
     await user.type(screen.getByLabelText("Room"), "Room 204");
     await user.selectOptions(screen.getByLabelText("Owner (custodian)"), OFFICER_USER.id);
@@ -454,7 +458,8 @@ describe("full walkthrough", () => {
     expect(createBody).toMatchObject({
       name: "Dell Latitude 5440",
       categoryId: "cat-1",
-      department: "Computer Science",
+      orgUnitId: "unit-cs",
+      buildingId: "bld-1",
       purchaseCost: 45000,
     });
     // `parentItemId` must never be sent — the API 400s on it and points at the

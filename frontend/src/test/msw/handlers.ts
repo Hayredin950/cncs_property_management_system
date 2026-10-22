@@ -3,6 +3,7 @@ import {
   ACCEPTED_INVITE_USER,
   ACCOUNTS,
   ACTIVE_AUDIT,
+  BUILDINGS,
   AUDIT_COMPLETION_BODY,
   AUDIT_READBACK,
   AUDIT_SCAN_ROW,
@@ -124,6 +125,12 @@ export const handlers = [
   ),
 
   http.get(`${API}/departments`, () => HttpResponse.json(DEPARTMENTS)),
+
+  /**
+   * `GET /buildings` — the item form's building picker. Public in the app (the
+   * form is not the only reader), so no token gate here.
+   */
+  http.get(`${API}/buildings`, () => HttpResponse.json({ data: BUILDINGS })),
 
   /**
    * `GET /departments/:id/roster` — the Department Head's roster tile. Behind

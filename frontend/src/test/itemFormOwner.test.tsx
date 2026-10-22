@@ -36,9 +36,14 @@ async function fillRequiredFields() {
   await waitFor(() => expect(within(category).getAllByRole("option").length).toBeGreaterThan(1));
   await user.selectOptions(category, "cat-1");
 
-  // Department is a dropdown now (lib/departments.ts), not a free-text input.
-  await user.selectOptions(screen.getByLabelText("Department"), "Computer Science");
-  await user.type(screen.getByLabelText("Building"), "Freshmen Bldg");
+  // Department and building are dropdowns of ids: the API takes foreign keys,
+  // not the names a person reads.
+  const department = screen.getByLabelText("Department");
+  await waitFor(() => expect(within(department).getAllByRole("option").length).toBeGreaterThan(1));
+  await user.selectOptions(department, "unit-cs");
+  const building = screen.getByLabelText("Building");
+  await waitFor(() => expect(within(building).getAllByRole("option").length).toBeGreaterThan(1));
+  await user.selectOptions(building, "bld-2");
   await user.type(screen.getByLabelText("Floor"), "2nd");
   await user.type(screen.getByLabelText("Room"), "213");
   await user.type(screen.getByLabelText("Purchase cost (ETB)"), "28000");

@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { renderWithProviders } from "./utils";
@@ -27,7 +27,9 @@ describe("item edit form — dirty state", () => {
     expect(save).toBeDisabled();
 
     // A dropdown, not a text input — nothing is typed anywhere.
-    await user.selectOptions(screen.getByLabelText("Department"), "Biology");
+    const department = screen.getByLabelText("Department");
+    await waitFor(() => expect(within(department).getAllByRole("option").length).toBeGreaterThan(1));
+    await user.selectOptions(department, "unit-bio");
 
     expect(save).toBeEnabled();
   });

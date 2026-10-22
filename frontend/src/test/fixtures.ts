@@ -27,6 +27,7 @@ import type { SystemEvent, SystemStatus } from "../api/system";
 import type { DepartmentRoster, InvitableUnit } from "../api/departments";
 import type { ActiveAuditResponse } from "../api/audits";
 import type { RecentItem } from "../api/items";
+import type { Building } from "../types/building";
 
 /**
  * Fixtures shaped exactly like the backend's responses (docs/backend-handoff.md
@@ -107,6 +108,8 @@ export const PRIVILEGED_ITEM: Item = {
   category: CATEGORY,
   department: "Computer Science",
   building: "Building 1",
+  orgUnitId: "unit-cs",
+  buildingId: "bld-1",
   floor: "Floor 2",
   room: "Room 204",
   photoUrl: null,
@@ -523,6 +526,16 @@ export const DEPARTMENTS: DepartmentOption[] = [
   { id: "unit-chem", name: "Chemistry", code: "CHEM" },
   { id: "unit-cs", name: "Computer Science", code: "CS" },
   { id: "unit-phys", name: "Physics", code: "PHYS" },
+];
+
+/**
+ * `GET /buildings` — the item form's building picker and the officer's
+ * management screen. The form sends `buildingId`; the displayed name is the
+ * only place a person sees the building, so the fixture carries both.
+ */
+export const BUILDINGS: Building[] = [
+  { id: "bld-1", name: "Building 1", code: "B1", description: null, address: null, itemCount: 2 },
+  { id: "bld-2", name: "Freshmen Bldg", code: "FB", description: null, address: null, itemCount: 0 },
 ];
 
 /**

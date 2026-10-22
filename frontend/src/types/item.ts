@@ -21,8 +21,17 @@ export interface PublicItemFields {
   name: string;
   categoryId: string;
   category: ItemCategorySummary;
+  /**
+   * The unit's **name** and the building's **name** — what a person reads.
+   * The ids below are what a write needs: the API refuses a department or a
+   * building by name, because a name is not a key.
+   */
   department: string;
   building: string;
+  /** The unit's id — what `POST /items` and `PUT /items/:id` take. */
+  orgUnitId?: string;
+  /** The building's id — what `POST /items` and `PUT /items/:id` take. */
+  buildingId?: string;
   floor: string;
   room: string;
   photoUrl?: string | null;

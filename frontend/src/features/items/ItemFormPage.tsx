@@ -6,13 +6,14 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
-import { DepartmentPicker } from "../../components/DepartmentPicker";
+import { DepartmentIdPicker } from "../../components/DepartmentPicker";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
 import { PhotoField } from "../../components/PhotoField";
 import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
 import { Textarea } from "../../components/Textarea";
+import { useBuildings } from "../../hooks/useBuildings";
 import { useCategories } from "../../hooks/useCategories";
 import { useCreateItem, useUpdateItem } from "../../hooks/useItemMutations";
 import { useItemById } from "../../hooks/useItems";
@@ -32,8 +33,8 @@ import { CONDITIONS, CONDITION_LABELS } from "../../types/enums";
 const itemSchema = z.object({
   name: z.string().trim().min(1, "Item name is required"),
   categoryId: z.string().min(1, "Category is required"),
-  department: z.string().trim().min(1, "Department is required"),
-  building: z.string().trim().min(1, "Building is required"),
+  orgUnitId: z.string().trim().min(1, "Department is required"),
+  buildingId: z.string().trim().min(1, "Building is required"),
   floor: z.string().trim().min(1, "Floor is required"),
   room: z.string().trim().min(1, "Room is required"),
   ownerId: z.string().min(1, "Owner is required"),
@@ -80,6 +81,48 @@ function isPhotoSource(value: string): boolean {
   }
 }
 
+/**
+ * The building picker — the college's own list, by id.
+ *
+ * It used to be a free-text input, and that is what made the register's
+ * building filter unreliable: two spellings of the same building were two
+ * different buildings as far as the filter was concerned, and half the items
+ * filed under one were invisible under the other. The buildings are now
+ * managed in one place (`/admin/buildings`), and this is that list.
+ */
+function BuildingPicker({
+  value,
+  onChange,
+  error,
+  disabled,
+  required,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  error?: string | undefined;
+  disabled?: boolean | undefined;
+  required?: boolean | undefined;
+}) {
+  const buildingsQuery = useBuildings();
+  const options = useMemo(
+    () => (buildingsQuery.data ?? []).map((building) => ({ value: building.id, label: building.name })),
+    [buildingsQuery.data],
+  );
+
+  return (
+    <Select
+      label="Building"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      error={error}
+      disabled={disabled}
+      required={required}
+      options={options}
+      placeholder={buildingsQuery.isPending ? "Loading buildings…" : "Select a building"}
+    />
+  );
+}
+
 /** `/items/new` and `/items/:id/edit` — one form, two modes (F2.1, F2.3, F2.4). */
 export function ItemFormPage({ mode }: { mode: "create" | "edit" }) {
   return mode === "create" ? <CreateItemForm /> : <EditItemForm />;
@@ -105,8 +148,8 @@ function toPayload(values: ItemFormValues, ownerId: string) {
   return {
     name: values.name.trim(),
     categoryId: values.categoryId,
-    department: values.department.trim(),
-    building: values.building.trim(),
+    orgUnitId: values.orgUnitId.trim(),
+    buildingId: values.buildingId.trim(),
     floor: values.floor.trim(),
     room: values.room.trim(),
     ownerId,
@@ -255,7 +298,11 @@ function CreateItemForm() {
    * field's own error clears the way a typed input's would.
    */
   function setDepartment(value: string) {
-    setValue("department", value, { shouldDirty: true, shouldValidate: true });
+    setValue("orgUnitId", value, { shouldDirty: true, shouldValidate: true });
+  }
+
+  function setBuilding(value: string) {
+    setValue("buildingId", value, { shouldDirty: true, shouldValidate: true });
   }
 
   const categoryOptions = useMemo(
@@ -297,12 +344,25 @@ function CreateItemForm() {
             greyed block read as locked too — a reviewer looking at the form
             reported the department dropdown as "not changeable". It always was
             editable; the grouping was lying about it.
+
+            It picks by **id**: `Item.orgUnitId` is a foreign key, and the API
+            refuses the department's name.
           */}
-          <DepartmentPicker value={watch("department") || ""} onChange={(v) => setDepartment(v)} error={errors.department?.message} />
+          <DepartmentIdPicker
+            value={watch("orgUnitId") || ""}
+            onChange={setDepartment}
+            error={errors.orgUnitId?.message}
+            required
+          />
         </FormSection>
 
         <FormSection heading="Location" columns>
-          <Input label="Building" error={errors.building?.message} {...register("building")} required />
+          <BuildingPicker
+            value={watch("buildingId") || ""}
+            onChange={setBuilding}
+            error={errors.buildingId?.message}
+            required
+          />
           <Input label="Floor" error={errors.floor?.message} {...register("floor")} required />
           <Input label="Room" error={errors.room?.message} {...register("room")} required />
         </FormSection>
@@ -408,8 +468,8 @@ function EditItemInner({
     () => ({
       name: item?.name ?? "",
       categoryId: item?.categoryId ?? "",
-      department: item?.department ?? "",
-      building: item?.building ?? "",
+      orgUnitId: item?.orgUnitId ?? "",
+      buildingId: item?.buildingId ?? "",
       floor: item?.floor ?? "",
       room: item?.room ?? "",
       ownerId: item?.ownerId ?? "",
@@ -445,7 +505,7 @@ function EditItemInner({
 
   /** See `CreateItemForm`'s copy — a picker change must mark the form dirty. */
   function setDepartment(value: string) {
-    setValue("department", value, { shouldDirty: true, shouldValidate: true });
+    setValue("orgUnitId", value, { shouldDirty: true, shouldValidate: true });
   }
 
   const categoryOptions = useMemo(
@@ -510,10 +570,10 @@ function EditItemInner({
               item's *address* (building/floor/room) and its custodian need an
               approval (SRS F6); which department files it is an ordinary edit.
             */}
-            <DepartmentPicker
-              value={watch("department") || ""}
+            <DepartmentIdPicker
+              value={watch("orgUnitId") || ""}
               onChange={(v) => setDepartment(v)}
-              error={errors.department?.message}
+              error={errors.orgUnitId?.message}
               disabled={disposed}
               hint="Editable here — only the building, floor, room and custodian need an approved transfer."
             />
@@ -527,8 +587,11 @@ function EditItemInner({
               out of the submitted set. Moving an item is an approved TRANSFER
               request (SRS F6) — the rule `ownerId` below already followed, now
               applied to the other three transfer-only columns.
+
+              The building is shown by **name** — it is not editable here — while
+              the request carries its **id**, which is what the API stores.
             */}
-            <Input label="Building" error={errors.building?.message} {...register("building")} readOnly required />
+            <Input label="Building" value={item.building} readOnly required />
             <Input label="Floor" error={errors.floor?.message} {...register("floor")} readOnly required />
             <Input label="Room" error={errors.room?.message} {...register("room")} readOnly required />
             {!disposed && (

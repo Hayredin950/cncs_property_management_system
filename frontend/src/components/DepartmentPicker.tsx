@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useDepartments } from "../hooks/useDepartments";
 import { useItems } from "../hooks/useItems";
 import { cn } from "../lib/cn";
 import { CNCS_DEPARTMENTS } from "../lib/departments";
@@ -118,6 +119,51 @@ export function LockedDepartmentPicker({
       disabled={disabled}
       options={options}
       placeholder="Select a department"
+    />
+  );
+}
+
+/**
+ * The unit picker **by id** — what a write needs.
+ *
+ * `Item.orgUnitId` is a foreign key, so the item form has to send the unit's
+ * id; the name-based picker above sends a name, and the API answers 400. The
+ * options come from `GET /departments`, the college's own list of units, so
+ * the id and the name are always the same row.
+ *
+ * The value stays a **name** in the form's own state, because that is what the
+ * register shows and what the audit scope matches on; the id travels beside
+ * it. That is the one place in the app where the two are kept side by side,
+ * and it is deliberate: the id is a key, the name is what a person reads.
+ */
+export function DepartmentIdPicker({
+  label = "Department",
+  value,
+  onChange,
+  error,
+  disabled,
+  required,
+  hint,
+  className,
+}: DepartmentPickerProps) {
+  const departmentsQuery = useDepartments();
+  const options = useMemo(
+    () => (departmentsQuery.data ?? []).map((department) => ({ value: department.id, label: department.name })),
+    [departmentsQuery.data],
+  );
+
+  return (
+    <Select
+      label={label}
+      className={cn(className)}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      error={error}
+      disabled={disabled}
+      required={required}
+      hint={hint}
+      options={options}
+      placeholder={departmentsQuery.isPending ? "Loading departments…" : "Select a department"}
     />
   );
 }

@@ -77,8 +77,17 @@ export function fetchHeldItemsSummary(
 export interface CreateItemPayload {
   name: string;
   categoryId: string;
-  department: string;
-  building: string;
+  /**
+   * The unit and the building, **by id**.
+   *
+   * The API refuses them by name: `orgUnitId` and `buildingId` are foreign
+   * keys, and a name is not a key. The form used to send `department` and
+   * `building` — the two names the register displays — and every save came
+   * back 400 ("Invalid input: expected string, received undefined"), which
+   * left the Property Officer unable to register an item at all.
+   */
+  orgUnitId: string;
+  buildingId: string;
   floor: string;
   room: string;
   ownerId: string;

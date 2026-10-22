@@ -1,4 +1,5 @@
 import { createBrowserRouter, Outlet, type RouteObject } from "react-router-dom";
+import { AdminBuildingsPage } from "../features/admin/AdminBuildingsPage";
 import { AdminCategoriesPage } from "../features/admin/AdminCategoriesPage";
 import { AdminUsersPage } from "../features/admin/AdminUsersPage";
 import { DepartmentsPage } from "../features/admin/DepartmentsPage";
@@ -167,6 +168,10 @@ export const appRoutes: RouteObject[] = [
             children: [
               { path: "/items/new", element: <ItemFormPage mode="create" /> },
               { path: "/admin/categories", element: <AdminCategoriesPage /> },
+              // The college's buildings. The endpoint existed and nothing
+              // reached it, so the register's building filter could not be
+              // spelled one way — see `AdminBuildingsPage.tsx`.
+              { path: "/admin/buildings", element: <AdminBuildingsPage /> },
             ],
           },
 

@@ -51,12 +51,24 @@ buildingsRouter.get(
           skip,
           take: limit,
           orderBy: { name: "asc" },
+          // The count is what lets the management screen say "this building
+          // holds 12 items" before anyone tries to delete it — the delete
+          // below refuses a building that is in use, and the categories list
+          // carries the same count for the same reason.
+          include: { _count: { select: { items: true } } },
         }),
         prisma.building.count({ where: filters }),
       ]);
 
       res.status(200).json({
-        data: buildings,
+        data: buildings.map((building) => ({
+          id: building.id,
+          name: building.name,
+          code: building.code,
+          description: building.description,
+          address: building.address,
+          itemCount: building._count.items,
+        })),
         pagination: {
           page,
           limit,

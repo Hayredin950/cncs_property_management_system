@@ -93,6 +93,8 @@ export const NAV_ITEMS: NavItem[] = [
   // The college's departments, and how to add one.
   { label: "Departments", to: "/admin/departments", icon: Building2, roles: ["SYSTEM_ADMIN"], phase: 3 },
   { label: "Categories", to: "/admin/categories", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
+  // The college's buildings — the names the register is filtered by.
+  { label: "Buildings", to: "/admin/buildings", icon: Building2, roles: ["PROPERTY_OFFICER"], phase: 3 },
 ];
 
 export function visibleNavItems(role: Role): NavItem[] {

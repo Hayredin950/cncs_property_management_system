@@ -8,6 +8,7 @@ import {
   reverseDisposal,
 } from "../api/items";
 import { createCategory, deleteCategory, updateCategory } from "../api/categories";
+import { resendInvite } from "../api/users";
 import {approveUser,
   deleteUser,
   inviteUser,
@@ -345,6 +346,23 @@ export function useDeactivateUser() {
     },
     onError: (error) =>
       toast.error(error instanceof Error ? error.message : "Couldn't close the account"),
+  });
+}
+
+/**
+ * `POST /users/invites/:id/resend` — a fresh invitation link for an account
+ * that has not accepted its invitation yet.
+ */
+export function useResendInvite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => resendInvite(id),
+    onSuccess: () => {
+      toast.success("A new invitation link has been issued.");
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Couldn't resend the invitation"),
   });
 }
 

@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import {Check, ClipboardCopy, Mail, Pencil, ShieldCheck, Trash2, UserPlus, X, KeyRound, ClipboardCheck, UserX } from "lucide-react";
+import {Check, ClipboardCopy, Mail, Pencil, Send, ShieldCheck, Trash2, UserPlus, X, KeyRound, ClipboardCheck, UserX } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -21,6 +21,7 @@ import { INVITABLE_ROLES, ROLE_LABELS, ROLES, type InvitableRole, type Role } fr
 import {
   useApproveUser,
   useDeactivateUser,
+  useResendInvite,
   useDeleteUser,
   useInviteUser,
   usePromoteUser,
@@ -133,6 +134,7 @@ export function AdminUsersPage() {
   const [resetSent, setResetSent] = useState<string | null>(null);
   const deleteMutation = useDeleteUser();
   const closeMutation = useDeactivateUser();
+  const resendMutation = useResendInvite();
   const approveMutation = useApproveUser();
   const rejectMutation = useRejectUser();
 
@@ -753,6 +755,23 @@ export function AdminUsersPage() {
                           setPasswordFor(account);
                         }}
                       />
+                      {/*
+                        An invitation that has not been accepted can be sent
+                        again. The endpoint reissues the single-use token, so a
+                        link that leaked cannot be used after a resend — which is
+                        exactly what somebody needs when the mail never arrived.
+                        Only for an account still waiting to accept: an active
+                        account has no invitation to resend.
+                      */}
+                      {account.accountStatus === "PENDING_EMAIL_VERIFICATION" && (
+                        <IconButton
+                          size="sm"
+                          variant="outline"
+                          icon={<Send className="h-4 w-4" aria-hidden="true" />}
+                          label={`Resend the invitation to ${account.email}`}
+                          onClick={() => resendMutation.mutate(account.id)}
+                        />
+                      )}
                       {/* Closing an account, not deleting it. The account
                           stays, it cannot sign in again, and the items it
                           held move to REVERTED_UNVERIFIED for the department

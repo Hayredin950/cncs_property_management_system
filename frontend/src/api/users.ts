@@ -101,6 +101,20 @@ export function inviteUser(payload: InviteUserPayload): Promise<InviteAccountRes
   return apiClient.post<InviteAccountResponse>("/users/invite", payload);
 }
 
+/**
+ * `POST /users/invites/:id/resend` — issue a **new** invitation link for an
+ * account that has not accepted its invitation yet (T8).
+ *
+ * The old token is deleted and a new one created, so a link that leaked cannot
+ * be used after a resend. The account row is reused — a lapsed invitation is
+ * not a duplicate account.
+ */
+export function resendInvite(id: string): Promise<{ message: string; expiresAt: string }> {
+  return apiClient.post<{ message: string; expiresAt: string }>(
+    `/users/invites/${encodeURIComponent(id)}/resend`,
+  );
+}
+
 /** `PATCH /users/:id` — correct a name or email. A taken email answers 409. */
 export function updateUser(id: string, payload: UpdateUserPayload): Promise<UserSummary> {
   return apiClient.patch<UserSummary>(`/users/${encodeURIComponent(id)}`, payload);

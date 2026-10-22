@@ -70,7 +70,7 @@ export function NotificationsPage() {
 
   if (inboxQuery.isError) {
     return inboxQuery.error instanceof NetworkError ? (
-      <OfflineState />
+      <OfflineState onRetry={() => inboxQuery.refetch()} />
     ) : (
       <ErrorState
         heading="Couldn't load notifications"

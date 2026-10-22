@@ -48,7 +48,7 @@ export function ItemDetailPage() {
     const error = query.error;
 
     if (error instanceof NetworkError) {
-      return <OfflineState />;
+      return <OfflineState onRetry={() => query.refetch()} />;
     }
 
     if (error instanceof ApiError && error.status === 410) {

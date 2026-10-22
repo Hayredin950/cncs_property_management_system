@@ -42,7 +42,7 @@ export function SystemStatusPage() {
         ) : status.isError ? (
           <>
             {status.error instanceof NetworkError ? (
-              <OfflineState />
+              <OfflineState onRetry={() => status.refetch()} />
             ) : (
               <p className="text-sm text-slate-500">
                 Couldn't load the system status
@@ -88,6 +88,11 @@ export function SystemStatusPage() {
         <ErrorState
           heading="Couldn't load the system's statistics"
           body={stats.error instanceof Error ? stats.error.message : undefined}
+          action={
+            <Button size="sm" onClick={() => void stats.refetch()}>
+              Try again
+            </Button>
+          }
         />
       ) : stats.data ? (
         <StatisticsGrid statistics={stats.data} />

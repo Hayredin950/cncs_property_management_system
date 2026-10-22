@@ -1,6 +1,7 @@
 import { AlertTriangle, WifiOff } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
+import { Button } from "./Button";
 
 export type ErrorStateTone = "danger" | "neutral";
 
@@ -47,8 +48,19 @@ export function ErrorState({ icon, heading, body, action, tone = "danger", class
   );
 }
 
-/** §11's exact offline copy — network failure is not the same UI as a 4xx/5xx. */
-export function OfflineState({ className }: { className?: string }) {
+/**
+ * §11's exact offline copy — network failure is not the same UI as a 4xx/5xx.
+ *
+ * An offline state still offers a retry: the network can come back, and a
+ * person should not have to reload the whole app to find out.
+ */
+export function OfflineState({
+  className,
+  onRetry,
+}: {
+  className?: string;
+  onRetry?: (() => void) | undefined;
+}) {
   return (
     <ErrorState
       tone="neutral"
@@ -56,6 +68,13 @@ export function OfflineState({ className }: { className?: string }) {
       heading="You're offline"
       body="Showing the last data we loaded. Reconnect to refresh."
       className={className}
+      {...(onRetry && {
+        action: (
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            Try again
+          </Button>
+        ),
+      })}
     />
   );
 }

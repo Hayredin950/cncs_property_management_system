@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { History } from "lucide-react";
 import { Card } from "../../../components/Card";
 import { EmptyState } from "../../../components/EmptyState";
+import { WidgetError } from "./WidgetError";
 import { SkeletonText } from "../../../components/Skeleton";
 import { formatRelativeTime } from "../../../lib/formatters";
 import { useAuditHistoryList } from "../../../hooks/useAudits";
@@ -19,7 +20,7 @@ import { useAuditHistoryList } from "../../../hooks/useAudits";
  * started and walked away from is the one worth noticing.
  */
 export function AuditHistoryQuickList() {
-  const { data, isPending, isError } = useAuditHistoryList();
+  const { data, isPending, isError, refetch } = useAuditHistoryList();
 
   return (
     <Card className="flex flex-col gap-4">
@@ -43,10 +44,10 @@ export function AuditHistoryQuickList() {
           caught every error and returned an empty list, which is how a 401 and a
           parse failure both came out as "No audits completed yet".
         */
-        <EmptyState
-          icon={<History className="h-8 w-8" />}
+        <WidgetError
           heading="Couldn't load audit history"
           body="There was a problem loading the audit history. Your audit records are not affected — try again in a moment."
+          onRetry={() => void refetch()}
         />
       ) : !data || data.length === 0 ? (
         <EmptyState

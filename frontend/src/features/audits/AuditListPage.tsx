@@ -219,7 +219,7 @@ export function AuditListPage() {
         </div>
       ) : auditsQuery.isError ? (
         auditsQuery.error instanceof NetworkError ? (
-          <OfflineState />
+          <OfflineState onRetry={() => auditsQuery.refetch()} />
         ) : (
           <ErrorState
             heading="Couldn't load the audit history"

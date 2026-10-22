@@ -110,6 +110,11 @@ export function DepartmentsPage() {
         <ErrorState
           heading="Couldn't load the departments"
           body={departmentsQuery.error instanceof Error ? departmentsQuery.error.message : undefined}
+          action={
+            <Button size="sm" onClick={() => departmentsQuery.refetch()}>
+              Try again
+            </Button>
+          }
         />
       ) : departments.length === 0 ? (
         <EmptyState

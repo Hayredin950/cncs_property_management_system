@@ -261,7 +261,7 @@ export function RequestsListPage() {
         </div>
       ) : requestsQuery.isError ? (
         requestsQuery.error instanceof NetworkError ? (
-          <OfflineState />
+          <OfflineState onRetry={() => requestsQuery.refetch()} />
         ) : (
           <ErrorState
             heading="Couldn't load requests"

@@ -43,6 +43,18 @@ export function ReportsPage() {
 
   const departmentOptions = (departmentsQuery.data ?? []).map((d) => ({ value: d.name, label: d.name }));
   const categoryOptions = (categoriesQuery.data ?? []).map((c) => ({ value: c.id, label: c.name }));
+  const lookupQueries = [departmentsQuery, categoriesQuery, auditsQuery];
+  const lookupFailed = lookupQueries.some((query) => query.isError);
+  const departmentHint = departmentsQuery.isError
+    ? "Couldn't load the departments."
+    : departmentOptions.length === 0
+      ? "No departments yet."
+      : "Departments come from items already registered.";
+  const categoryHint = categoriesQuery.isError
+    ? "Couldn't load the categories."
+    : categoryOptions.length === 0
+      ? "No categories yet."
+      : undefined;
   const auditOptions = (auditsQuery.data?.audits ?? []).map((a) => ({
     value: a.id,
     label: `${a.scopeValue || a.scopeType} (${a.id.slice(0, 8)}...)`,
@@ -243,6 +255,18 @@ export function ReportsPage() {
         </p>
       )}
 
+      {lookupFailed && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700"
+        >
+          <span>Couldn't load the report filters. The exports still use the dates you set.</span>
+          <Button size="sm" variant="outline" onClick={() => lookupQueries.forEach((query) => query.refetch())}>
+            Try again
+          </Button>
+        </div>
+      )}
+
       {activeTab === "inventory" && (
         <Card role="region" aria-label="Inventory" className="flex flex-col gap-4">
           <SectionHeading icon={<MonitorCheck className="h-4 w-4" aria-hidden="true" />} title="Inventory" />
@@ -256,7 +280,7 @@ export function ReportsPage() {
               onChange={(event) => setInventory({ ...inventory, department: event.target.value })}
               options={departmentOptions}
               placeholder="All departments"
-              hint="Departments come from items already registered."
+              hint={departmentHint}
             />
             <Select
               label="Category"
@@ -264,6 +288,7 @@ export function ReportsPage() {
               onChange={(event) => setInventory({ ...inventory, categoryId: event.target.value })}
               options={categoryOptions}
               placeholder="All categories"
+              {...(categoryHint ? { hint: categoryHint } : {})}
             />
             <Select
               label="Status"

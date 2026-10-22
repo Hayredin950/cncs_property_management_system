@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Button } from "../../../components/Button";
 import { Card } from "../../../components/Card";
 import { EmptyState } from "../../../components/EmptyState";
+import { WidgetError } from "./WidgetError";
 import { SkeletonText } from "../../../components/Skeleton";
 import { formatRelativeTime } from "../../../lib/formatters";
 import { useRecentSystemEvents } from "../../../hooks/useSystem";
@@ -16,7 +17,7 @@ import { useRecentSystemEvents } from "../../../hooks/useSystem";
  * the bottom are the ones nobody reads.
  */
 export function RecentSystemEvents() {
-  const { data, isPending, isError } = useRecentSystemEvents(5);
+  const { data, isPending, isError, refetch } = useRecentSystemEvents(5);
   const events = data?.events ?? [];
   const total = data?.total ?? 0;
 
@@ -38,10 +39,10 @@ export function RecentSystemEvents() {
           <SkeletonText lines={3} />
         </div>
       ) : isError ? (
-        <EmptyState
-          icon={<AlertCircle className="h-8 w-8" />}
+        <WidgetError
           heading="Couldn't load system events"
           body="There was a problem loading recent system events."
+          onRetry={() => void refetch()}
         />
       ) : events.length === 0 ? (
         <EmptyState

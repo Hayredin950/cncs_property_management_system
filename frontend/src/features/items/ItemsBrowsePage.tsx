@@ -329,7 +329,7 @@ export function ItemsBrowsePage() {
         </div>
       ) : itemsQuery.isError ? (
         itemsQuery.error instanceof NetworkError ? (
-          <OfflineState />
+          <OfflineState onRetry={() => itemsQuery.refetch()} />
         ) : (
           <ErrorState
             heading="Couldn't load items"

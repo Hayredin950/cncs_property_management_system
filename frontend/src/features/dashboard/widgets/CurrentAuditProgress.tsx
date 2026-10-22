@@ -2,11 +2,12 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, ClipboardCheck } from "lucide-react";
 import { Card } from "../../../components/Card";
 import { EmptyState } from "../../../components/EmptyState";
+import { WidgetError } from "./WidgetError";
 import { SkeletonText } from "../../../components/Skeleton";
 import { useActiveAudit } from "../../../hooks/useAudits";
 
 export function CurrentAuditProgress() {
-  const { data, isPending, isError } = useActiveAudit();
+  const { data, isPending, isError, refetch } = useActiveAudit();
   /*
     A session over a department with no in-scope rows reports `total: 0`, and
     `0 / 0` is `NaN` — which Tailwind passes through as an invalid `width` and the
@@ -34,10 +35,10 @@ export function CurrentAuditProgress() {
           <SkeletonText lines={2} />
         </div>
       ) : isError ? (
-        <EmptyState
-          icon={<ClipboardCheck className="h-8 w-8" />}
+        <WidgetError
           heading="Couldn't load audit progress"
           body="There was a problem loading the current audit session."
+          onRetry={() => void refetch()}
         />
       ) : !data ? (
         <EmptyState

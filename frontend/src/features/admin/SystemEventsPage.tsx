@@ -3,6 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { Card } from "../../components/Card";
 import { EmptyState } from "../../components/EmptyState";
+import { ErrorState } from "../../components/ErrorState";
+import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import { Pagination } from "../../components/Pagination";
 import { Select } from "../../components/Select";
@@ -95,10 +97,18 @@ export function SystemEventsPage() {
           </div>
         </Card>
       ) : eventsQuery.isError ? (
-        <EmptyState
-          icon={<AlertCircle className="h-8 w-8" />}
+        <ErrorState
           heading="Couldn't load the system events"
-          body="There was a problem reading the account log."
+          body={
+            eventsQuery.error instanceof Error
+              ? eventsQuery.error.message
+              : "There was a problem reading the account log."
+          }
+          action={
+            <Button size="sm" onClick={() => eventsQuery.refetch()}>
+              Try again
+            </Button>
+          }
         />
       ) : events.length === 0 ? (
         <EmptyState

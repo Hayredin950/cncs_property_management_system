@@ -2,6 +2,7 @@ import { Users, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../../../components/Card";
 import { SkeletonText } from "../../../components/Skeleton";
+import { WidgetError } from "./WidgetError";
 import { useAuth } from "../../../app/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { fetchDepartmentRoster } from "../../../api/departments";
@@ -17,7 +18,7 @@ import { fetchDepartmentRoster } from "../../../api/departments";
  */
 export function DepartmentRoster() {
   const { user } = useAuth();
-  const { data, isPending, isError } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["department-roster", user?.departmentId],
     queryFn: () => (user?.departmentId ? fetchDepartmentRoster(user.departmentId) : Promise.resolve(null)),
     enabled: !!user?.departmentId,
@@ -45,7 +46,7 @@ export function DepartmentRoster() {
           <SkeletonText lines={1} />
         </div>
       ) : isError ? (
-        <p className="text-sm text-slate-500">Couldn&apos;t load department roster</p>
+        <WidgetError heading="Couldn't load department roster" onRetry={() => void refetch()} />
       ) : (
         <Link
           to={`/departments/${user.departmentId}`}

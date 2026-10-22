@@ -178,7 +178,7 @@ export function DashboardPage() {
               </div>
             ) : activeQuery.isError ? (
               activeQuery.error instanceof NetworkError ? (
-                <OfflineState />
+                <OfflineState onRetry={() => activeQuery.refetch()} />
               ) : (
                 <ErrorState
                   heading="Couldn't load requests"

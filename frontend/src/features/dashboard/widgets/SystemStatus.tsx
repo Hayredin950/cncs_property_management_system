@@ -1,5 +1,6 @@
 import { Card } from "../../../components/Card";
 import { SkeletonText } from "../../../components/Skeleton";
+import { WidgetError } from "./WidgetError";
 import { useSystemStatus } from "../../../hooks/useSystem";
 import { formatDateUTC } from "../../../lib/formatters";
 
@@ -14,7 +15,7 @@ function formatUptime(seconds: number | undefined): string {
 }
 
 export function SystemStatus() {
-  const { data, isPending, isError } = useSystemStatus();
+  const { data, isPending, isError, refetch } = useSystemStatus();
 
   return (
     <Card className="flex flex-col gap-4">
@@ -25,7 +26,7 @@ export function SystemStatus() {
           <SkeletonText lines={3} />
         </div>
       ) : isError ? (
-        <p className="text-sm text-slate-500">Couldn't load system status</p>
+        <WidgetError heading="Couldn't load system status" onRetry={() => void refetch()} />
       ) : (
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between text-sm">

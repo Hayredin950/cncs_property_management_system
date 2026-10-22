@@ -2,10 +2,11 @@ import { Link } from "react-router-dom";
 import { ClipboardCheck, Package } from "lucide-react";
 import { Card } from "../../../components/Card";
 import { SkeletonText } from "../../../components/Skeleton";
+import { WidgetError } from "./WidgetError";
 import { useHeldItems } from "../../../hooks/useItems";
 
 export function HeldItems() {
-  const { data, isPending, isError } = useHeldItems();
+  const { data, isPending, isError, refetch } = useHeldItems();
 
   return (
     <Card className="flex flex-col gap-4">
@@ -24,7 +25,7 @@ export function HeldItems() {
           <SkeletonText lines={1} />
         </div>
       ) : isError ? (
-        <p className="text-sm text-slate-500">Couldn't load your held items</p>
+        <WidgetError heading="Couldn't load your held items" onRetry={() => void refetch()} />
       ) : (
         <>
           <div className="flex items-center gap-3">

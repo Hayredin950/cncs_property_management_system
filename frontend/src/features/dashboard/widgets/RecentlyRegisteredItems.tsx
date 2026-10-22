@@ -2,13 +2,14 @@ import { Link } from "react-router-dom";
 import { Clock } from "lucide-react";
 import { Card } from "../../../components/Card";
 import { EmptyState } from "../../../components/EmptyState";
+import { WidgetError } from "./WidgetError";
 import { SkeletonText } from "../../../components/Skeleton";
 import { formatRelativeTime } from "../../../lib/formatters";
 import { useRecentItems } from "../../../hooks/useItems";
 import type { RecentItem } from "../../../api/items";
 
 export function RecentlyRegisteredItems() {
-  const { data, isPending, isError } = useRecentItems({ limit: 5 });
+  const { data, isPending, isError, refetch } = useRecentItems({ limit: 5 });
 
   return (
     <Card className="flex flex-col gap-4">
@@ -27,10 +28,10 @@ export function RecentlyRegisteredItems() {
           <SkeletonText lines={3} />
         </div>
       ) : isError ? (
-        <EmptyState
-          icon={<Clock className="h-8 w-8" />}
+        <WidgetError
           heading="Couldn't load recent items"
           body="There was a problem loading the recently registered items."
+          onRetry={() => void refetch()}
         />
       ) : !data || data.length === 0 ? (
         <EmptyState

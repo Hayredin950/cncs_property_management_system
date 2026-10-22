@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { Card } from "../../../components/Card";
 import { SkeletonText } from "../../../components/Skeleton";
+import { WidgetError } from "./WidgetError";
 import { useOpenFindings } from "../../../hooks/useAudits";
 
 /**
@@ -16,7 +17,7 @@ import { useOpenFindings } from "../../../hooks/useAudits";
  * history (14 Oct). So a failure renders, and says what it does not know.
  */
 export function OpenFindings() {
-  const { data, isPending, isError } = useOpenFindings();
+  const { data, isPending, isError, refetch } = useOpenFindings();
 
   if (!isPending && !isError && (!data || data.count === 0)) {
     return null;
@@ -53,9 +54,7 @@ export function OpenFindings() {
           <SkeletonText lines={1} />
         </div>
       ) : isError ? (
-        <p className="text-sm text-slate-500">
-          Couldn&apos;t load open findings — this is unknown, not zero.
-        </p>
+        <WidgetError heading="Couldn't load open findings — this is unknown, not zero." onRetry={() => void refetch()} />
       ) : (
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning-100">

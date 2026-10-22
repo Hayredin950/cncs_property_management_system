@@ -59,7 +59,7 @@ export function RequestDetailPage() {
 
   if (requestQuery.isError) {
     const error = requestQuery.error;
-    if (error instanceof NetworkError) return <OfflineState />;
+    if (error instanceof NetworkError) return <OfflineState onRetry={() => requestQuery.refetch()} />;
     return (
       <ErrorState
         icon={<SearchX className="h-8 w-8" aria-hidden="true" />}
@@ -72,11 +72,18 @@ export function RequestDetailPage() {
               : undefined
         }
         action={
-          <Link to="/requests">
-            <Button size="sm" variant="outline">
-              Back to requests
-            </Button>
-          </Link>
+          <div className="flex flex-wrap justify-center gap-2">
+            {!(error instanceof ApiError && error.status === 404) && (
+              <Button size="sm" onClick={() => requestQuery.refetch()}>
+                Try again
+              </Button>
+            )}
+            <Link to="/requests">
+              <Button size="sm" variant="outline">
+                Back to requests
+              </Button>
+            </Link>
+          </div>
         }
       />
     );

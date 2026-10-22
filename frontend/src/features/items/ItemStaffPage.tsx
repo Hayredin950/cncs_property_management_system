@@ -63,7 +63,7 @@ export function ItemStaffPage() {
 
   if (itemQuery.isError) {
     return itemQuery.error instanceof NetworkError ? (
-      <OfflineState />
+      <OfflineState onRetry={() => itemQuery.refetch()} />
     ) : (
       <ErrorState
         heading="Couldn't load this item"

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { Card } from "../../../components/Card";
 import { SkeletonText } from "../../../components/Skeleton";
+import { WidgetError } from "./WidgetError";
 import { useOverdueLoans } from "../../../hooks/useLoans";
 
 /**
@@ -14,7 +15,7 @@ import { useOverdueLoans } from "../../../hooks/useLoans";
  * token-less fetch read as a clean loan register (14 Oct). So a failure renders.
  */
 export function OverdueLoans() {
-  const { data, isPending, isError } = useOverdueLoans();
+  const { data, isPending, isError, refetch } = useOverdueLoans();
 
   if (!isPending && !isError && (!data || data.count === 0)) {
     return null;
@@ -48,9 +49,7 @@ export function OverdueLoans() {
           <SkeletonText lines={1} />
         </div>
       ) : isError ? (
-        <p className="text-sm text-slate-500">
-          Couldn&apos;t load overdue loans — this is unknown, not zero.
-        </p>
+        <WidgetError heading="Couldn't load overdue loans — this is unknown, not zero." onRetry={() => void refetch()} />
       ) : (
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning-100">

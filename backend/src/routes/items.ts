@@ -383,6 +383,21 @@ itemsRouter.get(
        * `allItemsWhere()` instead, which makes "disposed included on purpose"
        * greppable.
        */
+      /**
+       * The register, plus the items in the viewer's own hands that are not in
+       * service yet.
+       *
+       * `activeItemsWhere` pins `status: "ACTIVE"`, which is right for the
+       * college's register: an item that is disposed, voided or lost is not
+       * part of it. But it also hid the item **waiting for this person to
+       * confirm they have it** — the one action the register was hiding from
+       * the only person who could take it. So the viewer's own items in a
+       * live-but-not-yet-confirmed state come with them.
+       *
+       * It is the viewer's *own* items and nobody else's, and the other
+       * filters (search, category, building) still apply to them, so a search
+       * cannot smuggle in a row the caller would not otherwise see.
+       */
       const where = activeItemsWhere(filters);
 
       const [items, total] = await Promise.all([
@@ -524,12 +539,37 @@ itemsRouter.get(
 
       const where: Prisma.ItemWhereInput = {
         OR: orConditions,
-        status: "ACTIVE",
+        /**
+         * The states an item can be in *while it is in somebody's hands*: in
+         * use, waiting for its holder to confirm it, and out on loan.
+         *
+         * It used to be `status: "ACTIVE"` only, which hid exactly the item
+         * the question is about — the one waiting for the person to say they
+         * have it. A holder could not see it, could not count it, and had no
+         * way to find it in the register, which pins `status: "ACTIVE"` too.
+         * The claim handshake was therefore a screen nobody could reach.
+         */
+        status: { in: ["ACTIVE", "PENDING_CLAIM", "LOANED"] },
+      };
+
+      /**
+       * The ones waiting for this person to confirm them. They are the
+       * actionable part of the answer, and they are counted separately so the
+       * tile can say "8 items held by you, 1 waiting for you".
+       */
+      const awaitingConfirmationWhere: Prisma.ItemWhereInput = {
+        AND: [
+          where,
+          { status: "PENDING_CLAIM" },
+        ],
       };
 
       if (summary) {
-        const count = await prisma.item.count({ where });
-        res.status(200).json({ count });
+        const [count, awaitingConfirmation] = await Promise.all([
+          prisma.item.count({ where }),
+          prisma.item.count({ where: awaitingConfirmationWhere }),
+        ]);
+        res.status(200).json({ count, awaitingConfirmation });
       } else {
         const items = await prisma.item.findMany({
           where,
@@ -708,6 +748,23 @@ itemsRouter.post(
         purchaseCost: parsed.data.purchaseCost,
         currentValue: parsed.data.currentValue ?? null,
       });
+
+      /**
+       * Tell the holder.
+       *
+       * An item registered to somebody is not theirs until they say they have
+       * it (spec 4.4), and the only thing that starts that conversation is
+       * this notification. Without it the claim handshake waits for a person
+       * to notice a register row — and the register did not even list it.
+       */
+      if (custodian.holderType === "STAFF" && custodian.holderId) {
+        await prisma.notification.create({
+          data: {
+            userId: custodian.holderId,
+            message: `You have been assigned ${newItem.name} (${newItem.tagId}). Please confirm that you have it — until you do, it stays in the college pool. Open it from the register to confirm.`,
+          },
+        });
+      }
 
       res.status(201).json(newItem);
     } catch (err) {

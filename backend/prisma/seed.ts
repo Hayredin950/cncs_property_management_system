@@ -491,6 +491,13 @@ interface ItemSpec {
   voidReason?: string;
   voidedDaysAgo?: number;
   parentTagId?: string;
+  /**
+   * The item is waiting for its holder to confirm it — the claim handshake
+   * (spec 4.4). The claim window is how long they have to answer before the
+   * item reverts to the college pool.
+   */
+  pendingClaim?: boolean;
+  claimDueInDays?: number;
 }
 
 /**
@@ -1175,6 +1182,46 @@ const ITEMS: ItemSpec[] = [
     brand: "Apple",
     model: "MacBook Air M2",
     photo: "/photos/macbook-air.jpg",
+  },
+  {
+    // Waiting for its holder to confirm it. This is the claim handshake
+    // (spec 4.4) — the item is assigned, it is not yet the person's, and
+    // until they say they have it the register says so. Without an item in
+    // this state the whole handshake is a screen nobody can reach.
+    tagId: "CNCS-CLAIM-0001",
+    name: "Dell Latitude 5440 (awaiting confirmation)",
+    category: "Electronics",
+    unit: "cs",
+    building: "CNCS",
+    floor: "2",
+    room: "201",
+    owner: "cs1",
+    holder: "STAFF",
+    cost: 62000,
+    condition: Condition.NEW,
+    brand: "Dell",
+    model: "Latitude 5440",
+    notes: "Registered and assigned; the holder has not confirmed receipt yet.",
+    pendingClaim: true,
+    claimDueInDays: 7,
+  },
+  {
+    // The same handshake, for another person, so a second account can be seen
+    // refusing one rather than only claiming one.
+    tagId: "CNCS-CLAIM-0002",
+    name: "Wireless Keyboard & Mouse Set (awaiting confirmation)",
+    category: "Electronics",
+    unit: "bio",
+    building: "CNCS",
+    floor: "1",
+    room: "104",
+    owner: "bio1",
+    holder: "STAFF",
+    cost: 2400,
+    condition: Condition.NEW,
+    notes: "Registered and assigned; the holder has not confirmed receipt yet.",
+    pendingClaim: true,
+    claimDueInDays: 7,
   },
   {
     tagId: "CNCS-STAFF-0002",
@@ -3691,14 +3738,23 @@ async function main() {
       // picture at all, and the picture is the point.
       photoUrl: photoFor(spec),
       notes: spec.notes ?? null,
-      status: spec.status ?? ItemStatus.ACTIVE,
+      status: spec.pendingClaim ? ItemStatus.PENDING_CLAIM : (spec.status ?? ItemStatus.ACTIVE),
       disposalReason: spec.disposalReason ?? null,
       disposedAt: spec.disposedDaysAgo !== undefined ? daysAgo(spec.disposedDaysAgo) : null,
       voidReason: spec.voidReason ?? null,
       voidedAt: spec.voidedDaysAgo !== undefined ? daysAgo(spec.voidedDaysAgo) : null,
       voidedById: spec.voidedDaysAgo !== undefined ? (users.get("officer")?.id ?? null) : null,
       claimedAt: null,
-      claimDueAt: null,
+      /**
+       * The claim handshake. Without an item that is waiting to be confirmed,
+       * nobody can see the handshake at all: the item is created, it is
+       * assigned to a person, and it sits in the college pool until they say
+       * they have it. The demo had none, so "I have this item" and "I never
+       * received it" were screens no person could ever reach.
+       */
+      claimDueAt: spec.pendingClaim
+        ? daysAhead(spec.claimDueInDays ?? 7)
+        : null,
       lastAuditedAt: null,
       lastVerifiedAt: null,
       lastVerifiedById: null,

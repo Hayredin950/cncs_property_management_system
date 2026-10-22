@@ -33,8 +33,25 @@
 export const DISPOSED_PUBLIC_MESSAGE = "This item is no longer in service";
 
 /**
- * Default listing filter: active items only (F7.2 — disposal is a status change,
- * never a delete).
+ * Default listing filter: the college's **live** items.
+ *
+ * It used to pin `status: "ACTIVE"`, which is the same rule as "exclude the
+ * disposed" (F7.2 — a disposal is a status change, never a delete) taken one
+ * step too far. The register is the college's assets, and three of the states
+ * are still live:
+ *
+ *   - `PENDING_CLAIM` — registered and assigned, waiting for the holder to
+ *     confirm they have it. Pinning ACTIVE hid the item from the register
+ *     **and** from the person who had to act on it, which made the claim
+ *     handshake (spec 4.4) a screen nobody could reach.
+ *   - `LOANED` — out on loan, still the college's asset.
+ *   - `REVERTED_UNVERIFIED` — came back from somebody who left; it needs
+ *     verifying.
+ *
+ * What the listing must not show is what is **out of service**: `DISPOSED`,
+ * `VOIDED` and `LOST`. Those are excluded, and the exclusion is by name
+ * rather than by pinning one status, so a new live state cannot silently
+ * vanish from the register.
  *
  * `status` is pinned LAST on purpose. Spreading `extra` first means a caller who
  * passes `{ status: "DISPOSED" }` — from an unvalidated query string, say —
@@ -43,8 +60,11 @@ export const DISPOSED_PUBLIC_MESSAGE = "This item is no longer in service";
  */
 export function activeItemsWhere<T extends object = Record<string, never>>(
   extra?: T,
-): T & { status: "ACTIVE" } {
-  return { ...(extra ?? {}), status: "ACTIVE" as const } as T & { status: "ACTIVE" };
+): T & { status: { notIn: string[] } } {
+  return {
+    ...(extra ?? {}),
+    status: { notIn: ["DISPOSED", "VOIDED", "LOST"] },
+  } as T & { status: { notIn: string[] } };
 }
 
 /**

@@ -55,11 +55,22 @@ export function fetchRecentItems(limit: number, signal?: AbortSignal): Promise<R
 }
 
 /**
- * `GET /items/held-by-me?summary=true` — how many active items this account holds,
- * as holder or owner. Any signed-in role; the question it answers is "mine".
+ * `GET /items/held-by-me?summary=true` — how many items this account holds, as
+ * holder or owner, and how many of them are waiting for the holder to confirm
+ * them. Any signed-in role; the question it answers is "mine".
+ *
+ * The second number is the one with a deadline: an item waiting for a
+ * confirmation reverts to the college pool when the claim window passes, and
+ * the person who can stop that is the holder.
  */
-export function fetchHeldItemsSummary(signal?: AbortSignal): Promise<{ count: number }> {
-  return apiClient.get<{ count: number }>("/items/held-by-me", { summary: "true" }, signal);
+export function fetchHeldItemsSummary(
+  signal?: AbortSignal,
+): Promise<{ count: number; awaitingConfirmation: number }> {
+  return apiClient.get<{ count: number; awaitingConfirmation: number }>(
+    "/items/held-by-me",
+    { summary: "true" },
+    signal,
+  );
 }
 
 /** Body of `POST /items` — mirrors the backend's `createItemSchema` (items.ts). */

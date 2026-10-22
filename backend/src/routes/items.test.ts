@@ -160,10 +160,10 @@ describe("GET /items", () => {
       { OR: [{ holderType: "STAFF", holderId: "staff-1" }, { ownerId: "staff-1" }] },
       { OR: [{ ownerId: "staff-1" }, { holderType: "STAFF", holderId: "staff-1" }] },
     ]);
-    expect(where.status).toBe("ACTIVE");
+    expect(where.status).toEqual({ notIn: ["DISPOSED", "VOIDED", "LOST"] });
   });
 
-  it("defaults to page 1 / limit 20 and only ever lists ACTIVE items", async () => {
+  it("defaults to page 1 / limit 20 and never lists an out-of-service item", async () => {
     const res = await request(app).get("/items").set(officerAuth);
 
     expect(res.status).toBe(200);
@@ -174,10 +174,12 @@ describe("GET /items", () => {
     // stable — two items registered in the same second must not swap places
     // between two pages.
     expect(args?.orderBy).toEqual([{ registeredAt: "desc" }, { tagId: "asc" }]);
-    // F7.2 — a disposed item disappears from the default listing. This is the
-    // route-level half of the exit criterion; services/itemVisibility.test.ts
-    // covers the rule itself.
-    expect(listWhere().status).toBe("ACTIVE");
+    // F7.2 — the out-of-service items disappear from the default listing: the
+    // disposed, the voided and the lost. The live ones stay, including the
+    // item waiting for its holder to confirm it and the one out on loan, which
+    // are the college's assets too. This is the route-level half of the exit
+    // criterion; services/itemVisibility.test.ts covers the rule itself.
+    expect(listWhere().status).toEqual({ notIn: ["DISPOSED", "VOIDED", "LOST"] });
     // Counted with the identical filter, or the page total describes a
     // different result set than the page.
     expect(vi.mocked(prisma.item.count).mock.calls[0]?.[0]?.where).toEqual(listWhere());
@@ -207,15 +209,15 @@ describe("GET /items", () => {
     ]);
     expect(where.categoryId).toBe("cat-electronics");
     expect(where.orgUnitId).toBe("org-unit-cs");
-    expect(where.status).toBe("ACTIVE");
+    expect(where.status).toEqual({ notIn: ["DISPOSED", "VOIDED", "LOST"] });
   });
 
   it("cannot be talked into listing disposed items from the query string", async () => {
     // `?status=DISPOSED` is not a supported filter, so it should be ignored
     // rather than honoured — and even if a later change starts reading it, the
-    // pin in activeItemsWhere() lands last.
+    // exclusion in activeItemsWhere() lands last.
     await request(app).get("/items?status=DISPOSED").set(officerAuth);
-    expect(listWhere().status).toBe("ACTIVE");
+    expect(listWhere().status).toEqual({ notIn: ["DISPOSED", "VOIDED", "LOST"] });
   });
 
   /**
@@ -921,7 +923,9 @@ describe("mount paths", () => {
 
     expect(recent.status).toBe(200);
     expect(held.status).toBe(200);
-    expect(held.body).toEqual({ count: 0 });
+    // The summary says how many are held *and* how many are waiting for the
+    // holder to confirm them: the second number is the one with a deadline.
+    expect(held.body).toEqual({ count: 0, awaitingConfirmation: 0 });
     expect(prisma.item.findUnique).not.toHaveBeenCalled();
     // …and the literal path was handled with its own query, not a tag lookup that
     // happens to be spelled "recent".

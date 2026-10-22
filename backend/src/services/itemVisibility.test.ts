@@ -14,20 +14,39 @@ import {
  */
 
 describe("activeItemsWhere", () => {
-  it("pins status ACTIVE onto any filter (F7.2 — disposal is a status, not a delete)", () => {
-    expect(activeItemsWhere()).toEqual({ status: "ACTIVE" });
+  const LIVE = { notIn: ["DISPOSED", "VOIDED", "LOST"] };
+
+  it("excludes the out-of-service items from any filter (F7.2 — disposal is a status, not a delete)", () => {
+    expect(activeItemsWhere()).toEqual({ status: LIVE });
     expect(activeItemsWhere({ department: "Computer Science" })).toEqual({
       department: "Computer Science",
-      status: "ACTIVE",
+      status: LIVE,
     });
+  });
+
+  /**
+   * The register is the college's **live** assets.
+   *
+   * It used to pin `status: "ACTIVE"`, which is F7.2's rule ("a disposed item
+   * disappears from the default listing") taken one step too far: it also hid
+   * the item waiting for its holder to confirm it, and the one out on loan.
+   * The exclusion is by name now — the out-of-service states — so a new live
+   * state cannot silently vanish from the register.
+   */
+  it("keeps the live states — including the one waiting for a confirmation", () => {
+    const where = activeItemsWhere() as { status: { notIn: string[] } };
+    expect(where.status.notIn).not.toContain("PENDING_CLAIM");
+    expect(where.status.notIn).not.toContain("LOANED");
+    expect(where.status.notIn).not.toContain("REVERTED_UNVERIFIED");
+    expect(where.status.notIn).toContain("DISPOSED");
   });
 
   it("cannot be widened by a caller passing its own status", () => {
     // This is the whole reason the helper exists rather than a literal spread:
     // `status` is applied LAST, so an unvalidated `?status=DISPOSED` reaching the
     // filter object cannot resurrect disposed items into a default listing.
-    expect(activeItemsWhere({ status: "DISPOSED" })).toEqual({ status: "ACTIVE" });
-    expect(activeItemsWhere({ status: undefined })).toEqual({ status: "ACTIVE" });
+    expect(activeItemsWhere({ status: "DISPOSED" })).toEqual({ status: LIVE });
+    expect(activeItemsWhere({ status: undefined })).toEqual({ status: LIVE });
   });
 
   it("leaves the caller's own filter object untouched", () => {

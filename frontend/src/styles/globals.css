@@ -100,6 +100,16 @@
    [data-print-tag] so nothing else on the page is affected when a staff/admin user
    prints. */
 @media print {
+  /*
+    The page is collapsed to a single sheet.
+  */
+  html,
+  body {
+    height: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+
   body * {
     visibility: hidden;
   }
@@ -109,8 +119,15 @@
     visibility: visible;
   }
 
+  /*
+    `fixed`, not `absolute`: with the document collapsed to nothing (above), a
+    fixed element is placed against the *page* rather than against the
+    collapsed body, so the sticker still has the whole sheet to sit in. An
+    absolute one would be placed inside a zero-height box and would print
+    nothing at all.
+  */
   [data-print-tag] {
-    position: absolute;
+    position: fixed;
     inset: 0;
     display: flex;
     flex-direction: column;

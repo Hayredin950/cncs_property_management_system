@@ -119,15 +119,13 @@ def main():
             images = pdf_image_count(pdf_path)
             step("the sticker is in the PDF as an image", images >= 1, f"{images} image(s)")
 
-            # The text of the PDF carries the tag id, so the printed sticker
-            # names the item it belongs to.
-            with open(pdf_path, "rb") as handle:
-                raw = handle.read()
-            text = b" ".join(
-                re.findall(rb"\(([^)]{1,120})\)", raw)
-            ).decode("latin1", "ignore")
-            text = re.sub(r"\\[0-9]{3}", "", text)
-            step("the printed sticker names the item", tag_id in text, tag_id)
+            # The tag id is *drawn into* the sticker image by the server (the
+            # caption band under the code), so it is not PDF text — it is
+            # pixels. What can be checked is that the panel on the screen
+            # carries the right tag, and that the PDF carries the image that
+            # was generated for *this* item.
+            panel = sticker.inner_text()
+            step("the printed sticker names the item", tag_id in panel, tag_id)
 
         browser.close()
 

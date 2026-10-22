@@ -145,16 +145,29 @@ def api_get(path, token):
 TOKEN_CACHE = {}
 
 
-def login_token(email, password):
+def login_token(email, password, page=None):
     """A token for the API reads, cached.
 
     The login endpoint is rate limited to 10 attempts per IP per 15 minutes,
     and a walkthrough signs in as five people and reads as several of them
     again — so the tokens are kept and reused, exactly as the other live
     scripts do.
+
+    When the page has already signed in, its session token is read out of
+    localStorage instead of asking for a second one: five roles against a
+    ten-attempt window is exactly at the edge, and a retry would tip it over
+    into a 429 that reads as "the app cannot sign in".
     """
     if email in TOKEN_CACHE:
         return TOKEN_CACHE[email]
+    if page is not None:
+        try:
+            token = page.evaluate("() => localStorage.getItem('cncs.auth.token')")
+        except Exception:
+            token = None
+        if token:
+            TOKEN_CACHE[email] = token
+            return token
     body = json.dumps({"email": email, "password": password}).encode()
     req = urllib.request.Request(
         f"{API}/auth/login", data=body, headers={"Content-Type": "application/json"}
@@ -393,7 +406,7 @@ def walkthrough_staff(page):
     say("P9-1 STAFF — sign up, request, claim, refuse, read, change password")
     email, password = ACCOUNTS["STAFF"]
     sign_in(page, email, password)
-    token = login_token(email, password)
+    token = login_token(email, password, page)
     step("signs in with their own account", "/dashboard" in page.url, page.url)
 
     # Their own requests.
@@ -678,7 +691,7 @@ def walkthrough_head(page):
     email, password = ACCOUNTS["DEPARTMENT_HEAD"]
     sign_in(page, email, password)
     step("signs in with their own account", "/dashboard" in page.url, page.url)
-    token = login_token(email, password)
+    token = login_token(email, password, page)
 
     # Their department's items, and the roster of the college's units.
     go(page, "/items?scope=department")
@@ -768,7 +781,7 @@ def walkthrough_head(page):
     # requests: a head cannot even *list* another unit's work, so asking the
     # head for the list would prove nothing about opening one.
     refused = False
-    officer_token = login_token(*ACCOUNTS["PROPERTY_OFFICER"])
+    officer_token = login_token(*ACCOUNTS["PROPERTY_OFFICER"], page=page)
     everything = api_get("/requests?limit=100", officer_token)
     for request in (everything.get("requests") or everything.get("data") or []):
         if request.get("status") not in PENDING_STATUSES:
@@ -819,7 +832,7 @@ def walkthrough_officer(page):
     step("registers an item", registered, page.url)
 
     # Its tag, and the sticker that can be printed.
-    token = login_token(email, password)
+    token = login_token(email, password, page)
     items = api_get("/items?search=WALKTHROUGH&limit=5", token)
     tag = None
     for item in (items.get("data") or items.get("items") or []):
@@ -928,7 +941,7 @@ def walkthrough_auditor(page):
     email, password = ACCOUNTS["AUDITOR"]
     sign_in(page, email, password)
     step("signs in with their own account", "/dashboard" in page.url, page.url)
-    token = login_token(email, password)
+    token = login_token(email, password, page)
 
     # The dashboard's own tiles.
     step("sees the current-audit tile", wait_for_text(page, "Current audit"), "")

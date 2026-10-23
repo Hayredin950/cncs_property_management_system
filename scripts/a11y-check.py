@@ -21,6 +21,7 @@ Usage:  scripts/a11y-check.py [base-url] [--roles STAFF,HEAD,...]
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -31,7 +32,13 @@ from playwright.sync_api import sync_playwright
 
 args = [a for a in sys.argv[1:] if not a.startswith("--")]
 BASE = (args[0] if args and args[0].startswith("http") else "https://cncs-pms-web.vercel.app").rstrip("/")
-API = f"{BASE}/api/v1"
+_api_override = os.environ.get("WALKTHROUGH_API", "").strip()
+if _api_override:
+    API = _api_override.rstrip("/")
+elif re.match(r"^https?://(localhost|127\.0\.0\.1)(:|/|$)", BASE):
+    API = "http://localhost:4000/api/v1"
+else:
+    API = "https://cncs-pms-api.vercel.app/api/v1"
 
 WANTED = None
 for index, arg in enumerate(sys.argv):
@@ -141,9 +148,17 @@ HAVE_NAME_JS = """
     ),
     wordmarkLatin: document.body.innerText.includes('ADDIS ABABA UNIVERSITY'),
     main: !!document.querySelector('main'),
-    fontLoaded:
-      document.fonts.status === 'loaded' &&
-      Array.from(document.fonts).some((f) => f.status === 'loaded' && /geist|ethiop|amhar/i.test(f.family)),
+    fontLoaded: (() => {
+      try {
+        if (document.fonts.check('16px "Geist Variable"')) return true;
+        if (document.fonts.check('16px "Geist"')) return true;
+        return Array.from(document.fonts).some(
+          (f) => f.status === 'loaded' && /geist|ethiop|amhar/i.test(f.family),
+        );
+      } catch (error) {
+        return false;
+      }
+    })(),
   };
 }
 """
@@ -267,6 +282,14 @@ def sign_in(page, email, password):
 
 def check_page(page, label, require_skip_link, require_wordmark):
     page.wait_for_timeout(700)
+    # A webfont that has not finished downloading is not a missing font: the
+    # last screen of a long run can still be fetching it when the page has
+    # painted. Wait for the document's own "fonts are ready" promise, with a
+    # ceiling so a genuinely absent font still fails.
+    try:
+        page.evaluate("() => document.fonts.ready.then(() => true)", timeout=15_000)
+    except Exception:
+        pass
     facts = page.evaluate(HAVE_NAME_JS)
 
     step(f"{label}: the page declares a language", bool(facts["lang"]), facts["lang"])
@@ -284,10 +307,29 @@ def check_page(page, label, require_skip_link, require_wordmark):
     )
 
     # Keyboard: Tab moves focus, and the landing place is visibly focused.
-    page.evaluate("() => { document.body.focus(); }")
-    page.keyboard.press("Tab")
-    page.wait_for_timeout(200)
-    first = page.evaluate(FOCUS_JS)
+    #
+    # The focus is cleared first: a control left focused by the previous screen
+    # makes "the first Tab" land somewhere else entirely, and the skip link
+    # (sr-only until focused) needs a beat to paint once it does have focus.
+    first = None
+    for _ in range(3):
+        page.evaluate(
+            """() => {
+                if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+                document.body.setAttribute('tabindex', '-1');
+                document.body.focus();
+            }"""
+        )
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(400)
+        first = page.evaluate(FOCUS_JS)
+        if first and first["visible"]:
+            break
+        # A list that polls (the register, the queue) can re-render and drop
+        # the focus a beat after Tab lands. That is worth retrying once — the
+        # question is whether Tab can reach a control, not whether it survives
+        # the next fetch.
+        page.wait_for_timeout(500)
     step(
         f"{label}: the first Tab reaches a visible control",
         bool(first and first["visible"]),

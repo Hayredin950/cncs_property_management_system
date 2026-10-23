@@ -19,6 +19,7 @@ Usage:  scripts/states-check.py [base-url] [--roles STAFF,HEAD,...]
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -29,7 +30,13 @@ from playwright.sync_api import sync_playwright
 
 args = [a for a in sys.argv[1:] if not a.startswith("--")]
 BASE = (args[0] if args and args[0].startswith("http") else "https://cncs-pms-web.vercel.app").rstrip("/")
-API = f"{BASE}/api/v1"
+_api_override = os.environ.get("WALKTHROUGH_API", "").strip()
+if _api_override:
+    API = _api_override.rstrip("/")
+elif re.match(r"^https?://(localhost|127\.0\.0\.1)(:|/|$)", BASE):
+    API = "http://localhost:4000/api/v1"
+else:
+    API = "https://cncs-pms-api.vercel.app/api/v1"
 
 WANTED = None
 for index, arg in enumerate(sys.argv):

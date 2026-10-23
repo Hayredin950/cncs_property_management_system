@@ -30,7 +30,13 @@ from playwright.sync_api import sync_playwright
 
 _arg1 = sys.argv[1] if len(sys.argv) > 1 else ""
 BASE = (_arg1 if _arg1.startswith("http") else "https://cncs-pms-web.vercel.app").rstrip("/")
-API = "https://cncs-pms-api.vercel.app/api/v1"
+_api_override = os.environ.get("WALKTHROUGH_API", "").strip()
+if _api_override:
+    API = _api_override.rstrip("/")
+elif re.match(r"^https?://(localhost|127\.0\.0\.1)(:|/|$)", BASE):
+    API = "http://localhost:4000/api/v1"
+else:
+    API = "https://cncs-pms-api.vercel.app/api/v1"
 
 results = []
 

@@ -86,7 +86,12 @@ def main():
 
         # An item with a sticker.
         page.goto(f"{BASE}/items", wait_until="domcontentloaded", timeout=60_000)
-        page.wait_for_timeout(2000)
+        # The register is a data screen: a fixed wait is a race. A cold
+        # deployment once answered "0 items" to a screen that listed twenty.
+        try:
+            page.wait_for_selector("a[href^='/item/']", timeout=25_000)
+        except Exception:
+            pass
         hrefs = [a.get_attribute("href") for a in page.query_selector_all("a[href^='/item/']")]
         step("the register lists items", bool(hrefs), f"{len(hrefs)} items")
 

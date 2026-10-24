@@ -473,7 +473,7 @@ def walkthrough_staff(page):
 
     # Their own requests.
     go(page, "/requests")
-    step("sees their own requests", has_text(page, "My Requests") or has_text(page, "Request"),
+    step("sees their own requests", wait_for_text(page, "My Requests") or wait_for_text(page, "Request"),
          "the request screen opens")
 
     # Clear away what a previous run left behind, so this run starts where the
@@ -1182,7 +1182,8 @@ def walkthrough_admin(page):
     # The accounts screen. The address matters: a signed-out browser also
     # shows the word "account" on the login page, and that used to count.
     go(page, "/admin/users")
-    step("the accounts screen opens", "/admin/users" in page.url and has_text(page, "account"), page.url)
+    step("the accounts screen opens",
+         "/admin/users" in page.url and wait_for_text(page, "Accounts"), page.url)
 
     # Invite a privileged account, with the authorization fields.
     invite_email = f"walkthrough.invite.{int(time.time())}@cncs.aau.edu.et"

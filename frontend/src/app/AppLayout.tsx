@@ -456,7 +456,7 @@ export function AppLayout() {
                       </span>
                     )}
                   </span>
-                  {item.label}
+                  <span className="max-w-full truncate">{item.mobileLabel ?? item.label}</span>
                 </>
               )}
             </ExactNavLink>

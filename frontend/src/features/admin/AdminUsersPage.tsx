@@ -464,7 +464,7 @@ export function AdminUsersPage() {
                   <Card className="flex flex-wrap items-start justify-between gap-3 py-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-slate-900">{account.fullName}</span>
+                        <span className="min-w-0 break-words font-semibold text-slate-900">{account.fullName}</span>
                         {isSelf && <span className="text-xs text-slate-500">(you)</span>}
                       </div>
                       <p className="mt-0.5 truncate text-sm text-slate-600">{account.email}</p>
@@ -712,7 +712,7 @@ export function AdminUsersPage() {
                   <Card className="flex flex-wrap items-start justify-between gap-3 py-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-slate-900">{account.fullName}</span>
+                        <span className="min-w-0 break-words font-semibold text-slate-900">{account.fullName}</span>
                         <RoleBadge role={account.role} />
                         {isSelf && <span className="text-xs text-slate-500">(you)</span>}
                       </div>

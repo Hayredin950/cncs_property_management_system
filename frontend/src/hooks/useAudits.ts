@@ -97,12 +97,18 @@ export function useAuditHistoryList(limit = 3) {
  * "quick", limit]` is keyed on the same query function), so the number on the
  * dashboard and the list on the card are one request, not two.
  */
-export function useAuditSessionCount(limit = 3) {
+export function useAuditSessionCount(limit = 3, enabled = true) {
   return useQuery({
     queryKey: ["audits", "history", "quick", limit],
     queryFn: ({ signal }) => fetchAudits({ page: 1 }, signal),
     select: (data) => data.total,
     retry: false,
+    // Hooks cannot be called conditionally, so the *query* has to be switched
+    // off instead: before this, every role's dashboard asked `GET /audits`,
+    // which only the auditor and the property officer may read — so a staff
+    // member, a head and the administrator each collected a 403 on their
+    // dashboard, a request that could never succeed.
+    enabled,
   });
 }
 

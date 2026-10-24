@@ -55,7 +55,7 @@ export function DashboardPage() {
   const isAuditor = canRunAudits(user?.role);
 
   const pendingQuery = usePendingCount();
-  const auditCountQuery = useAuditSessionCount();
+  const auditCountQuery = useAuditSessionCount(3, isAuditor);
   // For "Needs your review", use the same logic as pending-count: pendingForUser (no date window)
   const needsReviewQuery = usePendingRequests(5);
   const requestsQuery = useRequests({ limit: 5 });
@@ -205,16 +205,24 @@ export function DashboardPage() {
                 {activeQuery.data.requests.map((request) => (
                   <li
                     key={request.id}
-                    className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0"
+                    // A phone is not a narrow desktop: the name, the tag and
+                    // the status cannot share one line at 390px. They stack,
+                    // and the tag wraps under the name instead of being
+                    // pushed across the status chip.
+                    className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
                   >
                     <Link
                       to={`/requests/${request.id}`}
                       className="min-w-0 flex-1 hover:text-brand-700 transition-colors"
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                         <RequestTypeBadge type={request.type} />
-                        <p className="font-medium text-slate-900">{request.item.name}</p>
-                        <p className="tag-id text-xs text-slate-500">{request.item.tagId}</p>
+                        <p className="min-w-0 font-medium text-slate-900 break-words">
+                          {request.item.name}
+                        </p>
+                        <p className="tag-id shrink-0 text-xs text-slate-500">
+                          {request.item.tagId}
+                        </p>
                       </div>
                     </Link>
                     <div className="flex flex-wrap items-center gap-2">

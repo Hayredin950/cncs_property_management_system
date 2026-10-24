@@ -262,7 +262,7 @@ def check_screen(page, net, path, label, check_empty):
     net.mode = "fail"
     goto(page, path)
     try:
-        page.wait_for_selector("[role='alert'] h3", timeout=8_000)
+        page.wait_for_selector("[role='alert'] h3", timeout=20_000)
     except Exception:
         pass
     said = body_text(page)

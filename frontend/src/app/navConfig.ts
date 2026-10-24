@@ -17,6 +17,14 @@ import type { Role } from "../types/enums";
 
 export interface NavItem {
   label: string;
+  /**
+   * The label the phone's bottom bar uses. The bar gives each destination
+   * roughly a fifth of the screen, and "Notifications" at 12px is wider than
+   * that at 390px — the labels ran into each other. The sidebar keeps the
+   * full label; the bar gets a short one (the design's own
+   * "Home/Scan/Items/Requests/More" shape).
+   */
+  mobileLabel?: string;
   to: string;
   icon: LucideIcon;
   roles: Role[];
@@ -67,26 +75,26 @@ export const CURRENT_PHASE = 3;
  * carries the same `pending-count` badge the removed row had.
  */
 export const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 1 },
+  { label: "Dashboard", mobileLabel: "Home", to: "/dashboard", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 1 },
   { label: "Scan a Tag", to: "/scan", icon: ScanLine, roles: ["PROPERTY_OFFICER"], phase: 1, emphasized: true },
-  { label: "Browse Items", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER"], phase: 1 },
-  { label: "Browse Items", to: "/items?scope=all", icon: Package, roles: ["DEPARTMENT_HEAD"], phase: 1 },
+  { label: "Browse Items", mobileLabel: "Browse", to: "/items", icon: Package, roles: ["PROPERTY_OFFICER"], phase: 1 },
+  { label: "Browse Items", mobileLabel: "Browse", to: "/items?scope=all", icon: Package, roles: ["DEPARTMENT_HEAD"], phase: 1 },
   // The register, not "my things": the screen is called "Browse Items" and
   // the register is the college's. "My items" is one click away in the scope
   // dropdown, and the nav item pointed at it — so a staff member never saw
   // the college's assets at all.
-  { label: "Browse Items", to: "/items", icon: Package, roles: ["STAFF"], phase: 1 },
-  { label: "Requests", to: "/requests", icon: ClipboardList, roles: ["PROPERTY_OFFICER"], phase: 2, badge: "pending-count" },
-  { label: "Department Requests", to: "/requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
-  { label: "My Requests", to: "/requests?mine=true", icon: ClipboardList, roles: ["STAFF"], phase: 2 },
-  { label: "Notifications", to: "/notifications", icon: Bell, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 2, badge: "unread-notifications" },
+  { label: "Browse Items", mobileLabel: "Browse", to: "/items", icon: Package, roles: ["STAFF"], phase: 1 },
+  { label: "Requests", mobileLabel: "Requests", to: "/requests", icon: ClipboardList, roles: ["PROPERTY_OFFICER"], phase: 2, badge: "pending-count" },
+  { label: "Department Requests", mobileLabel: "Requests", to: "/requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
+  { label: "My Requests", mobileLabel: "Requests", to: "/requests?mine=true", icon: ClipboardList, roles: ["STAFF"], phase: 2 },
+  { label: "Notifications", mobileLabel: "Alerts", to: "/notifications", icon: Bell, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 2, badge: "unread-notifications" },
   { label: "New item", to: "/items/new", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
-  { label: "Active Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["AUDITOR"], phase: 3 },
-  { label: "Audit history", to: "/audits", icon: History, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
+  { label: "Active Audit", mobileLabel: "Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["AUDITOR"], phase: 3 },
+  { label: "Audit history", mobileLabel: "Audits", to: "/audits", icon: History, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
   { label: "Reports", to: "/reports", icon: FileBarChart, roles: ["PROPERTY_OFFICER", "AUDITOR"], phase: 3 },
   // The queue and the account list are one screen, so they are one row: the
   // "Waiting for approval" panel sits above "Create an account" on `/admin/users`.
-  { label: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN", "DEPARTMENT_HEAD"], phase: 2, badge: "approvals-count" },
+  { label: "Accounts", mobileLabel: "Accounts", to: "/admin/users", icon: ShieldCheck, roles: ["SYSTEM_ADMIN", "DEPARTMENT_HEAD"], phase: 2, badge: "approvals-count" },
   { label: "System Status", to: "/admin/system", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN"], phase: 3 },
   // The account log, in full. The dashboard shows the last few; this is the rest.
   { label: "System Events", to: "/admin/events", icon: ScrollText, roles: ["SYSTEM_ADMIN"], phase: 3 },

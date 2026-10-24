@@ -122,7 +122,7 @@ export function AuditReportPage() {
   if (!summary) {
     if (id && !sessionQuery.isError && (sessionQuery.isPending || sessionQuery.isFetching)) {
       return (
-        <div className="mx-auto flex max-w-2xl flex-col gap-6" role="status" aria-label="Loading audit report">
+        <div className="mx-auto flex max-w-5xl flex-col gap-6" role="status" aria-label="Loading audit report">
           <Skeleton className="h-8 w-1/3" />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Skeleton className="h-24 w-full" />
@@ -134,7 +134,7 @@ export function AuditReportPage() {
     }
 
     return (
-      <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <div className="mx-auto flex max-w-5xl flex-col gap-6">
         <h1 className="text-2xl font-bold text-slate-900">Audit report</h1>
         <EmptyState
           icon={<AlertTriangle className="h-8 w-8" />}
@@ -174,7 +174,7 @@ export function AuditReportPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div>
         {/* The heading states what actually happened to the session. It used to
             say "Audit complete" whatever the truth was — including for a

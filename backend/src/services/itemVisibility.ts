@@ -33,6 +33,16 @@
 export const DISPOSED_PUBLIC_MESSAGE = "This item is no longer in service";
 
 /**
+ * F2: scanning a tag that belongs to a unit you are not assigned to has to say
+ * something a person can act on. "Not found" is the right *status* — a 403
+ * would confirm the tag exists — but it is not a sentence anyone can follow, so
+ * a person holding a sticker that is not theirs was told their sticker did not
+ * exist. The answer is still 404; only the wording names the next step.
+ */
+export const OUT_OF_SCOPE_TAG_MESSAGE =
+  "This item is not assigned to you. Contact the Property Office if you need access.";
+
+/**
  * Default listing filter: the college's **live** items.
  *
  * It used to pin `status: "ACTIVE"`, which is the same rule as "exclude the

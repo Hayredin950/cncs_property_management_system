@@ -1,6 +1,6 @@
 import { apiClient } from "../lib/apiClient";
 import type { InvitableRole, Role } from "../types/enums";
-import type { InviteAccountResponse, UserSummary } from "../types/user";
+import type { InviteAccountResponse, InviteRow, UserSummary } from "../types/user";
 
 /**
  * `GET /users` — requires `USER_READ` (spec 2.1.1): the System Admin and the
@@ -132,17 +132,6 @@ export function promoteUser(id: string, role: Role): Promise<UserSummary> {
   return apiClient.post<UserSummary>(`/users/${encodeURIComponent(id)}/promote`, { role });
 }
 
-/** `POST /users/:id/password` — set a new password for the account. */
-export function resetUserPassword(
-  id: string,
-  password: string,
-): Promise<{ id: string; passwordChanged: boolean }> {
-  return apiClient.post<{ id: string; passwordChanged: boolean }>(
-    `/users/${encodeURIComponent(id)}/password`,
-    { password },
-  );
-}
-
 /**
  * `DELETE /users/:id` — **Admin only**, and refused for any account that is part
  * of the record (owns items, filed/reviewed requests, ran audits, made edits).
@@ -183,4 +172,22 @@ export function activateDepartmentHead(
   return apiClient.post(`/users/org-units/${encodeURIComponent(orgUnitId)}/activate-head`, {
     newHeadId,
   });
+}
+
+/**
+ * `GET /users/invites` — every invitation and what became of it (T8).
+ *
+ * Includes accepted invitations on purpose: a list of only the outstanding
+ * ones cannot tell an administrator whether the person they invited ever took
+ * the link up.
+ */
+export function fetchInvites(signal?: AbortSignal): Promise<InviteRow[]> {
+  return apiClient.get<InviteRow[]>("/users/invites", undefined, signal);
+}
+
+/** `DELETE /users/invites/:id` — revoke an invitation that has not been accepted. */
+export function revokeInvite(id: string): Promise<{ message: string }> {
+  return apiClient.delete<{ message: string }>(
+    `/users/invites/${encodeURIComponent(id)}`,
+  );
 }

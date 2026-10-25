@@ -1,4 +1,4 @@
-import { ClipboardCheck, ClipboardList, Package, ScanLine } from "lucide-react";
+import { ClipboardCheck, ClipboardList, History, Package, ScanLine } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { PortalPageHeader, PortalTile } from "../../components/aau/PortalPageHeader";
@@ -111,6 +111,29 @@ export function DashboardPage() {
         and browsing items is not a step in an audit here. `seesAssetData` is the
         shared predicate every asset-UI call site now reaches for, so this is
         stated once instead of re-derived per tile. */}
+      {/*
+        The auditor's two jobs, given the same two-tile treatment the other
+        roles get for theirs. Without this the auditor's dashboard opened on
+        tiles that only *read*: the only way to start an audit was the "Active
+        Audit" nav row, which is not where a person arriving at work looks.
+      */}
+      {isAuditor && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <PortalTile
+            to="/audit/new"
+            icon={<ClipboardCheck className="h-7 w-7" />}
+            title="Start an audit"
+            description="Choose a department, scan its tags, and finish with a report."
+          />
+          <PortalTile
+            to="/audits"
+            icon={<History className="h-7 w-7" />}
+            title="Audit history"
+            description="Every session, what it counted, and the CSV or PDF copy."
+          />
+        </div>
+      )}
+
       {seesAssetData(user?.role) && !isAuditor && (
         <div className="grid gap-4 sm:grid-cols-2">
           <PortalTile

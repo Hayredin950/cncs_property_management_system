@@ -11,8 +11,10 @@ import { AuditReportPage } from "../features/audits/AuditReportPage";
 import { AuditScanPage } from "../features/audits/AuditScanPage";
 import { AcceptInvitePage } from "../features/auth/AcceptInvitePage";
 import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
+import { ForgotPasswordPage } from "../features/auth/ForgotPasswordPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { RequestAccountPage } from "../features/auth/RequestAccountPage";
+import { ResetPasswordPage } from "../features/auth/ResetPasswordPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { ItemFormPage } from "../features/items/ItemFormPage";
 import { ItemStaffPage } from "../features/items/ItemStaffPage";
@@ -102,6 +104,10 @@ export const appRoutes: RouteObject[] = [
           // with — the invitation is what creates one (T6), so this belongs to
           // the public shell rather than behind `RequireAuth`.
           { path: "/accept-invite", element: <AcceptInvitePage /> },
+          // The reset link lands here from an email, so it is public for the
+          // same reason: the person cannot sign in — that is the problem.
+          { path: "/forgot-password", element: <ForgotPasswordPage /> },
+          { path: "/reset-password", element: <ResetPasswordPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

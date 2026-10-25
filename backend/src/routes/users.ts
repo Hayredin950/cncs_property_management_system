@@ -42,10 +42,6 @@ const updateUserSchema = z
     message: "Nothing to update",
   });
 
-const passwordSchema = z.object({
-  password: z.string().min(8, "At least 8 characters"),
-});
-
 /**
  * `role` is optional on approval: the request itself always asks as `STAFF` (a
  * person must not be able to choose their own privileges), and this is where an
@@ -57,6 +53,13 @@ const approveSchema = z.object({
       message: "Role must be one of the five system roles",
     })
     .optional(),
+  /**
+   * SYSTEM_ADMIN only: approve the person into a different unit than the one
+   * they registered into (a mis-filed request, or a headless unit's applicant
+   * being placed). A department head may never use this — their authority is
+   * their own unit.
+   */
+  confirmedUnitId: z.string().uuid("confirmedUnitId must be a unit id").optional(),
 });
 
 const rejectSchema = z.object({
@@ -381,6 +384,24 @@ usersRouter.post(
         }
       }
 
+      const confirmedUnitId = parsed.data.confirmedUnitId;
+      if (confirmedUnitId) {
+        if (reviewer.role !== "SYSTEM_ADMIN") {
+          res.status(403).json({
+            error: "Only the system administrator can reassign a unit during approval",
+          });
+          return;
+        }
+        const unit = await prisma.orgUnit.findUnique({
+          where: { id: confirmedUnitId },
+          select: { type: true, isActive: true },
+        });
+        if (!unit || unit.type !== "DEPARTMENT" || !unit.isActive) {
+          res.status(400).json({ error: "That department does not exist or is not active" });
+          return;
+        }
+      }
+
       const updateData: Prisma.UserUpdateInput = {
         accountStatus: "ACTIVE",
         reviewedBy: { connect: { id: reviewer.id } },
@@ -388,6 +409,7 @@ usersRouter.post(
         reviewNote: null,
         ...(hasExplicitRole ? { role: requestedRole } : {}),
         ...(hasExplicitRole ? { tokenVersion: { increment: 1 } } : {}),
+        ...(confirmedUnitId ? { orgUnit: { connect: { id: confirmedUnitId } } } : {}),
       };
 
       const approved = await prisma.$transaction(async (tx) => {
@@ -403,14 +425,19 @@ usersRouter.post(
             actorId: reviewer.id,
             action: "ACCOUNT_APPROVED",
             targetUserId: existing.id,
-            unitId: existing.orgUnitId ?? null,
+            // The unit the account now belongs to, which is the reassigned one
+            // when a SYSTEM_ADMIN placed the person somewhere other than where
+            // they registered.
+            unitId: confirmedUnitId ?? existing.orgUnitId ?? null,
             before: {
               accountStatus: existing.accountStatus,
               role: existing.role,
+              orgUnitId: existing.orgUnitId ?? null,
             },
             after: {
               accountStatus: "ACTIVE",
               role: requestedRole,
+              orgUnitId: confirmedUnitId ?? existing.orgUnitId ?? null,
             },
           },
         });
@@ -856,13 +883,47 @@ usersRouter.get(
   requireCapability("USER_READ"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const users = await prisma.user.findMany({
-        orderBy: { createdAt: "asc" },
-        select: userListSelect,
-      });
-
       const user = req.user!;
-      res.status(200).json(users.map((u) => toAdminUser(u, user.role)));
+
+      /**
+       * Pagination is **opt-in**, so the existing callers keep the array they
+       * have always received: `?page=` or `?limit=` asks for the envelope
+       * (`{ data, page, limit, total, totalPages }`). An unpaginated list was
+       * fine at 26 demo accounts and is not fine at a college's headcount —
+       * the admin screen still asks for everything because it filters and
+       * sorts client-side, but a caller that pages is now possible.
+       */
+      const paginated = req.query.page !== undefined || req.query.limit !== undefined;
+
+      if (!paginated) {
+        const users = await prisma.user.findMany({
+          orderBy: { createdAt: "asc" },
+          select: userListSelect,
+        });
+        res.status(200).json(users.map((u) => toAdminUser(u, user.role)));
+        return;
+      }
+
+      const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+
+      const [total, users] = await prisma.$transaction([
+        prisma.user.count(),
+        prisma.user.findMany({
+          orderBy: { createdAt: "asc" },
+          skip: (page - 1) * limit,
+          take: limit,
+          select: userListSelect,
+        }),
+      ]);
+
+      res.status(200).json({
+        data: users.map((u) => toAdminUser(u, user.role)),
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      });
     } catch (err) {
       next(err);
     }
@@ -1136,60 +1197,6 @@ usersRouter.post(
   }
 );
 
-/** `POST /users/:id/password` — set a new password for the account. */
-usersRouter.post(
-  "/:id/password",
-  authenticate,
-  requireCapability("ACCOUNT_MANAGE"),
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (!id) {
-        res.status(400).json({ error: "Account ID is required" });
-        return;
-      }
-
-      const parsed = passwordSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          error: parsed.error.issues[0]?.message ?? "Validation failed",
-          details: parsed.error.issues,
-        });
-        return;
-      }
-
-      const existing = await prisma.user.findUnique({ where: { id } });
-      if (!existing) {
-        res.status(404).json({ error: "Account not found" });
-        return;
-      }
-
-      const passwordHash = await argon2.hash(parsed.data.password, {
-        type: argon2.argon2id,
-      });
-
-      /**
-       * A reset does two more things than writing a hash:
-       *
-       *   - `mustChangePassword: true` — the temporary password is a shared
-       *     secret an administrator typed out loud, so the account holder is
-       *     forced to replace it on next sign-in.
-       *   - `tokenVersion` bumped — every session the account already had is
-       *     revoked (the same guarantee `POST /auth/change-password` gives). A
-       *     reset that left old tokens working would not actually be a reset.
-       */
-      await prisma.user.update({
-        where: { id },
-        data: { passwordHash, mustChangePassword: true, tokenVersion: { increment: 1 } },
-      });
-
-      res.status(200).json({ id, passwordChanged: true });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
 /**
  * `DELETE /users/:id` — remove an account, but only one with no trail.
  *
@@ -1414,12 +1421,17 @@ usersRouter.get(
   async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const tokens = await prisma.emailToken.findMany({
-        where: { type: "INVITE", usedAt: null },
+        // Accepted invitations are included: "who did we invite, and what
+        // became of it?" is the question the list exists to answer, and a
+        // list that silently drops the answered ones answers half of it.
+        where: { type: "INVITE" },
         orderBy: { createdAt: "desc" },
+        take: 200,
         select: {
           id: true,
           createdAt: true,
           expiresAt: true,
+          usedAt: true,
           user: {
             select: {
               id: true,
@@ -1436,25 +1448,44 @@ usersRouter.get(
         },
       });
 
+      // A reissued invite is the same row with a new token; the append-only
+      // log is what remembers that it was reissued, so the status can say
+      // RESENT rather than pretending the first link is still the one held.
+      const resent = await prisma.adminActionLog.findMany({
+        where: {
+          action: "ACCOUNT_INVITE_RESENT",
+          targetUserId: { in: tokens.map((token) => token.user.id) },
+        },
+        select: { targetUserId: true },
+        distinct: ["targetUserId"],
+      });
+      const wasResent = new Set(resent.map((row) => row.targetUserId));
+
       const now = new Date();
-      const withStatus = tokens.map((token) => ({
-        id: token.user.id,
-        tokenId: token.id,
-        fullName: token.user.fullName,
-        email: token.user.email,
-        role: token.user.role,
-        orgUnitId: token.user.orgUnitId,
-        createdAt: token.user.accountRequest?.invitedAt ?? token.createdAt,
-        expiresAt: token.expiresAt,
-        authorizedBy: token.user.accountRequest?.authorizedBy ?? null,
-        authorizationRef: token.user.accountRequest?.authorizationRef ?? null,
-        status:
-          token.expiresAt.getTime() < now.getTime()
-            ? "EXPIRED"
-            : token.user.accountStatus === "PENDING_EMAIL_VERIFICATION"
-              ? "SENT"
-              : "ACCEPTED",
-      }));
+      const withStatus = tokens.map((token) => {
+        const accepted =
+          token.usedAt !== null || token.user.accountStatus === "ACTIVE";
+        return {
+          id: token.user.id,
+          tokenId: token.id,
+          fullName: token.user.fullName,
+          email: token.user.email,
+          role: token.user.role,
+          orgUnitId: token.user.orgUnitId,
+          createdAt: token.user.accountRequest?.invitedAt ?? token.createdAt,
+          expiresAt: token.expiresAt,
+          acceptedAt: token.usedAt,
+          authorizedBy: token.user.accountRequest?.authorizedBy ?? null,
+          authorizationRef: token.user.accountRequest?.authorizationRef ?? null,
+          status: accepted
+            ? "ACCEPTED"
+            : token.expiresAt.getTime() < now.getTime()
+              ? "EXPIRED"
+              : wasResent.has(token.user.id)
+                ? "RESENT"
+                : "SENT",
+        };
+      });
 
       res.status(200).json(withStatus);
     } catch (err) {

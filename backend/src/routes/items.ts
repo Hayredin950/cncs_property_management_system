@@ -28,7 +28,11 @@ import {
   readPhotoUploadConfig,
   uploadItemPhoto,
 } from "../services/photoStorage.js";
-import { activeItemsWhere, DISPOSED_PUBLIC_MESSAGE } from "../services/itemVisibility.js";
+import {
+  activeItemsWhere,
+  DISPOSED_PUBLIC_MESSAGE,
+  OUT_OF_SCOPE_TAG_MESSAGE,
+} from "../services/itemVisibility.js";
 import { canOpenItem, itemInScope, itemListScope, resolveItemScope } from "../services/itemScope.js";
 import { ITEM_LOCATION_SELECT, withLocationNames } from "../utils/itemLocation.js";
 import { isAuthenticatedViewer, sanitizeItem } from "../utils/filterItemFields.js";
@@ -656,7 +660,11 @@ itemsRouter.get(
       // open an item and then be refused the picture and the record on the
       // same page.
       if (!canOpenItem(req.user, item as unknown as Parameters<typeof canOpenItem>[1])) {
-        res.status(404).json({ error: "Item not found" });
+        // Still a 404 (F2's sentence must not become an oracle), but the
+        // sentence is the one the specification asks for: a person scanning a
+        // sticker that is not theirs is told what to do, not that the sticker
+        // is imaginary.
+        res.status(404).json({ error: OUT_OF_SCOPE_TAG_MESSAGE });
         return;
       }
 

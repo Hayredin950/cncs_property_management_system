@@ -380,6 +380,10 @@ describe("GET /items/:tagId", () => {
       .get("/items/CNCS-DEMO-0001")
       .set("Authorization", `Bearer ${createToken({ id: "staff-9", role: "STAFF" })}`);
     expect(pooled.status).toBe(404);
+    // F2: the status still hides existence, but the sentence tells the person
+    // holding the sticker what to do next.
+    expect(pooled.body.error).toMatch(/not assigned to you/i);
+    expect(pooled.body.error).toMatch(/Property Office/);
 
     // An account role sees no asset data, by the same rule as the listing.
     vi.mocked(prisma.user.findUnique).mockResolvedValue({

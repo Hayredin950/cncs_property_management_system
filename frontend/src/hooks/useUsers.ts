@@ -1,6 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchInvitableUnits } from "../api/departments";
-import { fetchApprovals, fetchDecidedAccounts, fetchUsers, fetchApprovalsCount } from "../api/users";
+import {
+  fetchApprovals,
+  fetchDecidedAccounts,
+  fetchUsers,
+  fetchApprovalsCount,
+  fetchInvites,
+  revokeInvite,
+} from "../api/users";
 
 /**
  * `GET /users` — Admin only. The admin screen is the only caller; `enabled`
@@ -69,5 +76,32 @@ export function useInvitableUnits(enabled = true) {
     queryFn: fetchInvitableUnits,
     enabled,
     staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * `GET /users/invites` — the invitation list, with the state of every link.
+ *
+ * Only the account administrator may read it (`ACCOUNT_MANAGE`), so the same
+ * `enabled` guard the other admin queries use applies.
+ */
+export function useInvites(enabled = true) {
+  return useQuery({
+    queryKey: ["users", "invites"],
+    queryFn: ({ signal }) => fetchInvites(signal),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+/** `DELETE /users/invites/:id` — take back a link that has not been used. */
+export function useRevokeInvite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => revokeInvite(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["users", "invites"] });
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
   });
 }

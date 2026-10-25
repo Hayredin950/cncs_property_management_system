@@ -14,6 +14,7 @@ import { Pagination } from "../../components/Pagination";
 import { Select } from "../../components/Select";
 import { SkeletonText } from "../../components/Skeleton";
 import { useAuditsList } from "../../hooks/useAudits";
+import { useDepartments } from "../../hooks/useDepartments";
 import { abandonAuditSession, AUDITS_PAGE_SIZE } from "../../api/audits";
 import { formatDateTimeUTC, formatRelativeTime } from "../../lib/formatters";
 import type { AuditSessionSummary } from "../../types/audit";
@@ -53,6 +54,21 @@ export function AuditListPage() {
   const scopeQuery = searchParams.get("scope") || "";
   const sortBy = searchParams.get("sort") || "startedAt";
   const sortOrder = searchParams.get("order") || "desc";
+
+  // The scope filter is the college's own list, not a text box: an auditor
+  // asking "which department did we count?" should pick it from the units the
+  // college has, not spell it and hope the `equals` filter matches.
+  const departmentsQuery = useDepartments();
+  const scopeOptions = (() => {
+    const names = (departmentsQuery.data ?? []).map((unit) => unit.name);
+    // A deep link may carry a scope that is not a department (a building, from
+    // an older session). Keep it visible rather than silently resetting it.
+    if (scopeQuery && !names.includes(scopeQuery)) names.unshift(scopeQuery);
+    return [
+      { value: "", label: "All departments" },
+      ...names.map((name) => ({ value: name, label: name })),
+    ];
+  })();
 
   const auditsQuery = useAuditsList({
     mine,
@@ -167,12 +183,14 @@ export function AuditListPage() {
             onChange={(event) => setParam("status", event.target.value || null)}
             className="sm:w-40"
           />
-          {/* Which department (or building) the session counted. The history
-              is a list of sessions against a scope, and "which scope" is the
-              first question anyone asking it has. */}
-          <Input
-            label="Scope"
-            placeholder="A department or a building"
+          {/* Which department the session counted. The history is a list of
+              sessions against a scope, and "which scope" is the first question
+              anyone asking it has. It used to be a free-text box compared with
+              `equals` server-side, so a typo answered "no audits" — a picker of
+              the college's real units is the honest control. */}
+          <Select
+            label="Department"
+            options={scopeOptions}
             value={scopeQuery}
             onChange={(event) => setParam("scope", event.target.value || null)}
             className="sm:w-56"

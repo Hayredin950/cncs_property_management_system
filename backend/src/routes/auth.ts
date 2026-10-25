@@ -9,7 +9,8 @@ import { isHttpError } from "../lib/httpError.js";
 import { createRateLimiter, noRateLimit } from "../middleware/rateLimit.js";
 import { normalizeEmail } from "../utils/email.js";
 import { signInRefusal } from "../services/accountApproval.js";
-import { acceptInvite, ERROR_INVITE_PASSWORD } from "../services/invites.js";
+import { acceptInvite, ERROR_INVITE_PASSWORD, inviteBaseUrl } from "../services/invites.js";
+import { sendNotificationEmail } from "../services/email.js";
 
 const router: ExpressRouter = Router();
 
@@ -681,8 +682,22 @@ router.post(
           },
         });
 
-        // In production, send email with token. For now, log it.
-        console.log(`Password reset token for ${email}: ${token}`);
+        /**
+         * The link is sent to the account's own address — never to the
+         * administrator who triggered it (C10). The transport is the
+         * `NOTIFY_EMAIL` side-channel (`services/email.ts`); until a real one
+         * is configured (G04) the development log is the only place the token
+         * exists, and it is not written where production logs are collected.
+         */
+        const resetUrl = `${inviteBaseUrl()}/reset-password?token=${encodeURIComponent(token)}`;
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`Password reset link for ${email}: ${resetUrl}`);
+        }
+        void sendNotificationEmail({
+          to: email,
+          subject: "Reset your CNCS Property Management password",
+          body: `Open this link to choose a new password. It works once and expires in an hour:\n\n${resetUrl}\n\nIf you did not ask for this, you can ignore the message.`,
+        });
       }
 
       res.status(200).json({ message: "If the email exists, a reset link has been sent" });

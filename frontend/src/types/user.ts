@@ -9,9 +9,10 @@ export interface AuthUser {
   /** The user's department ID — present for DEPARTMENT_HEAD and STAFF roles. */
   departmentId?: string;
   /**
-   * Set when an administrator reset this account's password. The app forces a
-   * change on the next sign-in (`RequireAuth` redirects to `/change-password`).
-   * Absent on responses from before the reset flow existed, hence optional.
+   * Legacy rollback bridge. No route sets it any more (an administrator cannot
+   * set a password, C10), but a row that still has it set — left by an older
+   * build — is forced through `/change-password` on sign-in rather than carrying
+   * a temporary password forward.
    */
   mustChangePassword?: boolean;
 }
@@ -99,4 +100,29 @@ export interface DepartmentOption {
   id: string;
   name: string;
   code: string;
+}
+
+/** What became of an invitation (`GET /users/invites`). */
+export type InviteStatus = "SENT" | "RESENT" | "EXPIRED" | "ACCEPTED";
+
+/**
+ * One row of the administrator's invitation list.
+ *
+ * `id` is the account's id, which is what the resend and revoke routes take;
+ * `tokenId` is the single-use token behind it. Accepted rows stay in the list
+ * so "who did we invite, and what became of it?" has one answer.
+ */
+export interface InviteRow {
+  id: string;
+  tokenId: string;
+  fullName: string;
+  email: string;
+  role: Role;
+  orgUnitId: string | null;
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+  authorizedBy: string | null;
+  authorizationRef: string | null;
+  status: InviteStatus;
 }

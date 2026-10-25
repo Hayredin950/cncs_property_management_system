@@ -13,13 +13,14 @@ vi.mock("../lib/prisma.js", () => {
       findMany: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      count: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
     },
     notification: { deleteMany: vi.fn() },
     request: { count: vi.fn() },
-    adminActionLog: { create: vi.fn(), count: vi.fn() },
-    emailToken: { count: vi.fn(), deleteMany: vi.fn() },
+    adminActionLog: { create: vi.fn(), count: vi.fn(), findMany: vi.fn() },
+    emailToken: { count: vi.fn(), findMany: vi.fn(), deleteMany: vi.fn() },
     accountRequest: { count: vi.fn(), deleteMany: vi.fn() },
     // `findMany` is how the head's unit scope is read (the unit and its
     // children) — without it, the approvals query for a DEPARTMENT_HEAD
@@ -111,6 +112,33 @@ describe("GET /users", () => {
     expect(res.body[1].itemCount).toBeUndefined();
     expect(res.body[0].passwordHash).toBeUndefined();
     expect(res.body[0]._count).toBeUndefined();
+  });
+
+  it("pages the list when asked, and says how many accounts there are", async () => {
+    vi.mocked(prisma.user.count).mockResolvedValueOnce(26 as never);
+    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([adminUserRow()] as never);
+
+    const res = await request(app)
+      .get("/users?page=2&limit=10")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ page: 2, limit: 10, total: 26, totalPages: 3 });
+    expect(res.body.data).toHaveLength(1);
+    expect(vi.mocked(prisma.user.findMany)).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 10, take: 10 }),
+    );
+  });
+
+  it("clamps a caller's page size to 100", async () => {
+    vi.mocked(prisma.user.count).mockResolvedValueOnce(0 as never);
+    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([] as never);
+
+    const res = await request(app)
+      .get("/users?limit=10000")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.body.limit).toBe(100);
   });
 });
 
@@ -297,47 +325,6 @@ describe("POST /users/:id/promote", () => {
       role: "PROPERTY_OFFICER",
       tokenVersion: { increment: 1 },
     });
-  });
-});
-
-describe("POST /users/:id/password", () => {
-  it("returns 400 when the password is too short", async () => {
-    const res = await request(app)
-      .post("/users/user-1/password")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ password: "short" });
-
-    expect(res.status).toBe(400);
-  });
-
-  it("returns 404 for an unknown account", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
-
-    const res = await request(app)
-      .post("/users/missing/password")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ password: "LongEnough123" });
-
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 200 and stores a new hash", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "user-1" } as never);
-    vi.mocked(prisma.user.update).mockResolvedValueOnce({ id: "user-1" } as never);
-
-    const res = await request(app)
-      .post("/users/user-1/password")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ password: "LongEnough123" });
-
-    expect(res.status).toBe(200);
-    expect(res.body.passwordChanged).toBe(true);
-
-    const call = vi.mocked(prisma.user.update).mock.calls[0]?.[0] as {
-      data: { passwordHash: string };
-    };
-    expect(call.data.passwordHash).not.toBe("LongEnough123");
-    expect(call.data.passwordHash.length).toBeGreaterThan(20);
   });
 });
 
@@ -576,6 +563,55 @@ describe("GET /users/approvals", () => {
   });
 });
 
+describe("GET /users/invites", () => {
+  it("lists sent, reissued, expired and accepted invitations, with their status", async () => {
+    const now = Date.now();
+    const future = new Date(now + 60 * 60 * 1000);
+    const past = new Date(now - 60 * 60 * 1000);
+    const base = {
+      createdAt: new Date(now - 1000),
+      user: {
+        fullName: "Invitee",
+        role: "STAFF",
+        orgUnitId: null,
+        accountStatus: "PENDING_EMAIL_VERIFICATION",
+        accountRequest: null,
+      },
+    };
+    vi.mocked(prisma.emailToken.findMany).mockResolvedValueOnce([
+      { ...base, id: "t-sent", expiresAt: future, usedAt: null, user: { ...base.user, id: "u-sent", email: "sent@cncs.aau.edu.et" } },
+      { ...base, id: "t-resent", expiresAt: future, usedAt: null, user: { ...base.user, id: "u-resent", email: "resent@cncs.aau.edu.et" } },
+      { ...base, id: "t-expired", expiresAt: past, usedAt: null, user: { ...base.user, id: "u-expired", email: "expired@cncs.aau.edu.et" } },
+      { ...base, id: "t-accepted", expiresAt: future, usedAt: new Date(now - 5000), user: { ...base.user, id: "u-accepted", email: "accepted@cncs.aau.edu.et", accountStatus: "ACTIVE" } },
+    ] as never);
+    vi.mocked(prisma.adminActionLog.findMany).mockResolvedValueOnce([
+      { targetUserId: "u-resent" },
+    ] as never);
+
+    const res = await request(app)
+      .get("/users/invites")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.map((row: { email: string; status: string }) => [row.email, row.status])).toEqual([
+      ["sent@cncs.aau.edu.et", "SENT"],
+      ["resent@cncs.aau.edu.et", "RESENT"],
+      ["expired@cncs.aau.edu.et", "EXPIRED"],
+      ["accepted@cncs.aau.edu.et", "ACCEPTED"],
+    ]);
+  });
+
+  it("is refused to a caller without ACCOUNT_MANAGE", async () => {
+    const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
+
+    const res = await request(app)
+      .get("/users/invites")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("POST /users/:id/approve", () => {
   it("activates the account and records who decided it", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
@@ -632,6 +668,97 @@ describe("POST /users/:id/approve", () => {
     expect(call.data.role).toBe("AUDITOR");
     expect(call.data.reviewedBy).toEqual({ connect: { id: "admin-1" } });
     expect(call.data.tokenVersion).toEqual({ increment: 1 });
+  });
+
+  it("lets the system administrator move a request into another department, and logs the move", async () => {
+    // F05. A request can arrive in the wrong unit (a mis-filed application, or
+    // a headless unit's applicant being placed). Approving is the moment the
+    // system administrator knows where the person belongs, so the decision may
+    // carry `confirmedUnitId` — and the account log has to show both sides.
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "pending-1",
+      accountStatus: "PENDING_APPROVAL",
+      role: "STAFF",
+      orgUnitId: "unit-bio",
+    } as never);
+    vi.mocked(prisma.orgUnit.findUnique)
+      .mockReset()
+      .mockResolvedValue(null as never)
+      .mockResolvedValueOnce({ type: "DEPARTMENT", isActive: true } as never);
+    vi.mocked(prisma.user.update).mockResolvedValueOnce(
+      pendingUserRow({ accountStatus: "ACTIVE" }) as never,
+    );
+    vi.mocked(prisma.adminActionLog.create).mockResolvedValue({} as never);
+
+    const res = await request(app)
+      .post("/users/pending-1/approve")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ confirmedUnitId: "11111111-1111-4111-8111-111111111111" });
+
+    expect(res.status).toBe(200);
+
+    const update = vi.mocked(prisma.user.update).mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(update.data.orgUnit).toEqual({
+      connect: { id: "11111111-1111-4111-8111-111111111111" },
+    });
+
+    const log = vi.mocked(prisma.adminActionLog.create).mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(log.data.unitId).toBe("11111111-1111-4111-8111-111111111111");
+    expect(log.data.before).toMatchObject({ orgUnitId: "unit-bio" });
+    expect(log.data.after).toMatchObject({
+      orgUnitId: "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
+  it("refuses a department head trying to move the request out of their unit", async () => {
+    // A head's authority is their own unit. If they could pass
+    // `confirmedUnitId`, they could approve a request into a unit they do not
+    // head — which is the whole boundary `canDecide` just checked.
+    const headToken = createToken({
+      id: "head-1",
+      role: "DEPARTMENT_HEAD",
+      orgUnitId: "unit-cs",
+    });
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "pending-1",
+      accountStatus: "PENDING_APPROVAL",
+      role: "STAFF",
+      orgUnitId: "unit-cs",
+    } as never);
+
+    const res = await request(app)
+      .post("/users/pending-1/approve")
+      .set("Authorization", `Bearer ${headToken}`)
+      .send({ confirmedUnitId: "22222222-2222-4222-8222-222222222222" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/system administrator/i);
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a confirmedUnitId that is not an active department", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: "pending-1",
+      accountStatus: "PENDING_APPROVAL",
+      role: "STAFF",
+      orgUnitId: "unit-bio",
+    } as never);
+    vi.mocked(prisma.orgUnit.findUnique)
+      .mockReset()
+      .mockResolvedValue(null as never)
+      .mockResolvedValueOnce({ type: "FACULTY", isActive: true } as never);
+
+    const res = await request(app)
+      .post("/users/pending-1/approve")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ confirmedUnitId: "33333333-3333-4333-8333-333333333333" });
+
+    expect(res.status).toBe(400);
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
   it("refuses an administrator approving their own account (404, hides existence)", async () => {

@@ -101,6 +101,12 @@ export function LoginPage() {
           <Button type="submit" fullWidth loading={isSubmitting} className="rounded-sm">
             Sign in
           </Button>
+          <Link
+            to="/forgot-password"
+            className="text-center text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
+          >
+            Forgot your password?
+          </Link>
         </form>
       </Card>
 

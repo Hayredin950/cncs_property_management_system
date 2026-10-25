@@ -256,3 +256,97 @@ describe("/admin/users — inviting a privileged account (T6)", () => {
     expect(called).toBe(false);
   });
 });
+
+/**
+ * The invitation list (T8/F06).
+ *
+ * Resend and revoke both existed as endpoints; what was missing was anywhere an
+ * administrator could *see* the link they had issued. The list has to show the
+ * state of every link, including the accepted ones — otherwise "did they ever
+ * take it up?" has no answer.
+ */
+describe("/admin/users — the invitation list (T8/F06)", () => {
+  beforeEach(() => {
+    server.use(http.get(`${API}/auth/me`, () => HttpResponse.json({ user: SYSTEM_ADMIN_USER })));
+  });
+
+  const INVITES = [
+    {
+      id: "invite-1",
+      tokenId: "token-1",
+      fullName: "New Head",
+      email: "head@cncs.aau.edu.et",
+      role: "DEPARTMENT_HEAD",
+      orgUnitId: "unit-cs",
+      createdAt: "2026-10-20T08:00:00.000Z",
+      expiresAt: "2026-10-23T08:00:00.000Z",
+      acceptedAt: null,
+      authorizedBy: "Dean",
+      authorizationRef: "L-001",
+      status: "EXPIRED",
+    },
+    {
+      id: "invite-2",
+      tokenId: "token-2",
+      fullName: "Taken Up",
+      email: "taken@cncs.aau.edu.et",
+      role: "AUDITOR",
+      orgUnitId: null,
+      createdAt: "2026-10-19T08:00:00.000Z",
+      expiresAt: "2026-10-22T08:00:00.000Z",
+      acceptedAt: "2026-10-19T09:00:00.000Z",
+      authorizedBy: "Dean",
+      authorizationRef: "L-002",
+      status: "ACCEPTED",
+    },
+  ];
+
+  it("shows every invitation with its state, and offers actions only on live links", async () => {
+    server.use(http.get(`${API}/users/invites`, () => HttpResponse.json(INVITES)));
+
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/admin/users"] });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Invitations/i }));
+
+    const main = await screen.findByRole("main");
+    expect(await within(main).findByText("head@cncs.aau.edu.et")).toBeInTheDocument();
+    expect(within(main).getByText("Expired")).toBeInTheDocument();
+    expect(within(main).getByText("Accepted")).toBeInTheDocument();
+
+    // The expired link can be replaced or taken back; the accepted one has
+    // nothing left to act on.
+    const expiredRow = within(main).getByText("head@cncs.aau.edu.et").closest("li") as HTMLElement;
+    expect(within(expiredRow).getByRole("button", { name: /resend/i })).toBeInTheDocument();
+    expect(within(expiredRow).getByRole("button", { name: /revoke/i })).toBeInTheDocument();
+
+    const acceptedRow = within(main).getByText("taken@cncs.aau.edu.et").closest("li") as HTMLElement;
+    expect(within(acceptedRow).queryByRole("button", { name: /resend/i })).not.toBeInTheDocument();
+    expect(within(acceptedRow).queryByRole("button", { name: /revoke/i })).not.toBeInTheDocument();
+  });
+
+  it("revokes the link the administrator confirmed, and never one they did not", async () => {
+    let revoked: string | null = null;
+    server.use(
+      http.get(`${API}/users/invites`, () => HttpResponse.json(INVITES)),
+      http.delete(`${API}/users/invites/:id`, ({ params }) => {
+        revoked = String(params.id);
+        return HttpResponse.json({ message: "Invite revoked successfully" });
+      }),
+    );
+
+    setToken("test-token");
+    renderWithProviders({ initialEntries: ["/admin/users"] });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Invitations/i }));
+
+    const main = await screen.findByRole("main");
+    const expiredRow = (await within(main).findByText("head@cncs.aau.edu.et")).closest("li") as HTMLElement;
+    await user.click(within(expiredRow).getByRole("button", { name: /revoke/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /revoke invitation/i }));
+
+    await waitFor(() => expect(revoked).toBe("invite-1"));
+  });
+});

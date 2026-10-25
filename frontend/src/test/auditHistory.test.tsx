@@ -81,7 +81,9 @@ describe("/audits — the audit history", () => {
     expect(screen.getAllByText(/Completed/).length).toBeGreaterThan(0);
 
     // The unfinished one is listed too, and says so rather than looking finished.
-    expect(screen.getByText("Biology")).toBeInTheDocument();
+    // Asked for as a link, because "Biology" is also an option in the department
+    // filter above the list.
+    expect(screen.getByRole("link", { name: "Biology" })).toBeInTheDocument();
     // "In progress" can appear more than once on the page (the status chip and
     // the list's own summary), so the assertion is that at least one is there.
     expect(screen.getAllByText("In progress").length).toBeGreaterThan(0);

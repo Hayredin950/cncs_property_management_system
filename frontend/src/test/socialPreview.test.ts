@@ -282,56 +282,28 @@ describe("the preview endpoint", () => {
     expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
   });
 
-  it("renders a real item's name, location and card", async () => {
-    // `PUBLIC_ITEM` in the fixtures is what an anonymous viewer gets — the same
-    // field filtering a QR scan goes through.
-    const html = await (await previewHandler(request("?tagId=CNCS-AB12CD34"))).text();
-
-    expect(html).toContain("Dell Latitude 5440");
-    expect(html).toContain("CNCS-AB12CD34");
-    expect(html).toContain(`${SITE}/og/item.jpg`);
-    expect(html).toContain(`<link rel="canonical" href="${SITE}/item/CNCS-AB12CD34"`);
-  });
-
-  it("prefers the item's photograph over the branded card", async () => {
+  it("gives a shared tag link the generic card, deliberately, and asks the API nothing", async () => {
+    // U13. The item route is authenticated; a crawler has no session, so the
+    // old call could only ever be a guaranteed 401. The decision (recorded in
+    // the KB) is to stop making it: a preview must not hold a credential that
+    // can read the register, and a new anonymous read would turn every tag into
+    // an existence oracle. The card still names the tag and links to it.
+    let called = false;
     server.use(
-      http.get(`${API}/items/CNCS-PHOTO01`, () =>
-        HttpResponse.json({
-          id: "item-photo",
-          tagId: "CNCS-PHOTO01",
-          name: "Zeiss Microscope",
-          categoryId: "cat-2",
-          category: { id: "cat-2", name: "Lab equipment" },
-          department: "Biology",
-          building: "Science Complex",
-          floor: "2",
-          room: "204",
-          photoUrl: CLOUDINARY_PHOTO,
-          condition: "GOOD",
-          status: "ACTIVE",
-          registeredAt: "2026-09-10T09:00:00.000Z",
-        }),
-      ),
+      http.get(`${API}/items/CNCS-AB12CD34`, () => {
+        called = true;
+        return HttpResponse.json({});
+      }),
     );
 
-    const html = await (await previewHandler(request("?tagId=CNCS-PHOTO01"))).text();
+    const html = await (await previewHandler(request("?tagId=CNCS-AB12CD34"))).text();
 
-    expect(html).toContain("/w_1200,h_630,c_fill,g_auto,q_auto,f_jpg/");
-    expect(html).not.toContain("/og/item.jpg");
-  });
-
-  it("mirrors the API's 410 for a disposed item without leaking its name", async () => {
-    // `DISPOSED_ITEM` is named "Old projector" in the fixtures; an anonymous
-    // viewer must never be told that.
-    const html = await (await previewHandler(request("?tagId=CNCS-DEAD0000"))).text();
-
-    expect(html).toContain("This item is no longer registered");
-    expect(html).not.toContain("Old projector");
-  });
-
-  it("answers an unknown tag with the not-found copy", async () => {
-    const html = await (await previewHandler(request("?tagId=CNCS-NOPE"))).text();
-    expect(html).toContain("Tag not found");
+    expect(called).toBe(false);
+    expect(html).toContain("CNCS-AB12CD34");
+    expect(html).toContain(`${SITE}/og/default.jpg`);
+    expect(html).toContain(`<link rel="canonical" href="${SITE}/item/CNCS-AB12CD34"`);
+    // The item's name is not in the answer, because the API was never asked.
+    expect(html).not.toContain("Dell Latitude 5440");
   });
 
   it("still produces a card when the backend cannot be reached", async () => {

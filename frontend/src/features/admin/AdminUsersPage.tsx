@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import {Check, ClipboardCopy, Mail, Pencil, Send, ShieldCheck, Trash2, UserPlus, X, KeyRound, ClipboardCheck, UserX } from "lucide-react";
+import {Check, ClipboardCopy, Mail, Pencil, RotateCcw, Send, ShieldCheck, Trash2, UserPlus, X, KeyRound, ClipboardCheck, UserX } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -28,11 +28,23 @@ import {
   useRejectUser,
   useUpdateUser,
 } from "../../hooks/useAuthMutations";
-import { useApprovals, useDecidedAccounts, useInvitableUnits, useUsers } from "../../hooks/useUsers";
+import {
+  useApprovals,
+  useDecidedAccounts,
+  useInvitableUnits,
+  useInvites,
+  useRevokeInvite,
+  useUsers,
+} from "../../hooks/useUsers";
 import { requestPasswordReset } from "../../api/auth";
 import { formatDateUTC, formatRelativeTime } from "../../lib/formatters";
 import { ApiError } from "../../types/api";
-import type { InviteAccountResponse, UserSummary } from "../../types/user";
+import type {
+  InviteAccountResponse,
+  InviteRow,
+  InviteStatus,
+  UserSummary,
+} from "../../types/user";
 
 /**
  * The invite form (T6).
@@ -58,6 +70,19 @@ const inviteSchema = z.object({
 });
 
 type InviteFormValues = z.infer<typeof inviteSchema>;
+
+/**
+ * How each invitation state reads on the list. `RESENT` is a link that was
+ * reissued before it was used (the old token is gone), so it is not the same
+ * thing as the first `SENT` — the person may be holding two emails and only the
+ * newer one works.
+ */
+const INVITE_STATUS: Record<InviteStatus, { label: string; tone: "info" | "warning" | "neutral" | "success" }> = {
+  SENT: { label: "Sent", tone: "info" },
+  RESENT: { label: "Reissued", tone: "warning" },
+  EXPIRED: { label: "Expired", tone: "neutral" },
+  ACCEPTED: { label: "Accepted", tone: "success" },
+};
 
 /** The five spec roles (2.1), in the order `types/enums.ts` declares them. */
 const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role] }));
@@ -122,9 +147,9 @@ export function AdminUsersPage() {
   // landing them on a queue they also own was leaving them one click away
   // from the work they do most. (Both branches used to be "approvals" — a
   // leftover from when the screen had no tabs at all.)
-  const [activeTab, setActiveTab] = useState<"approvals" | "decided" | "invite" | "accounts">(
-    isDeptHead ? "approvals" : "accounts",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "approvals" | "decided" | "invite" | "invitations" | "accounts"
+  >(isDeptHead ? "approvals" : "accounts");
 
   // Search and filter state for Existing Accounts tab
   const [searchQuery, setSearchQuery] = useState("");
@@ -135,6 +160,8 @@ export function AdminUsersPage() {
   const deleteMutation = useDeleteUser();
   const closeMutation = useDeactivateUser();
   const resendMutation = useResendInvite();
+  const revokeMutation = useRevokeInvite();
+  const invitesQuery = useInvites(isSystemAdmin);
   const approveMutation = useApproveUser();
   const rejectMutation = useRejectUser();
 
@@ -164,6 +191,7 @@ export function AdminUsersPage() {
   const [rejecting, setRejecting] = useState<UserSummary | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectError, setRejectError] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<InviteRow | null>(null);
 
   const {
     register,
@@ -373,6 +401,20 @@ export function AdminUsersPage() {
             Invite an Account
           </button>
         )}
+        {showInviteTab && (
+          <button
+            onClick={() => setActiveTab("invitations")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "invitations"
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Invitations
+            {(invitesQuery.data ?? []).some((invite) => invite.status !== "ACCEPTED") &&
+              ` (${(invitesQuery.data ?? []).filter((invite) => invite.status !== "ACCEPTED").length})`}
+          </button>
+        )}
         {showAccountsTab && (
           <button
             onClick={() => setActiveTab("accounts")}
@@ -507,6 +549,94 @@ export function AdminUsersPage() {
             })}
           </ul>
         )}
+        </section>
+      )}
+
+      {/* Tab: Invitations — every link, and what became of it (T8/F06). */}
+      {showInviteTab && activeTab === "invitations" && (
+        <section className="flex flex-col gap-3">
+          <Card className="text-sm text-slate-600">
+            Every invitation the college has sent, including the ones already accepted. A link
+            works once and expires 72 hours after it is issued; <strong>Resend</strong> replaces a
+            lost or expired link with a fresh one, and <strong>Revoke</strong> takes an unused one
+            back.
+          </Card>
+
+          {invitesQuery.isPending ? (
+            <div className="flex flex-col gap-2" role="status" aria-label="Loading invitations">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <Skeleton key={index} className="h-16 w-full" />
+              ))}
+            </div>
+          ) : invitesQuery.isError ? (
+            <ErrorState
+              heading="Couldn't load the invitations"
+              body={invitesQuery.error instanceof Error ? invitesQuery.error.message : undefined}
+              action={
+                <Button size="sm" onClick={() => invitesQuery.refetch()}>
+                  Try again
+                </Button>
+              }
+            />
+          ) : (invitesQuery.data ?? []).length === 0 ? (
+            <EmptyState
+              icon={<Mail className="h-6 w-6" />}
+              heading="No invitations yet"
+              body="Invite a head, officer, auditor or system administrator, and the link appears here until it is accepted."
+            />
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {(invitesQuery.data ?? []).map((invite) => {
+                const meta = INVITE_STATUS[invite.status];
+                return (
+                  <li key={invite.tokenId}>
+                    <Card className="flex flex-wrap items-start justify-between gap-3 py-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="min-w-0 break-words font-semibold text-slate-900">
+                            {invite.fullName}
+                          </span>
+                          <RoleBadge role={invite.role} />
+                          <Badge tone={meta.tone}>{meta.label}</Badge>
+                        </div>
+                        <p className="mt-0.5 truncate text-sm text-slate-600">{invite.email}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {invite.status === "ACCEPTED"
+                            ? `Accepted ${formatDateUTC(invite.acceptedAt) ?? "—"}`
+                            : `Sent ${formatDateUTC(invite.createdAt) ?? "—"} · expires ${
+                                formatDateUTC(invite.expiresAt) ?? "—"
+                              }`}
+                          {invite.authorizedBy && ` · authorized by ${invite.authorizedBy}`}
+                        </p>
+                      </div>
+
+                      {invite.status !== "ACCEPTED" && (
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            leftIcon={<RotateCcw className="h-4 w-4" />}
+                            loading={resendMutation.isPending}
+                            onClick={() => resendMutation.mutate(invite.id)}
+                          >
+                            Resend
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            leftIcon={<Trash2 className="h-4 w-4" />}
+                            onClick={() => setRevoking(invite)}
+                          >
+                            Revoke
+                          </Button>
+                        </div>
+                      )}
+                    </Card>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       )}
 
@@ -990,6 +1120,26 @@ export function AdminUsersPage() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={revoking !== null}
+        onClose={() => setRevoking(null)}
+        onConfirm={() => {
+          if (revoking) {
+            revokeMutation.mutate(revoking.id, { onSuccess: () => setRevoking(null) });
+          }
+        }}
+        title={revoking ? `Revoke the invitation for ${revoking.fullName}?` : "Revoke invitation"}
+        tone="destructive"
+        loading={revokeMutation.isPending}
+        confirmLabel="Revoke invitation"
+        body={
+          <>
+            The link sent to <strong>{revoking?.email}</strong> will stop working immediately, and
+            the pending account it names is removed. You can invite the person again afterwards.
+          </>
+        }
+      />
 
       <ConfirmDialog
         open={deleting !== null}

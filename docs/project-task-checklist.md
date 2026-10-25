@@ -71,7 +71,7 @@ Legend: `[x]` done and verified this session · `[~]` partial, note says what is
 - [x] `STAFF` can still read an item they do not hold **by id/tag**: FIXED 15 Oct 2026 —
       `itemInScope` check added to `GET /items/:tagId` at line 521, returns 404 for out-of-scope items.
 - [x] Same for `DEPARTMENT_HEAD` — same `itemInScope` check applies.
-- [ ] F2 "out-of-scope tag → 'Not assigned to you, contact Property Office'" is not implemented.
+- [x] F2 "out-of-scope tag → 'Not assigned to you, contact Property Office'" — done 25 Oct: still a 404 (no tag oracle), with that sentence (`OUT_OF_SCOPE_TAG_MESSAGE`).
 
 ### 3. Holder model + custody log
 - [x] `holderType` / `holderId` on `Item` — `backend/prisma/schema.prisma:365–367`; index at `:416`.

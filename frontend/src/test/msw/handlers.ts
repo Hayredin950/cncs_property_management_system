@@ -222,6 +222,19 @@ export const handlers = [
     getToken() ? HttpResponse.json({ count: 1 }) : unauthorized(),
   ),
 
+  /**
+   * The invitation list (`T8`/F06). Declared before `/users/:id` so the literal
+   * path wins, and mocked as empty here: the tests that care about a row
+   * override it with `server.use`.
+   */
+  http.get(`${API}/users/invites`, () =>
+    getToken() ? HttpResponse.json([]) : unauthorized(),
+  ),
+
+  http.delete(`${API}/users/invites/:id`, () =>
+    getToken() ? HttpResponse.json({ message: "Invite revoked successfully" }) : unauthorized(),
+  ),
+
   http.patch(`${API}/users/:id`, async ({ params, request }) => {
     if (!getToken()) return unauthorized();
     const body = (await request.json()) as { fullName?: string; email?: string };
@@ -259,10 +272,6 @@ export const handlers = [
       reviewNote: body.reason ?? null,
     });
   }),
-
-  http.post(`${API}/users/:id/password`, ({ params }) =>
-    getToken() ? HttpResponse.json({ id: params.id, passwordChanged: true }) : unauthorized(),
-  ),
 
   http.delete(`${API}/users/:id`, ({ params }) =>
     getToken() ? HttpResponse.json({ id: params.id, deleted: true }) : unauthorized(),

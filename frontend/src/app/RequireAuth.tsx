@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { NotFoundPage } from "../features/public/NotFoundPage";
+import { Skeleton, SkeletonCard } from "../components/Skeleton";
 import type { Role } from "../types/enums";
 import { useAuth } from "./AuthContext";
 
@@ -21,7 +22,23 @@ export function RequireAuth({ children, roles }: RequireAuthProps) {
   const location = useLocation();
 
   if (status === "loading") {
-    return null;
+    /*
+      A blank document while the session is restored is indistinguishable from a
+      broken page: the shell, the nav and the brand all vanish for as long as the
+      token check takes, and a slow connection makes it a white screen. The
+      skeleton says "the app is working, the account is being read".
+    */
+    return (
+      <div
+        role="status"
+        aria-label="Loading your account"
+        className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 p-6"
+      >
+        <Skeleton className="h-10 w-56" />
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    );
   }
 
   if (status === "anonymous" || !user) {

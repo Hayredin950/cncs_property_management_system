@@ -14,7 +14,6 @@ import {approveUser,
   inviteUser,
   promoteUser,
   rejectUser,
-  resetUserPassword,
   updateUser,
   type InviteUserPayload,
   type UpdateUserPayload, deactivateUser, activateDepartmentHead } from "../api/users";
@@ -157,15 +156,6 @@ export function usePromoteUser() {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't change the role"),
-  });
-}
-
-/** `POST /users/:id/password` — the admin sets a new password for the account. */
-export function useResetUserPassword() {
-  return useMutation({
-    mutationFn: ({ id, password }: { id: string; password: string }) => resetUserPassword(id, password),
-    onSuccess: () => toast.success("Password changed."),
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Couldn't change the password"),
   });
 }
 
@@ -360,6 +350,7 @@ export function useResendInvite() {
     onSuccess: () => {
       toast.success("A new invitation link has been issued.");
       void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({ queryKey: ["users", "invites"] });
     },
     onError: (error) =>
       toast.error(error instanceof Error ? error.message : "Couldn't resend the invitation"),

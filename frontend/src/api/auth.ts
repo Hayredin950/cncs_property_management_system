@@ -87,3 +87,18 @@ export function acceptInvite(payload: {
 export function requestPasswordReset(email: string): Promise<{ message: string }> {
   return apiClient.post<{ message: string }>("/auth/request-password-reset", { email });
 }
+
+/**
+ * `POST /auth/reset-password` — complete a reset with the link's single-use
+ * token.
+ *
+ * The account holder chooses the password here; the token is the credential.
+ * Success bumps `tokenVersion` server-side, so every other session on the
+ * account is signed out.
+ */
+export function resetPassword(payload: {
+  token: string;
+  newPassword: string;
+}): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>("/auth/reset-password", payload);
+}

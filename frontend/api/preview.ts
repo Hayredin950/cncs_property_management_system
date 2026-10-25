@@ -1,5 +1,4 @@
 import {
-  buildItemPreview,
   buildPreviewHtml,
   buildSitePreview,
   buildUnavailablePreview,
@@ -46,9 +45,6 @@ import {
  */
 declare const process: { env: Record<string, string | undefined> };
 
-/** Long enough for a cold backend and a Neon wake-up; short enough not to stall a crawler. */
-const REQUEST_TIMEOUT_MS = 4_000;
-
 export default async function handler(request: Request): Promise<Response> {
   const url = new URL(request.url);
 
@@ -79,39 +75,25 @@ export default async function handler(request: Request): Promise<Response> {
   });
 }
 
-async function buildPreviewForTag(tagId: string, siteOrigin: string): Promise<SocialPreview> {
-  const apiOrigin = readApiOrigin();
-  if (!apiOrigin) return buildUnavailablePreview(siteOrigin, tagId, "unreachable");
-
-  try {
-    const response = await fetch(`${apiOrigin}/api/v1/items/${encodeURIComponent(tagId)}`, {
-      // `GET /items/:tagId` is public — anonymous visitors are the whole point of
-      // a QR tag — so this needs no credentials, and it must not send any: the
-      // response is field-filtered per viewer (SDS 3.2) and a token here would
-      // silently widen what a shared link can reveal.
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-
-    if (response.ok) {
-      // Parsed defensively rather than awaited directly: a body that is not JSON
-      // should degrade to the generic card, not be conflated with a network
-      // failure below.
-      const body = await response.json().catch(() => null);
-      return buildItemPreview(body, siteOrigin, tagId);
-    }
-
-    // 410 is the API's `F7.3` answer for a disposed item: one sentence, and
-    // deliberately no name. The preview mirrors that exactly — see
-    // `buildUnavailablePreview`.
-    if (response.status === 410) return buildUnavailablePreview(siteOrigin, tagId, "gone");
-    if (response.status === 404) return buildUnavailablePreview(siteOrigin, tagId, "notFound");
-  } catch {
-    // A backend that is cold, asleep, or briefly unreachable must still produce a
-    // card. A preview that says less about the tag is a far smaller failure than
-    // a shared link that previews as nothing at all.
-  }
-
+/**
+ * A tag link's card.
+ *
+ * U13, decided: **a shared tag link gets the generic card, deliberately.**
+ *
+ * The route this used to call — `GET /items/:tagId` — became authenticated in
+ * §10.1, when the public item reads were removed because they disclosed a
+ * location. A crawler carries no session, so the call could only ever come back
+ * 401. Keeping it would be a request per preview that is guaranteed to fail.
+ *
+ * The alternatives were a server-side credential or a new anonymous read. The
+ * first is a credential that can read the register, held by a function whose
+ * only job is to draw a card; the second makes every tag an existence oracle
+ * for anyone who can guess one, which is the property §10.1 removed. Neither is
+ * worth a photograph on a WhatsApp link. The card still names the tag and sends
+ * the reader to the register — where the item is shown to the people entitled
+ * to see it.
+ */
+function buildPreviewForTag(tagId: string, siteOrigin: string): SocialPreview {
   return buildUnavailablePreview(siteOrigin, tagId, "unreachable");
 }
 
@@ -128,20 +110,6 @@ async function buildPreviewForTag(tagId: string, siteOrigin: string): Promise<So
 function readSiteOrigin(fallbackOrigin: string): string {
   const configured = process.env.SITE_ORIGIN?.trim();
   return stripTrailingSlash(configured && configured.length > 0 ? configured : fallbackOrigin);
-}
-
-/**
- * The backend's origin.
- *
- * `API_BASE_URL` first because it is this function's own variable and cannot be
- * confused with anything the browser bundle inlines; `VITE_API_BASE_URL` second
- * because that is the name the same value already has in every other
- * environment, and requiring a second copy of it just to render a preview is a
- * deployment trap. Neither carries `/api/v1` — it is appended below, once.
- */
-function readApiOrigin(): string {
-  const configured = process.env.API_BASE_URL ?? process.env.VITE_API_BASE_URL ?? "";
-  return stripTrailingSlash(configured.trim());
 }
 
 function stripTrailingSlash(value: string): string {

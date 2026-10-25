@@ -129,7 +129,22 @@ export function resolveItemScope(
       }
     case "PROPERTY_OFFICER":
     case "AUDITOR":
-      return scopeParam === "all" ? undefined : itemListScope(user);
+      /**
+       * "My items" has to mean *theirs*, even for the roles that may read the whole
+       * register. This branch used to answer every value except `all` with the
+       * role's own scope — which for these two roles is "no restriction" — so the
+       * web's and the phone's "My items" option showed the entire college and
+       * called it personal. A capability says what a role *may* read; the scope
+       * says what this list is showing, and the two are not the same question.
+       */
+      switch (scopeParam) {
+        case "mine":
+          return { OR: [{ ownerId: user.id }, { holderType: "STAFF", holderId: user.id }] };
+        case "all":
+          return undefined;
+        default:
+          return itemListScope(user);
+      }
     case "STAFF":
       switch (scopeParam) {
         case "mine":

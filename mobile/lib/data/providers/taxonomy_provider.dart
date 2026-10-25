@@ -1,8 +1,7 @@
-import 'dart:math' as math;
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/category.dart';
+import '../../models/department.dart';
 import '../../models/user.dart';
 import 'core_providers.dart';
 
@@ -30,6 +29,18 @@ final observedDepartmentsProvider = FutureProvider<List<String>>((ref) {
   return ref.watch(categoriesApiProvider).observedDepartments();
 });
 
+/// `GET /departments` — the real departments, for the register's filter.
+///
+/// Deliberately a **different** provider from [observedDepartmentsProvider]. That
+/// one answers "which spellings appear on the items I can see", which is the right
+/// question for the audit picker (completion matches the text exactly) and the
+/// wrong one for a register filter: the filter travels as `orgUnitId`, and on the
+/// live data the free-text column is empty, so a picker built from it offers
+/// nothing at all.
+final departmentsProvider = FutureProvider<List<Department>>((ref) {
+  return ref.watch(departmentsApiProvider).list();
+});
+
 class UserListNotifier extends AsyncNotifier<List<UserSummary>> {
   @override
   Future<List<UserSummary>> build() => ref.watch(usersApiProvider).list();
@@ -45,8 +56,9 @@ class ApprovalsListNotifier extends AsyncNotifier<List<UserSummary>> {
 }
 
 /// `GET /users/approvals` — the System Admin's decision queue.
-final approvalsProvider =
-    AsyncNotifierProvider<ApprovalsListNotifier, List<UserSummary>>(ApprovalsListNotifier.new);
+final approvalsProvider = AsyncNotifierProvider<ApprovalsListNotifier, List<UserSummary>>(
+  ApprovalsListNotifier.new,
+);
 
 /// `GET /departments/invitable` — the unit picker on the invite form (T6).
 ///
@@ -81,7 +93,9 @@ class UserActions {
     required String authorizationRef,
     String? authorizationNote,
   }) async {
-    final result = await _ref.read(usersApiProvider).invite(
+    final result = await _ref
+        .read(usersApiProvider)
+        .invite(
           email: email,
           role: role,
           unitId: unitId,
@@ -125,18 +139,16 @@ class UserActions {
     return user;
   }
 
-  /// `POST /users/:id/reset-password`. Returns the new password once, for the admin
-  /// to pass on out of band; the server sets `mustChangePassword` on the account so
-  /// the next sign-in forces a change.
+  /// `POST /auth/request-password-reset` — send the account holder a single-use
+  /// link so **they** choose a new password.
   ///
-  /// The password is generated **here**, never on the server: the API takes the
-  /// password the admin chose, and a server that invented one would have to return
-  /// it — which is a secret crossing the wire for no reason.
-  Future<String> resetPassword(String id) async {
-    final password = _generatePassword();
-    await _ref.read(usersApiProvider).resetPassword(id, password);
-    _ref.invalidate(usersProvider);
-    return password;
+  /// This replaces an administrator-typed reset: the API's `POST
+  /// /users/:id/password` was removed by ruling C10 (no administrator ever sees
+  /// or sets another person's password), and the phone kept calling it, so the
+  /// menu item answered 404. The link goes to the address on the account, and
+  /// the account's sessions are not touched until the link is used.
+  Future<String> sendResetLink(String email) {
+    return _ref.read(authApiProvider).requestPasswordReset(email);
   }
 
   /// `DELETE /users/:id`. The server refuses when the account owns items (that is
@@ -145,17 +157,6 @@ class UserActions {
   Future<void> remove(String id) async {
     await _ref.read(usersApiProvider).delete(id);
     _ref.invalidate(usersProvider);
-  }
-
-  static String _generatePassword() {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-    // `Random` is fine here and `Random.secure()` is not needed: this is a
-    // hand-off password an admin reads aloud, not a secret the app must protect
-    // from itself — the server's own strength check is the gate that matters.
-    final random = math.Random.secure();
-    return [
-      for (var i = 0; i < 14; i++) alphabet[random.nextInt(alphabet.length)],
-    ].join();
   }
 }
 

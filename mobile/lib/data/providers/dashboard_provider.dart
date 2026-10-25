@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/audit.dart';
 import '../../models/item.dart';
+import '../../models/permissions.dart';
+import 'auth_provider.dart';
 import 'core_providers.dart';
 
 /// The dashboard's three numbers and its preview list (§10.4).
@@ -28,26 +30,36 @@ class DashboardStats {
   final int itemsTracked;
 
   /// `GET /audits`'s `total` — sessions run, completed or not.
-  final int auditsRun;
+  ///
+  /// `null` when the signed-in role cannot read audit history. The endpoint is
+  /// gated by `AUDIT_VIEW`, so asking anyway is a 403 — and a 403 shown as the
+  /// dashboard's only content is a red banner over a screen that is otherwise
+  /// perfectly usable. A Staff account found that on a real device: three
+  /// requests, one refusal, and an "Insufficient permissions" strip above the
+  /// shortcuts.
+  final int? auditsRun;
 }
 
 final dashboardStatsProvider = FutureProvider<DashboardStats>((ref) async {
   final requestsApi = ref.watch(requestsApiProvider);
   final itemsApi = ref.watch(itemsApiProvider);
-  final auditsApi = ref.watch(auditsApiProvider);
+  final role = ref.watch(currentUserProvider)?.role;
+  final seeAudits = canViewAudits(role);
+  final auditsApi = seeAudits ? ref.watch(auditsApiProvider) : null;
 
   // Started together, awaited once. Rebuilding this provider on a dependency change
-  // cancels nothing, so the three always describe the same instant's worth of data.
-  final results = await Future.wait<Object>([
+  // cancels nothing, so the requests and items counts always describe the same
+  // instant's worth of data.
+  final results = await Future.wait<Object?>([
     requestsApi.pendingCount(),
     itemsApi.list(limit: 1),
-    auditsApi.list(),
+    if (auditsApi != null) auditsApi.list(),
   ]);
 
   return DashboardStats(
     pendingReview: results[0] as int,
     itemsTracked: (results[1] as ItemsListResponse).pagination.total,
-    auditsRun: (results[2] as AuditListResponse).total,
+    auditsRun: seeAudits ? (results[2] as AuditListResponse).total : null,
   );
 });
 

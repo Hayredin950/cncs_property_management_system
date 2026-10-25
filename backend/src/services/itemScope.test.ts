@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { itemInScope, itemListScope, type ScopedItem, type ScopedUser } from "./itemScope.js";
+import {
+  itemInScope,
+  itemListScope,
+  resolveItemScope,
+  type ScopedItem,
+  type ScopedUser,
+} from "./itemScope.js";
 
 /**
  * Item visibility, exercised as **rows** rather than as query fragments.
@@ -107,5 +113,51 @@ describe("Department Head item visibility", () => {
     expect(itemListScope(null)).toEqual({ id: { in: [] } });
     expect(itemInScope(null, csDepartmentItem)).toBe(false);
     expect(itemInScope(undefined, csDepartmentItem)).toBe(false);
+  });
+});
+
+/**
+ * The `?scope=` views the listing offers (the web's and the phone's filter rows).
+ *
+ * `all` means "no restriction", `mine` means the caller's own holdings, and an
+ * unknown value falls back to the role's own scope rather than widening it.
+ */
+describe("resolveItemScope", () => {
+  it("narrows an officer's 'mine' to the officer's own holdings", () => {
+    // The bug this pins: the college-wide roles answered every value except `all`
+    // with `itemListScope`, which for them is *undefined* — so "My items" listed
+    // the whole register. The scope is a view, not a capability.
+    expect(resolveItemScope(officer, "mine")).toEqual({
+      OR: [{ ownerId: officer.id }, { holderType: "STAFF", holderId: officer.id }],
+    });
+  });
+
+  it("narrows an auditor's 'mine' the same way", () => {
+    const auditor: ScopedUser = { id: "auditor-1", role: "AUDITOR" };
+    expect(resolveItemScope(auditor, "mine")).toEqual({
+      OR: [{ ownerId: auditor.id }, { holderType: "STAFF", holderId: auditor.id }],
+    });
+  });
+
+  it("leaves 'all' unrestricted for the college-wide roles", () => {
+    expect(resolveItemScope(officer, "all")).toBeUndefined();
+  });
+
+  it("falls back to the role's scope for an unknown value", () => {
+    // Not a widening: an unrecognised string must never become "everything".
+    expect(resolveItemScope(officer, "somebody-elses")).toBeUndefined();
+    expect(resolveItemScope(headCs, "somebody-elses")).toEqual(itemListScope(headCs));
+    expect(resolveItemScope({ id: "staff-cs", role: "STAFF", orgUnitId: CS }, "nonsense")).toEqual(
+      itemListScope({ id: "staff-cs", role: "STAFF", orgUnitId: CS }),
+    );
+  });
+
+  it("gives 'department' and 'other' to a head, and never the other unit's rows", () => {
+    expect(resolveItemScope(headCs, "department")).toEqual({
+      OR: [{ orgUnitId: CS }, { holderType: "DEPARTMENT", holderId: CS }, { ownerId: "head-cs" }],
+    });
+    expect(resolveItemScope(headCs, "other")).toEqual({
+      NOT: { OR: [{ orgUnitId: CS }, { holderType: "DEPARTMENT", holderId: CS }] },
+    });
   });
 });

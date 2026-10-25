@@ -131,6 +131,25 @@ describe("the item page — custody actions", () => {
     await waitFor(() => expect(body).toEqual({ reason: "NEVER_RECEIVED" }));
   });
 
+  it("says a refused item is back in the pool, and offers nobody a button", async () => {
+    // `refuse-claim` leaves the status at PENDING_CLAIM on purpose (the item is
+    // still waiting for a claim) but moves the holder to COLLEGE. The old copy
+    // then said "the person this item is registered to confirms receipt" to a
+    // holder who no longer exists.
+    server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: STAFF_USER })),
+      http.get(`${API}/items/${PRIVILEGED_ITEM.id}`, () =>
+        HttpResponse.json(itemWith({ holderType: "COLLEGE", holderId: null })),
+      ),
+    );
+    renderWithProviders({ initialEntries: [`/items/${PRIVILEGED_ITEM.id}`] });
+
+    expect(await screen.findByText("Back in the college pool")).toBeInTheDocument();
+    expect(screen.getByText(/refused it, so it is unassigned/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /I have this item/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /never received it/i })).not.toBeInTheDocument();
+  });
+
   it("offers a department head the verification an unverified item is waiting for", async () => {
     let verified = false;
     server.use(

@@ -1,5 +1,4 @@
 import '../../core/api/api_client.dart';
-import '../../models/json.dart';
 import '../../models/user.dart';
 
 /// `frontend/src/api/users.ts`. `list()` needs `USER_READ` (spec 2.1.1) and the
@@ -127,20 +126,9 @@ class UsersApi {
     return UserSummary.fromJson(json);
   }
 
-  /// `POST /users/:id/password` — set a new password for the account. The target
-  /// user is then forced to change it on next sign-in.
-  Future<bool> resetPassword(String id, String password) async {
-    final json = await _client.post<Map<String, dynamic>>(
-      '/users/${Uri.encodeComponent(id)}/password',
-      body: {'password': password},
-    );
-    return asBool(json['passwordChanged']);
-  }
-
   /// `DELETE /users/:id` — refused for any account that is part of the record
   /// (owns items, filed or reviewed requests, ran audits, made edits). Those
   /// relations would block the delete at the database level anyway, so the API
   /// reports what stands in the way instead — and that message is shown verbatim.
-  Future<void> delete(String id) =>
-      _client.delete<void>('/users/${Uri.encodeComponent(id)}');
+  Future<void> delete(String id) => _client.delete<void>('/users/${Uri.encodeComponent(id)}');
 }

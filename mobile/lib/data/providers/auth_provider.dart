@@ -47,8 +47,10 @@ class AuthState {
   bool get canViewAudits => permissions.canViewAudits(role);
   bool get canViewReports => permissions.canViewReports(role);
   bool get canCreateItems => permissions.canCreateItems(role);
+  bool get canViewOwnRequests => permissions.canViewOwnRequests(role);
   bool get canManageCategories => permissions.canManageCategories(role);
   bool get seesAllItems => permissions.seesAllItems(role);
+  bool get seesAssetData => permissions.seesAssetData(role);
 
   /// A password an administrator reset must be changed before anything else.
   bool get mustChangePassword => user?.mustChangePassword ?? false;
@@ -150,10 +152,9 @@ class AuthController extends Notifier<AuthState> {
     required String currentPassword,
     required String newPassword,
   }) async {
-    final response = await ref.read(authApiProvider).changePassword(
-          currentPassword: currentPassword,
-          newPassword: newPassword,
-        );
+    final response = await ref
+        .read(authApiProvider)
+        .changePassword(currentPassword: currentPassword, newPassword: newPassword);
     await ref.read(apiClientProvider).saveToken(response.token);
     state = AuthState(status: AuthStatus.authenticated, user: response.user);
   }

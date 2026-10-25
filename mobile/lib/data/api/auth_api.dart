@@ -24,6 +24,24 @@ class AuthApi {
     return AuthUser.fromJson(asMap(json['user']));
   }
 
+  /// `POST /auth/request-password-reset` — public: ask the server to mail a
+  /// single-use link to this address.
+  ///
+  /// An administrator uses this from the accounts screen instead of setting a
+  /// password (ruling C10: no administrator ever sees or sets another person's
+  /// password). The server answers the same way whether or not the address has
+  /// an account, so the message is deliberately non-committal.
+  Future<String> requestPasswordReset(String email) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/auth/request-password-reset',
+      body: {'email': email},
+    );
+    final message = asStringOrNull(json['message']);
+    return message == null || message.isEmpty
+        ? 'If that address has an account, a reset link has been sent.'
+        : message;
+  }
+
   /// `POST /auth/change-password` — the signed-in account changes its own
   /// password.
   ///

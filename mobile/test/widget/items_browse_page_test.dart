@@ -35,10 +35,8 @@ void main() {
 
     // Setting the filter *through the provider* is what makes this the filtered-empty
     // case rather than the empty-register case: the same response, a different state.
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(ItemsBrowsePage)),
-    );
-    container.read(itemQueryProvider.notifier).setDepartment('Chemistry');
+    final container = ProviderScope.containerOf(tester.element(find.byType(ItemsBrowsePage)));
+    container.read(itemQueryProvider.notifier).setOrgUnit('dept-chemistry');
     await pumpUntilFound(tester, find.text('No items match these filters'));
 
     final text = visibleText(tester);

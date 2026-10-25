@@ -70,10 +70,15 @@ export function ItemCustodyActions({ item }: { item: Item }) {
     return (
       <Card className="flex flex-col gap-4 border-brand-200 bg-brand-50">
         <div className="flex flex-col gap-1">
-          <h2 className="text-base font-semibold text-slate-900">Waiting for the holder to confirm</h2>
+          <h2 className="text-base font-semibold text-slate-900">
+            {item.holderType === "COLLEGE"
+              ? "Back in the college pool"
+              : "Waiting for the holder to confirm"}
+          </h2>
           <p className="text-sm text-slate-600">
-            This item was registered to somebody and is waiting for them to confirm they have it.
-            Until then it stays in the college pool.
+            {item.holderType === "COLLEGE"
+              ? "The person it was offered to refused it, so it is unassigned and waiting to be offered again."
+              : "This item was registered to somebody and is waiting for them to confirm they have it. Until then it stays in the college pool."}
           </p>
         </div>
         {isHolder ? (
@@ -88,6 +93,11 @@ export function ItemCustodyActions({ item }: { item: Item }) {
               I never received it
             </Button>
           </div>
+        ) : item.holderType === "COLLEGE" ? (
+          <p className="text-sm text-slate-500">
+            Nobody holds it. A Property Officer assigns it to a person or a department, who then
+            confirm receipt.
+          </p>
         ) : (
           <p className="text-sm text-slate-500">
             The person this item is registered to confirms receipt.

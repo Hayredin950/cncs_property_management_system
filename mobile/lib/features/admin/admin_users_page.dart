@@ -265,7 +265,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                   // Every account but your own can be given a different role — a
                   // change to your own is a self-lockout, so it is not offered.
                   onSetRole: account.id == currentUserId ? null : () => _changeRole(account),
-                  onReset: () => _resetPassword(account),
+                  onReset: () => _sendResetLink(account),
                   onRemove: account.id == currentUserId ? null : () => _remove(account),
                 ),
                 const SizedBox(height: AppSpace.s2),
@@ -645,29 +645,22 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
         ),
       );
 
-  Future<void> _resetPassword(UserSummary account) async {
+  Future<void> _sendResetLink(UserSummary account) async {
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Reset this password?',
-      body: 'A new password is generated and shown to you once. ${account.fullName} will be '
-          'forced to choose their own the next time they sign in, and every existing '
-          'session for the account is signed out.',
-      confirmLabel: 'Reset',
-      destructive: true,
-      icon: Icons.lock_reset_outlined,
+      title: 'Send a reset link?',
+      body: 'A single-use link goes to ${account.email}. ${account.fullName} chooses the new '
+          'password themselves — nobody here sees or sets it. Nothing changes until the link '
+          'is used.',
+      confirmLabel: 'Send link',
+      icon: Icons.forward_to_inbox_outlined,
     );
     if (!confirmed || !mounted) return;
 
     setState(() => _busyUserId = account.id);
     try {
-      final password = await ref.read(userActionsProvider).resetPassword(account.id);
-      if (!mounted) return;
-      await showPasswordDialog(
-        context,
-        name: account.fullName,
-        email: account.email,
-        password: password,
-      );
+      final message = await ref.read(userActionsProvider).sendResetLink(account.email);
+      if (mounted) showAppToast(context, message: message, tone: ToastTone.info);
     } on ApiError catch (error) {
       if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
     } on NetworkError catch (error) {
@@ -944,7 +937,7 @@ class _AccountRow extends StatelessWidget {
                     const PopupMenuItem(value: 'edit', child: Text('Correct name or email')),
                     if (onSetRole != null)
                       const PopupMenuItem(value: 'role', child: Text('Change role')),
-                    const PopupMenuItem(value: 'reset', child: Text('Reset password')),
+                    const PopupMenuItem(value: 'reset', child: Text('Send reset link')),
                     if (onRemove != null)
                       const PopupMenuItem(
                         value: 'remove',
@@ -968,59 +961,11 @@ class _AccountRow extends StatelessWidget {
   }
 }
 
-/// Shows a generated password **once**, with a copy control.
+/// There is deliberately no "generated password" dialog here any more.
 ///
-/// Not a toast: a 14-character password in a five-second snack bar is a password the
-/// administrator will not finish copying. A dialog stays until it is dismissed, and it
-/// repeats the email so the two can be passed on together.
-Future<void> showPasswordDialog(
-  BuildContext context, {
-  required String name,
-  required String email,
-  required String password,
-}) {
-  return showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: AppRadius.lgAll),
-      title: const Text('New password', style: TextStyle(fontSize: 17)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Give this to $name ($email). It is shown once and cannot be retrieved again \u2014 '
-            'resetting again issues a different one.',
-            style: const TextStyle(fontSize: 13.5, color: AppColors.aauGray600, height: 1.5),
-          ),
-          const SizedBox(height: AppSpace.s4),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpace.s3),
-            decoration: BoxDecoration(
-              color: AppColors.aauGray100,
-              borderRadius: AppRadius.smAll,
-              border: Border.all(color: AppColors.aauGray200),
-            ),
-            child: SelectableText(
-              password,
-              style: const TextStyle(
-                fontFamily: 'GeistMono',
-                fontSize: 15,
-                letterSpacing: 1,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Done'),
-        ),
-      ],
-    ),
-  );
-}
+/// This screen used to reset an account by generating a password, showing it to
+/// the administrator once, and calling `POST /users/:id/password`. That route was
+/// removed (ruling C10: no administrator ever sees or sets another person's
+/// password), so the menu item had become a 404 in the hand. It now sends a
+/// single-use reset link instead ([UserActions.sendResetLink]) and the account
+/// holder chooses the password themselves.

@@ -8,6 +8,7 @@ import '../../data/providers/core_providers.dart';
 import '../../data/providers/items_provider.dart';
 import '../../data/providers/taxonomy_provider.dart';
 import '../../models/category.dart';
+import '../../models/department.dart';
 import '../../models/item.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
@@ -28,25 +29,25 @@ import '../items/widgets/item_card.dart';
 /// question. Sharing one filter set would mean landing on the home page already
 /// filtered by whatever was left over from last time, which is the opposite of
 /// "find an item, fast".
-typedef LandingQuery = ({String? search, String? categoryId, String? department});
+typedef LandingQuery = ({String? search, String? categoryId, String? orgUnitId});
 
 class _LandingQueryNotifier extends Notifier<LandingQuery> {
   @override
-  LandingQuery build() => (search: null, categoryId: null, department: null);
+  LandingQuery build() => (search: null, categoryId: null, orgUnitId: null);
 
   void setSearch(String? value) => state = (
         search: _clean(value),
         categoryId: state.categoryId,
-        department: state.department,
+        orgUnitId: state.orgUnitId,
       );
 
   void setCategory(String? value) =>
-      state = (search: state.search, categoryId: _clean(value), department: state.department);
+      state = (search: state.search, categoryId: _clean(value), orgUnitId: state.orgUnitId);
 
-  void setDepartment(String? value) =>
-      state = (search: state.search, categoryId: state.categoryId, department: _clean(value));
+  void setOrgUnit(String? value) =>
+      state = (search: state.search, categoryId: state.categoryId, orgUnitId: _clean(value));
 
-  void clear() => state = (search: null, categoryId: null, department: null);
+  void clear() => state = (search: null, categoryId: null, orgUnitId: null);
 
   static String? _clean(String? value) {
     final trimmed = value?.trim();
@@ -65,7 +66,7 @@ final _landingItemsProvider = FutureProvider<ItemsListResponse>((ref) {
         limit: 8,
         search: query.search,
         categoryId: query.categoryId,
-        department: query.department,
+        orgUnitId: query.orgUnitId,
       );
 });
 
@@ -105,7 +106,7 @@ class _LandingPageState extends ConsumerState<LandingPage> {
     notifier.clear();
     if (query.search != null) notifier.setSearch(query.search);
     if (query.categoryId != null) notifier.setCategory(query.categoryId);
-    if (query.department != null) notifier.setDepartment(query.department);
+    if (query.orgUnitId != null) notifier.setOrgUnit(query.orgUnitId);
     context.go('/items');
   }
 
@@ -114,8 +115,8 @@ class _LandingPageState extends ConsumerState<LandingPage> {
     final query = ref.watch(_landingQueryProvider);
     final items = ref.watch(_landingItemsProvider);
     final categoryList = ref.watch(categoriesProvider).value ?? const <Category>[];
-    final departmentList = ref.watch(observedDepartmentsProvider).value ?? const <String>[];
-    final hasFilters = query.search != null || query.categoryId != null || query.department != null;
+    final departmentList = ref.watch(departmentsProvider).value ?? const <Department>[];
+    final hasFilters = query.search != null || query.categoryId != null || query.orgUnitId != null;
 
     void clearFilters() {
       _search.clear();
@@ -198,12 +199,12 @@ class _LandingPageState extends ConsumerState<LandingPage> {
                   AppFilterChip<String>(
                     label: 'Department',
                     icon: Icons.apartment_outlined,
-                    value: query.department,
+                    value: query.orgUnitId,
                     allLabel: 'All departments',
-                    options: departmentList,
-                    labelOf: (value) => value,
+                    options: [for (final department in departmentList) department.id],
+                    labelOf: (id) => _departmentName(departmentList, id),
                     onChanged: (value) =>
-                        ref.read(_landingQueryProvider.notifier).setDepartment(value),
+                        ref.read(_landingQueryProvider.notifier).setOrgUnit(value),
                   ),
                   AppFilterChip<String>(
                     label: 'Category',
@@ -334,6 +335,13 @@ String _categoryName(List<Category> categories, String id) {
     if (category.id == id) return category.name;
   }
   return 'Category';
+}
+
+String _departmentName(List<Department> departments, String id) {
+  for (final department in departments) {
+    if (department.id == id) return department.name;
+  }
+  return 'Department';
 }
 
 class _OrDivider extends StatelessWidget {

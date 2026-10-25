@@ -25,11 +25,36 @@ import 'core_providers.dart';
 ///     can be visibly shorter than a staff member's id page for the *same* item,
 ///     and caching them together would hand one viewer the other's fields.
 
-/// The register's current filter set. A record, so equality is structural and
+/// The register's filter set. A record, so equality is structural and
 /// `ref.watch` rebuilds exactly when a value actually changes.
-typedef ItemQuery = ({int page, String? search, String? categoryId, String? department});
+///
+/// `scope` and `orgUnitId` are two different questions and are kept apart on
+/// purpose (the web screen separates them too):
+///
+///   * **scope** is the *view* — the whole register, my own holdings, my
+///     department, or the rest of the college (`all` / `mine` / `department` /
+///     `other`). It is resolved server-side by role, so the client never derives
+///     what a person may see from a capability.
+///   * **orgUnitId** narrows *within* that view to one real department. It is an
+///     `OrgUnit` id, because that is what `Item.orgUnitId` holds — the free-text
+///     `Item.department` column is not a taxonomy.
+typedef ItemQuery = ({
+  int page,
+  String? search,
+  String? categoryId,
+  String? orgUnitId,
+  String? scope,
+  String? sort,
+});
 
-const ItemQuery _initialItemQuery = (page: 1, search: null, categoryId: null, department: null);
+const ItemQuery _initialItemQuery = (
+  page: 1,
+  search: null,
+  categoryId: null,
+  orgUnitId: null,
+  scope: null,
+  sort: null,
+);
 
 class ItemQueryNotifier extends Notifier<ItemQuery> {
   @override
@@ -38,29 +63,67 @@ class ItemQueryNotifier extends Notifier<ItemQuery> {
   /// Any filter change returns to page 1. Keeping the page when the query changed
   /// is how a filter can appear to "lose" results: the user was on page 4 of the
   /// old filter, which no longer exists under the new one.
-  void setSearch(String? search) =>
-      state = (page: 1, search: _clean(search), categoryId: state.categoryId, department: state.department);
+  void setSearch(String? search) => state = (
+    page: 1,
+    search: _clean(search),
+    categoryId: state.categoryId,
+    orgUnitId: state.orgUnitId,
+    scope: state.scope,
+    sort: state.sort,
+  );
 
   void setCategory(String? categoryId) => state = (
-        page: 1,
-        search: state.search,
-        categoryId: _clean(categoryId),
-        department: state.department,
-      );
+    page: 1,
+    search: state.search,
+    categoryId: _clean(categoryId),
+    orgUnitId: state.orgUnitId,
+    scope: state.scope,
+    sort: state.sort,
+  );
 
-  void setDepartment(String? department) => state = (
-        page: 1,
-        search: state.search,
-        categoryId: state.categoryId,
-        department: _clean(department),
-      );
+  /// Picks one department (an `OrgUnit` id) inside the current scope.
+  void setOrgUnit(String? orgUnitId) => state = (
+    page: 1,
+    search: state.search,
+    categoryId: state.categoryId,
+    orgUnitId: _clean(orgUnitId),
+    scope: state.scope,
+    sort: state.sort,
+  );
+
+  /// Switches the view. A department filter chosen under another view is cleared,
+  /// because it would silently narrow the new one — the web screen disables that
+  /// picker for `mine`/`department` for the same reason.
+  void setScope(String? scope) {
+    final next = _clean(scope);
+    final locksDepartment = next == 'mine' || next == 'department';
+    state = (
+      page: 1,
+      search: state.search,
+      categoryId: state.categoryId,
+      orgUnitId: locksDepartment ? null : state.orgUnitId,
+      scope: next,
+      sort: state.sort,
+    );
+  }
+
+  void setSort(String? sort) => state = (
+    page: 1,
+    search: state.search,
+    categoryId: state.categoryId,
+    orgUnitId: state.orgUnitId,
+    scope: state.scope,
+    sort: _clean(sort),
+  );
 
   void setPage(int page) => state = (
-        page: page < 1 ? 1 : page,
-        search: state.search,
-        categoryId: state.categoryId,
-        department: state.department,
-      );
+    page: page < 1 ? 1 : page,
+    search: state.search,
+    categoryId: state.categoryId,
+    orgUnitId: state.orgUnitId,
+    scope: state.scope,
+    sort: state.sort,
+  );
 
   void clear() => state = _initialItemQuery;
 
@@ -73,33 +136,61 @@ class ItemQueryNotifier extends Notifier<ItemQuery> {
 final itemQueryProvider = NotifierProvider<ItemQueryNotifier, ItemQuery>(ItemQueryNotifier.new);
 
 /// How many filters are active — the "Filters · 2" count on the collapsed filter
-/// trigger (§8). `search` is excluded because it has its own visible control.
+/// trigger (§8). `search` is excluded because it has its own visible control, and
+/// `scope` because it names the view rather than narrowing it.
 final activeFilterCountProvider = Provider<int>((ref) {
   final query = ref.watch(itemQueryProvider);
-  return (query.categoryId == null ? 0 : 1) + (query.department == null ? 0 : 1);
+  return (query.categoryId == null ? 0 : 1) +
+      (query.orgUnitId == null ? 0 : 1) +
+      (query.sort == null ? 0 : 1);
 });
 
 class ItemListNotifier extends AsyncNotifier<ItemsListResponse> {
   @override
   Future<ItemsListResponse> build() {
     final query = ref.watch(itemQueryProvider);
-    return ref.watch(itemsApiProvider).list(
+    final role = ref.watch(currentUserProvider)?.role;
+
+    /// "No scope chosen" means **the whole register**, not the server's narrow
+    /// role default.
+    ///
+    /// Asking `GET /items` with no `scope` answers with the caller's own holdings
+    /// (that is the server's safe default), which left a staff member's Items tab
+    /// showing ten rows of their own things while the same screen on the web
+    /// showed the register. The web sends `scope=all` as its default view, and so
+    /// does this screen; `mine` is an option you pick, not the place you start.
+    ///
+    /// A System Admin has no scope options (the register is not theirs to browse
+    /// as a person), so the request stays unscoped and the server's rule stands.
+    final scope = query.scope ?? (role == Role.systemAdmin ? null : 'all');
+
+    return ref
+        .watch(itemsApiProvider)
+        .list(
           page: query.page,
           search: query.search,
           categoryId: query.categoryId,
-          department: query.department,
+          orgUnitId: query.orgUnitId,
+          scope: scope,
+          sort: query.sort,
         );
   }
 }
 
-final itemListProvider = AsyncNotifierProvider<ItemListNotifier, ItemsListResponse>(ItemListNotifier.new);
+final itemListProvider = AsyncNotifierProvider<ItemListNotifier, ItemsListResponse>(
+  ItemListNotifier.new,
+);
 
 /// The newest registrations in the register — the dashboard's "recently
 /// registered" list.
 ///
-/// It asks `GET /items/recent` rather than the first page of the list: a
-/// dashboard wants three rows and was downloading twenty to show three.
-final recentItemsProvider = FutureProvider<List<Item>>((ref) {
+/// It asks `GET /items` (sorted newest first) rather than `GET /items/recent`: a
+/// dashboard wants three rows and `/recent` answers with a lean array of
+/// `{id, name, tagId, registeredAt}`, while the card renders condition, location
+/// and category. Reading an array into a record is the crash a Staff account
+/// met on a physical phone; asking the list for three rows returns the same
+/// shape as everywhere else.
+final recentItemsProvider = FutureProvider<ItemsListResponse>((ref) {
   final role = ref.watch(currentUserProvider)?.role;
 
   /**
@@ -150,11 +241,11 @@ final itemAccessoriesProvider = Provider.family<List<Item>, Item>((ref, item) =>
 /// subtle: a save changes an item *and* its edit log, and a screen that refreshes
 /// only the card it was looking at leaves the next screen stale.
 List<ProviderOrFamily> _itemDependents({String? itemId, String? tagId}) => [
-      itemListProvider,
-      if (itemId != null) itemByIdProvider(itemId),
-      if (itemId != null) itemHistoryProvider(itemId),
-      if (tagId != null) itemByTagProvider(tagId),
-    ];
+  itemListProvider,
+  if (itemId != null) itemByIdProvider(itemId),
+  if (itemId != null) itemHistoryProvider(itemId),
+  if (tagId != null) itemByTagProvider(tagId),
+];
 
 /// For a provider that just mutated an item.
 extension ItemInvalidation on Ref {
@@ -229,11 +320,7 @@ class ItemActions {
   /// `GET /items/:id/tag` — the printable PNG, saved like any other download.
   Future<SavedFile> downloadTag({required String itemId, required String tagId}) async {
     final bytes = await _ref.read(itemsApiProvider).tagPng(itemId);
-    return saveBytes(
-      bytes: bytes,
-      filename: '$tagId.png',
-      mimeType: 'image/png',
-    );
+    return saveBytes(bytes: bytes, filename: '$tagId.png', mimeType: 'image/png');
   }
 
   /// `POST /uploads/photo`, then the returned URL is what `photoUrl` is set to.
@@ -242,11 +329,9 @@ class ItemActions {
     required String filename,
     required String mimeType,
   }) {
-    return _ref.read(uploadsApiProvider).uploadPhoto(
-          bytes: bytes,
-          filename: filename,
-          mimeType: mimeType,
-        );
+    return _ref
+        .read(uploadsApiProvider)
+        .uploadPhoto(bytes: bytes, filename: filename, mimeType: mimeType);
   }
 
   /// `DELETE /uploads/photo` — best-effort cleanup when a photo was uploaded for a
@@ -262,11 +347,7 @@ class ItemActions {
 
   /// `POST /items/:id/refuse-claim` — refuse a PENDING_CLAIM item, reverting to
   /// the college pool. A code from the fixed set plus optional free text.
-  Future<Item> refuseClaim(
-    String id, {
-    required String reason,
-    String? otherReason,
-  }) async {
+  Future<Item> refuseClaim(String id, {required String reason, String? otherReason}) async {
     final item = await _ref
         .read(itemsApiProvider)
         .refuseClaim(id, reason: reason, otherReason: otherReason);

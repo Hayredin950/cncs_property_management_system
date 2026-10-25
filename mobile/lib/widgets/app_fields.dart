@@ -394,6 +394,7 @@ class AppFilterChip<T> extends StatelessWidget {
     required this.onChanged,
     this.allLabel = 'All',
     this.icon,
+    this.enabled = true,
   });
 
   final String label;
@@ -408,30 +409,50 @@ class AppFilterChip<T> extends StatelessWidget {
 
   final IconData? icon;
 
+  /// When false the chip is drawn but cannot open its sheet.
+  ///
+  /// Used for a filter the current **view** already decides — a department picker
+  /// under "My department" has nothing left to narrow, and offering it would let
+  /// the screen contradict the scope. A control that can only be wrong is worse
+  /// than one that is visibly unavailable.
+  final bool enabled;
+
   @override
   Widget build(BuildContext context) {
     final active = value != null;
+    final borderColor = !enabled
+        ? AppColors.aauGray200
+        : active
+            ? AppColors.brand200
+            : AppColors.aauGray300;
+    final foreground = !enabled
+        ? AppColors.aauGray400
+        : active
+            ? AppColors.brand700
+            : AppColors.aauGray700;
 
     return Material(
-      color: active ? AppColors.brand50 : Colors.white,
+      color: active && enabled ? AppColors.brand50 : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: const BorderRadius.all(Radius.circular(999)),
-        side: BorderSide(color: active ? AppColors.brand200 : AppColors.aauGray300),
+        side: BorderSide(color: borderColor),
       ),
       child: InkWell(
         borderRadius: const BorderRadius.all(Radius.circular(999)),
-        onTap: () async {
-          final result = await showSelectSheet<T>(
-            context: context,
-            title: label,
-            options: options,
-            labelOf: labelOf,
-            current: value,
-            clearLabel: allLabel,
-          );
-          if (result == null) return;
-          onChanged(result.value);
-        },
+        onTap: !enabled
+            ? null
+            : () async {
+                final result = await showSelectSheet<T>(
+                  context: context,
+                  title: label,
+                  options: options,
+                  labelOf: labelOf,
+                  current: value,
+                  clearLabel: allLabel,
+                );
+                if (result == null) return;
+                onChanged(result.value);
+              },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.s3, vertical: 9),
           child: Row(
@@ -441,7 +462,7 @@ class AppFilterChip<T> extends StatelessWidget {
                 Icon(
                   icon,
                   size: 15,
-                  color: active ? AppColors.brand700 : AppColors.aauGray500,
+                  color: active && enabled ? AppColors.brand700 : AppColors.aauGray500,
                 ),
                 const SizedBox(width: 5),
               ],
@@ -453,8 +474,8 @@ class AppFilterChip<T> extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13.5,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                    color: active ? AppColors.brand700 : AppColors.aauGray700,
+                    fontWeight: active && enabled ? FontWeight.w600 : FontWeight.w500,
+                    color: foreground,
                   ),
                 ),
               ),
@@ -462,7 +483,7 @@ class AppFilterChip<T> extends StatelessWidget {
               Icon(
                 Icons.expand_more,
                 size: 17,
-                color: active ? AppColors.brand700 : AppColors.aauGray500,
+                color: active && enabled ? AppColors.brand700 : AppColors.aauGray500,
               ),
             ],
           ),

@@ -28,10 +28,10 @@ class AccessoriesOutcome {
   }
 
   static List<String> _stringList(Object? value) => [
-        if (value is List)
-          for (final entry in value)
-            if (entry != null) '$entry',
-      ];
+    if (value is List)
+      for (final entry in value)
+        if (entry != null) '$entry',
+  ];
 
   final String itemId;
   final String tagId;
@@ -47,14 +47,21 @@ class ItemsApi {
 
   final ApiClient _client;
 
-  /// `GET /items` — public, richer when signed in. Field filtering happens
-  /// server-side; this module never re-implements it.
+  /// `GET /items` — the register, scoped and filtered server-side.
+  ///
+  /// Every parameter here is one the route understands: `scope` picks a view
+  /// (`all` / `mine` / `department` / `other`), `orgUnitId` filters on the item's
+  /// real department (an `OrgUnit` id, not the free-text `department` column),
+  /// and `sort` is the same vocabulary the web's "Sort by" uses. Field filtering
+  /// happens server-side; this module never re-implements it.
   Future<ItemsListResponse> list({
     int page = 1,
     int limit = 20,
     String? search,
     String? categoryId,
-    String? department,
+    String? orgUnitId,
+    String? scope,
+    String? sort,
   }) async {
     final json = await _client.get<Map<String, dynamic>>(
       '/items',
@@ -63,30 +70,32 @@ class ItemsApi {
         'limit': limit,
         'search': search,
         'categoryId': categoryId,
-        'department': department,
+        'orgUnitId': orgUnitId,
+        'scope': scope,
+        'sort': sort,
       },
     );
     return ItemsListResponse.fromJson(json);
   }
 
-  /// `GET /items/recent` — the newest registrations in the register.
+  /// The newest registrations in the register, as full item rows.
   ///
-  /// A separate endpoint rather than a page of the list sorted by date: the
-  /// server keeps this one cheap, and it is the only one that answers "what
-  /// arrived lately" for every role at once.
-  Future<List<Item>> recent({int limit = 5, String? scope}) async {
-    final json = await _client.get<Map<String, dynamic>>(
-      '/items/recent',
-      query: {'limit': limit, if (scope != null) 'scope': scope},
-    );
-    return [for (final row in asMapList(json)) Item.fromJson(row)];
-  }
+  /// This deliberately asks `GET /items` rather than `GET /items/recent`: the
+  /// dashboard renders the same `ItemCard` as the register, and `/recent` answers
+  /// with a lean row (id, name, tag, date) that has no condition, location or
+  /// category. Feeding that into `Item.fromJson` is what produced the type error
+  /// a Staff account saw on a physical phone — the endpoint is an array, and the
+  /// card needs a record.
+  Future<ItemsListResponse> recent({int limit = 5, String? scope}) =>
+      list(limit: limit, scope: scope);
 
-  /// `GET /items/held-by-me` — what the signed-in person holds.
-  Future<ItemsListResponse> heldByMe() async {
-    final json = await _client.get<Map<String, dynamic>>('/items/held-by-me');
-    return ItemsListResponse.fromJson(json);
-  }
+  /// What the signed-in person holds — the dashboard's "My holdings".
+  ///
+  /// `?scope=mine` is the same narrowing the register screen uses, and it
+  /// includes the states an item can be in while it is in someone's hands
+  /// (`ACTIVE`, `PENDING_CLAIM`, `LOANED`), so an item waiting for a confirmation
+  /// appears here rather than only in the register.
+  Future<ItemsListResponse> heldByMe({int limit = 3}) => list(limit: limit, scope: 'mine');
 
   /// `GET /items/:tagId` — the QR destination. `404` for an unknown tag, `410`
   /// for a disposed item seen by the public. Both surface as [ApiError] for the
@@ -211,11 +220,7 @@ class ItemsApi {
   /// The server takes [reason] from a fixed set (`NEVER_RECEIVED`, `WRONG_ITEM`,
   /// `CONDITION_MISMATCH`, `OTHER`) plus optional [otherReason] free text. A
   /// sentence in `reason` is a 400 — see workflow-completeness-spec §6.
-  Future<Item> refuseClaim(
-    String id, {
-    required String reason,
-    String? otherReason,
-  }) async {
+  Future<Item> refuseClaim(String id, {required String reason, String? otherReason}) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/items/${Uri.encodeComponent(id)}/refuse-claim',
       body: {

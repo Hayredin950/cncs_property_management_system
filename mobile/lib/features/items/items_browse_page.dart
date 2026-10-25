@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/providers/auth_provider.dart';
 import '../../data/providers/items_provider.dart';
 import '../../data/providers/taxonomy_provider.dart';
 import '../../models/category.dart';
+import '../../models/department.dart';
+import '../../models/enums.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_fields.dart';
@@ -57,16 +60,31 @@ class _ItemsBrowsePageState extends ConsumerState<ItemsBrowsePage> {
   Widget build(BuildContext context) {
     final query = ref.watch(itemQueryProvider);
     final items = ref.watch(itemListProvider);
+    final role = ref.watch(currentUserProvider)?.role;
     final categories = ref.watch(categoriesProvider).value ?? const <Category>[];
-    final departments = ref.watch(observedDepartmentsProvider).value ?? const <String>[];
+    final departments = ref.watch(departmentsProvider).value ?? const <Department>[];
     final activeFilters = ref.watch(activeFilterCountProvider);
     final hasFilters = activeFilters > 0 || query.search != null;
 
+    /// The scope is the **view**; the department filter narrows inside it.
+    ///
+    /// This is the web screen's filter row (§8): Scope, Sort by, Category,
+    /// Department. The order matters — the scope decides what the other three are
+    /// filtering, and it is the server (not the client) that resolves it against
+    /// the caller's role.
+    final scopeOptions = _scopeOptions(role);
+    final defaultScope = role == Role.systemAdmin ? null : 'all';
+    final effectiveScope = query.scope ?? defaultScope;
+    final departmentLocked = effectiveScope == 'mine' || effectiveScope == 'department';
+
     return PageScaffold(
-      title: 'Register',
-      subtitle: query.search == null && activeFilters == 0
-          ? 'Every item currently in service'
-          : 'Filtered',
+      // The screen is named for the view, the same word the web nav uses
+      // ("Browse items"). It used to say "Register" while the tab under it said
+      // "Items" and the web said "Browse items" — three names for one screen, and
+      // "Register" read like the action of adding an item rather than the place
+      // you look one up.
+      title: _titleFor(effectiveScope),
+      subtitle: hasFilters ? 'Filtered' : _subtitleFor(effectiveScope),
       maxWidth: 900,
       padBottom: 96,
       onRefresh: () async {
@@ -99,6 +117,25 @@ class _ItemsBrowsePageState extends ConsumerState<ItemsBrowsePage> {
           runSpacing: AppSpace.s2,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            if (scopeOptions.isNotEmpty)
+              AppFilterChip<String>(
+                label: defaultScope == null ? 'Scope' : _scopeLabel(defaultScope),
+                icon: Icons.visibility_outlined,
+                value: query.scope,
+                allLabel: _scopeLabel(defaultScope ?? 'all'),
+                options: [for (final option in scopeOptions) option.value],
+                labelOf: _scopeLabel,
+                onChanged: (value) => ref.read(itemQueryProvider.notifier).setScope(value),
+              ),
+            AppFilterChip<String>(
+              label: 'Sort by',
+              icon: Icons.swap_vert,
+              value: query.sort,
+              allLabel: 'Newest first',
+              options: const ['name', 'cost', 'status', 'oldest'],
+              labelOf: _sortLabel,
+              onChanged: (value) => ref.read(itemQueryProvider.notifier).setSort(value),
+            ),
             AppFilterChip<String>(
               label: 'Category',
               icon: Icons.sell_outlined,
@@ -111,11 +148,16 @@ class _ItemsBrowsePageState extends ConsumerState<ItemsBrowsePage> {
             AppFilterChip<String>(
               label: 'Department',
               icon: Icons.apartment_outlined,
-              value: query.department,
+              value: query.orgUnitId,
               allLabel: 'All departments',
-              options: departments,
-              labelOf: (value) => value,
-              onChanged: (value) => ref.read(itemQueryProvider.notifier).setDepartment(value),
+              options: [for (final department in departments) department.id],
+              labelOf: (id) => _departmentName(departments, id),
+              // Under "My items" and "My department" the server has already
+              // narrowed to that department, so a second picker would either
+              // contradict the view or be a control that does nothing — the web
+              // screen disables it in exactly these two cases.
+              enabled: !departmentLocked,
+              onChanged: (value) => ref.read(itemQueryProvider.notifier).setOrgUnit(value),
             ),
             if (hasFilters)
               AppButton(
@@ -167,7 +209,7 @@ class _ItemsBrowsePageState extends ConsumerState<ItemsBrowsePage> {
                 SectionHeader(
                   title: '${response.pagination.total} '
                       '${response.pagination.total == 1 ? 'item' : 'items'}',
-                  subtitle: 'Newest first.',
+                  subtitle: _sortLabel(query.sort ?? ''),
                 ),
                 for (final item in response.items) ...[
                   ItemCard(item: item, onTap: () => context.push('/items/${item.id}')),
@@ -187,6 +229,95 @@ class _ItemsBrowsePageState extends ConsumerState<ItemsBrowsePage> {
         ),
       ],
     );
+  }
+
+  /// The views each role may choose, mirroring `getScopeOptions()` on the web.
+  ///
+  /// A Property Officer and an Auditor already read the whole campus register, so
+  /// their only other view is "my items". Staff and Department Heads get four: the
+  /// register, their own holdings, their department, and the rest of the college —
+  /// the last one answers "what does the rest of CNCS have?" when looking for
+  /// something to request.
+  static List<({String value, String label})> _scopeOptions(Role? role) {
+    switch (role) {
+      case Role.departmentHead:
+      case Role.staff:
+        return const [
+          (value: 'all', label: 'All departments'),
+          (value: 'mine', label: 'My items'),
+          (value: 'department', label: 'My department'),
+          (value: 'other', label: 'Other departments'),
+        ];
+      case Role.propertyOfficer:
+      case Role.auditor:
+        return const [
+          (value: 'all', label: 'All campus'),
+          (value: 'mine', label: 'My items'),
+        ];
+      default:
+        return const [];
+    }
+  }
+
+  static String _scopeLabel(String value) {
+    switch (value) {
+      case 'mine':
+        return 'My items';
+      case 'department':
+        return 'My department';
+      case 'other':
+        return 'Other departments';
+      default:
+        return 'All departments';
+    }
+  }
+
+  static String _titleFor(String? scope) {
+    switch (scope) {
+      case 'mine':
+        return 'My items';
+      case 'department':
+        return 'My department';
+      case 'other':
+        return 'Other departments';
+      default:
+        return 'Browse items';
+    }
+  }
+
+  static String _subtitleFor(String? scope) {
+    switch (scope) {
+      case 'mine':
+        return 'The items currently in your custody.';
+      case 'department':
+        return 'All items in your department.';
+      case 'other':
+        return 'Items from other departments, for transfer requests.';
+      default:
+        return 'Every item currently in service';
+    }
+  }
+
+  static String _sortLabel(String value) {
+    switch (value) {
+      case 'name':
+        return 'Name (A–Z)';
+      case 'cost':
+        return 'Value';
+      case 'status':
+        return 'Status';
+      case 'oldest':
+        return 'Oldest first';
+      default:
+        return 'Newest first';
+    }
+  }
+
+  static String _departmentName(List<Department> departments, String id) {
+    for (final department in departments) {
+      if (department.id == id) return department.name;
+    }
+    return 'Department';
   }
 
   static String _categoryName(List<Category> categories, String id) {

@@ -111,6 +111,24 @@ bool canViewAudits(Role? role) => hasCapability(role, Capability.auditView);
 /// Read college-wide reports and exports.
 bool canViewReports(Role? role) => hasCapability(role, Capability.reportViewAll);
 
+/// Does this role have a request list of its own? `REQUEST_DECIDE` opens the
+/// queue for a reviewer; a Staff account sees the requests it filed. The other
+/// roles file none and decide none, so the dashboard's request section would be a
+/// permanently empty card. Twin of `canViewOwnRequests` on the web.
+bool canViewOwnRequests(Role? role) =>
+    hasCapability(role, Capability.requestDecide) || role == Role.staff;
+
+/// Does this role see asset data at all? The SYSTEM_ADMIN is an account role and
+/// sees none (spec 2.1.1) — the server's item scope is empty for it, so every
+/// asset screen it opens is empty rather than forbidden. This is the client-side
+/// twin of `ASSET_ROLES` in `frontend/src/lib/permissions.ts`, and the check an
+/// asset tile or section should make before rendering: "0 items tracked" and
+/// "No items registered yet" are not true statements about the register, they are
+/// statements about a viewer who cannot see it.
+const Set<Role> _assetRoles = {Role.propertyOfficer, Role.departmentHead, Role.staff, Role.auditor};
+
+bool seesAssetData(Role? role) => role != null && _assetRoles.contains(role);
+
 /// Account administration — the accounts screen and its write endpoints.
 bool canManageAccounts(Role? role) => hasCapability(role, Capability.accountManage);
 

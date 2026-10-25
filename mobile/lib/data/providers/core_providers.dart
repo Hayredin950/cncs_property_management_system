@@ -5,6 +5,7 @@ import '../../core/api/token_storage.dart';
 import '../api/audits_api.dart';
 import '../api/auth_api.dart';
 import '../api/categories_api.dart';
+import '../api/departments_api.dart';
 import '../api/items_api.dart';
 import '../api/misc_api.dart';
 import '../api/notifications_api.dart';
@@ -41,15 +42,21 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 
 final authApiProvider = Provider<AuthApi>((ref) => AuthApi(ref.watch(apiClientProvider)));
 final itemsApiProvider = Provider<ItemsApi>((ref) => ItemsApi(ref.watch(apiClientProvider)));
-final requestsApiProvider =
-    Provider<RequestsApi>((ref) => RequestsApi(ref.watch(apiClientProvider)));
-final notificationsApiProvider =
-    Provider<NotificationsApi>((ref) => NotificationsApi(ref.watch(apiClientProvider)));
+final requestsApiProvider = Provider<RequestsApi>(
+  (ref) => RequestsApi(ref.watch(apiClientProvider)),
+);
+final notificationsApiProvider = Provider<NotificationsApi>(
+  (ref) => NotificationsApi(ref.watch(apiClientProvider)),
+);
 final auditsApiProvider = Provider<AuditsApi>((ref) => AuditsApi(ref.watch(apiClientProvider)));
 final reportsApiProvider = Provider<ReportsApi>((ref) => ReportsApi(ref.watch(apiClientProvider)));
 final usersApiProvider = Provider<UsersApi>((ref) => UsersApi(ref.watch(apiClientProvider)));
-final categoriesApiProvider =
-    Provider<CategoriesApi>((ref) => CategoriesApi(ref.watch(apiClientProvider)));
+final categoriesApiProvider = Provider<CategoriesApi>(
+  (ref) => CategoriesApi(ref.watch(apiClientProvider)),
+);
+final departmentsApiProvider = Provider<DepartmentsApi>(
+  (ref) => DepartmentsApi(ref.watch(apiClientProvider)),
+);
 final systemApiProvider = Provider<SystemApi>((ref) => SystemApi(ref.watch(apiClientProvider)));
 final uploadsApiProvider = Provider<UploadsApi>((ref) => UploadsApi(ref.watch(apiClientProvider)));
 

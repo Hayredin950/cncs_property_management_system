@@ -2,8 +2,33 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/env.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.dart';
+
+/// Turns an `Item.photoUrl` into something this client can actually load.
+///
+/// The API allows two shapes (`backend/src/utils/photoSource.ts`): an absolute
+/// `http(s)` URL — what an upload to Cloudinary returns — and a **site-relative**
+/// path such as `/photos/desk.jpg`, which is how the seeded demo photos are
+/// stored. A browser resolves that second shape against the page's own origin,
+/// so the web app has always shown them. This client has no origin to resolve
+/// against: `CachedNetworkImage` was handed the bare string `/photos/desk.jpg`,
+/// could not parse it, and fell back to the category placeholder — which is why
+/// every seeded photo was missing on the phone while the same records showed a
+/// picture on the web.
+///
+/// Relative paths are the **web** origin's assets (`frontend/public/photos`), not
+/// the API's, so they are resolved against [Env.webOrigin]. Anything else is
+/// returned unchanged; the placeholder still covers a link that dies.
+String? resolvePhotoUrl(String? url) {
+  final source = url?.trim();
+  if (source == null || source.isEmpty) return null;
+  if (source.startsWith('/') && !source.startsWith('//')) {
+    return '${Env.webOrigin}$source';
+  }
+  return source;
+}
 
 /// §8's `PhotoFrame` — a fixed 4:3 box around `photoUrl`.
 ///
@@ -32,15 +57,15 @@ class PhotoFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final source = url?.trim();
-    final hasPhoto = source != null && source.isNotEmpty;
+    final source = resolvePhotoUrl(url);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: AspectRatio(
         aspectRatio: aspectRatio,
-        child: hasPhoto
-            ? CachedNetworkImage(
+        child: source == null
+            ? _placeholder()
+            : CachedNetworkImage(
                 imageUrl: source,
                 fit: fit,
                 width: double.infinity,
@@ -48,8 +73,7 @@ class PhotoFrame extends StatelessWidget {
                 // of a same-sized block, so nothing on the page moves when it lands.
                 placeholder: (context, _) => const ColoredBox(color: AppColors.aauGray100),
                 errorWidget: (context, _, _) => _placeholder(),
-              )
-            : _placeholder(),
+              ),
       ),
     );
   }

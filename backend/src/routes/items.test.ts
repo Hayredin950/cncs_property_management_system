@@ -9,7 +9,7 @@ process.env.JWT_SECRET = "test_jwt_secret";
 /** Hoisted above the imports, so it cannot reference them — see requests.test.ts. */
 vi.mock("../lib/prisma.js", () => {
   const client = {
-    user: { findUnique: vi.fn(), findMany: vi.fn() },
+    user: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     category: { findUnique: vi.fn(), findMany: vi.fn() },
     item: {
       findUnique: vi.fn(),
@@ -21,6 +21,8 @@ vi.mock("../lib/prisma.js", () => {
       count: vi.fn(),
     },
     itemEditLog: { createMany: vi.fn(), findMany: vi.fn(), count: vi.fn() },
+    custodyEvent: { create: vi.fn() },
+    orgUnit: { findUnique: vi.fn() },
     notification: { create: vi.fn(), createMany: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
     $transaction: vi.fn(async (arg: unknown, _opts?: unknown) =>
       typeof arg === "function"
@@ -896,6 +898,77 @@ describe("PUT /items/:id", () => {
     expect(res.status).toBe(200);
     expect(prisma.user.findMany).not.toHaveBeenCalled();
     expect(prisma.category.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /items/:id/refuse-claim", () => {
+  /**
+   * The refusal contract (workflow-completeness-spec §6): a reason **from a
+   * fixed set**, plus free text. The web and mobile forms used to send their
+   * textarea straight through as `reason`, which the schema rejected with a
+   * 400 — and because the screen test mocked the endpoint, nothing noticed. A
+   * refusal in the app therefore never reached the server. These tests pin the
+   * wire contract the clients now send.
+   */
+  const pending = () => ({
+    ...FULL_ITEM,
+    status: "PENDING_CLAIM",
+    holderType: "STAFF",
+    holderId: "staff-1",
+    orgUnitId: null,
+    claimDueAt: new Date("2026-10-30T00:00:00.000Z"),
+  });
+
+  beforeEach(() => {
+    vi.mocked(prisma.item.findUnique).mockResolvedValue(pending() as never);
+    vi.mocked(prisma.custodyEvent.create).mockResolvedValue({ id: "event-1" } as never);
+  });
+
+  it("refuses a free-text reason: the code has to come from the fixed set", async () => {
+    const res = await request(app)
+      .post("/items/item-1/refuse-claim")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ reason: "The handover never happened." });
+
+    expect(res.status).toBe(400);
+    expect(prisma.item.update).not.toHaveBeenCalled();
+  });
+
+  it("returns the item to the college pool and records the refusal", async () => {
+    const res = await request(app)
+      .post("/items/item-1/refuse-claim")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ reason: "NEVER_RECEIVED" });
+
+    expect(res.status).toBe(200);
+    expect(prisma.item.update).toHaveBeenCalledWith({
+      where: { id: "item-1" },
+      data: { holderType: "COLLEGE", holderId: null, claimDueAt: null },
+    });
+    const event = vi.mocked(prisma.custodyEvent.create).mock.calls[0]?.[0] as {
+      data: { eventType: string; reason: string };
+    };
+    expect(event.data.eventType).toBe("CLAIM_REFUSED");
+    expect(event.data.reason).toBe("NEVER_RECEIVED");
+  });
+
+  it("keeps the free text beside an OTHER refusal, and requires it", async () => {
+    const missing = await request(app)
+      .post("/items/item-1/refuse-claim")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ reason: "OTHER" });
+    expect(missing.status).toBe(400);
+
+    const res = await request(app)
+      .post("/items/item-1/refuse-claim")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ reason: "OTHER", otherReason: "It went to the wrong building." });
+
+    expect(res.status).toBe(200);
+    const event = vi.mocked(prisma.custodyEvent.create).mock.calls.at(-1)?.[0] as {
+      data: { reason: string };
+    };
+    expect(event.data.reason).toBe("OTHER: It went to the wrong building.");
   });
 });
 

@@ -261,9 +261,15 @@ class ItemActions {
   }
 
   /// `POST /items/:id/refuse-claim` — refuse a PENDING_CLAIM item, reverting to
-  /// college pool. Requires a reason (3–500 characters).
-  Future<Item> refuseClaim(String id, String reason) async {
-    final item = await _ref.read(itemsApiProvider).refuseClaim(id, reason);
+  /// the college pool. A code from the fixed set plus optional free text.
+  Future<Item> refuseClaim(
+    String id, {
+    required String reason,
+    String? otherReason,
+  }) async {
+    final item = await _ref
+        .read(itemsApiProvider)
+        .refuseClaim(id, reason: reason, otherReason: otherReason);
     _ref.invalidateItemData(itemId: id);
     return item;
   }

@@ -559,13 +559,24 @@ def walkthrough_staff(page):
         go(page, href, settle=900)
         claim_button = page.get_by_role("button", name="I have this item", exact=True)
         try:
-            claim_button.first.wait_for(state="visible", timeout=12_000)
+            # Generous on purpose: a cold deployment can take most of a 12-second
+            # budget to paint the item page, and the claim handshake is the step
+            # this walkthrough exists to prove.
+            claim_button.first.wait_for(state="visible", timeout=30_000)
         except Exception:
             continue
         claim_button.first.click()
         page.wait_for_timeout(3000)
-        claimed = True
-        step("claims an item assigned to them", True, href)
+        # A closed dialog is not a claim: read the item back. The button is
+        # wired to an endpoint, and an endpoint that refuses answers with a
+        # toast the walkthrough would otherwise never look at.
+        tag = href.rsplit("/", 1)[-1]
+        after = api_get(f"/items/{tag}", token)
+        if after.get("status") == "ACTIVE" and after.get("claimedAt"):
+            claimed = True
+            step("claims an item assigned to them", True, href)
+        else:
+            step("claims an item assigned to them", False, f"{href} — {after.get('error') or after.get('status')}")
         break
     if not claimed:
         step("claims an item assigned to them", False, "no item was waiting for them")
@@ -574,16 +585,36 @@ def walkthrough_staff(page):
     go(page, "/items?scope=mine", settle=500)
     wait_for(page, "a[href^='/item/']")
     refused = False
-    refuse_hrefs = [a.get_attribute("href") for a in page.query_selector_all("a[href^='/item/']")]
-    for href in refuse_hrefs:
+    refusal_detail = "no item offered a refusal"
+    # The register step above already proved the waiting item is findable; here
+    # the question is only whether the item page offers a refusal. Ask the API
+    # which rows are still `PENDING_CLAIM` and open those, instead of every item
+    # in turn: each miss spends the full visibility timeout, and on a cold
+    # deployment the page that matters was the one that ran out of budget (the
+    # walkthrough reported "no item offered a refusal" while the refusal button
+    # was on the fifth item).
+    pending_claim = [
+        row
+        for row in (api_get("/items?scope=mine&limit=100", token) or {}).get("data", [])
+        if row.get("status") == "PENDING_CLAIM"
+    ]
+    for row in pending_claim:
+        href = f"/item/{row['tagId']}"
         go(page, href, settle=900)
         never = page.get_by_role("button", name="I never received it", exact=True)
         try:
-            never.first.wait_for(state="visible", timeout=12_000)
+            never.first.wait_for(state="visible", timeout=30_000)
         except Exception:
             continue
         never.first.click()
         page.wait_for_timeout(800)
+        # The server takes a code from a fixed set plus free text; the form
+        # shows a "Why not?" select for the code. Choosing it is part of what a
+        # person does, so the walkthrough does it too.
+        try:
+            page.get_by_label("Why not?").select_option("NEVER_RECEIVED")
+        except Exception:
+            pass
         reason = page.query_selector("textarea")
         if reason:
             reason.fill("Walkthrough: this item never arrived at my desk.")
@@ -592,11 +623,18 @@ def walkthrough_staff(page):
         if confirm.count():
             confirm.first.click()
             page.wait_for_timeout(3000)
+        # The refusal succeeds only when the item is back in the college pool.
+        # Reading it back is what turns a click into evidence — the first run
+        # after this step was "passing" while the server was refusing the body
+        # with a 400 and the item still named the staff member as holder.
+        tag = href.rsplit("/", 1)[-1]
+        after = api_get(f"/items/{tag}", token)
+        if after.get("holderType") == "COLLEGE" and after.get("holderId") is None:
             refused = True
-            step("refuses a claim and gives a reason", True, href)
+            refusal_detail = href
             break
-    if not refused:
-        step("refuses a claim and gives a reason", False, "no item offered a refusal")
+        refusal_detail = f"{href} — holder is {after.get('holderType')}/{after.get('holderId')}"
+    step("refuses a claim and gives a reason", refused, refusal_detail)
 
     # Read and dismiss a notification. The X is labelled with the message it
     # removes ("Remove notification: …"), which is what a screen reader hears;

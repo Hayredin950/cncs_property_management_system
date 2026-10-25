@@ -408,19 +408,18 @@ class ItemActionBar extends ConsumerWidget {
   }
 
   Future<void> _showRefuseDialog(BuildContext context, ItemActions itemActions) async {
-    final reason = await showPromptDialog(
+    final refusal = await showClaimRefusalDialog(
       context,
       title: 'Refuse ${item.name}?',
-      label: 'Refusal reason',
-      body: '3–500 characters. The item will be returned to the college pool.',
-      confirmLabel: 'Refuse',
-      minLength: 3,
-      maxLength: 500,
     );
-    if (reason == null || reason.trim().isEmpty) return;
+    if (refusal == null) return;
 
     try {
-      await itemActions.refuseClaim(item.id, reason.trim());
+      await itemActions.refuseClaim(
+        item.id,
+        reason: refusal.reason,
+        otherReason: refusal.otherReason,
+      );
       if (context.mounted) {
         showAppToast(
           context,

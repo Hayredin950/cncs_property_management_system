@@ -117,3 +117,14 @@ export interface ItemsListQuery {
   /** The building whose items to list, by name. */
   building?: string;
 }
+
+/**
+ * The fixed refusal reasons `POST /items/:id/refuse-claim` accepts
+ * (workflow-completeness-spec §6). Free text travels beside the code as
+ * `otherReason`; it never replaces it, because the reports group by the code.
+ */
+export type ClaimRefusalReason =
+  | "NEVER_RECEIVED"
+  | "WRONG_ITEM"
+  | "CONDITION_MISMATCH"
+  | "OTHER";

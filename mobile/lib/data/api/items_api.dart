@@ -206,11 +206,22 @@ class ItemsApi {
   }
 
   /// `POST /items/:id/refuse-claim` — refuse a PENDING_CLAIM item, reverting to
-  /// college pool. Requires a reason (3–500 characters).
-  Future<Item> refuseClaim(String id, String reason) async {
+  /// the college pool.
+  ///
+  /// The server takes [reason] from a fixed set (`NEVER_RECEIVED`, `WRONG_ITEM`,
+  /// `CONDITION_MISMATCH`, `OTHER`) plus optional [otherReason] free text. A
+  /// sentence in `reason` is a 400 — see workflow-completeness-spec §6.
+  Future<Item> refuseClaim(
+    String id, {
+    required String reason,
+    String? otherReason,
+  }) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/items/${Uri.encodeComponent(id)}/refuse-claim',
-      body: {'reason': reason},
+      body: {
+        'reason': reason,
+        if (otherReason != null && otherReason.isNotEmpty) 'otherReason': otherReason,
+      },
     );
     return Item.fromJson(json);
   }

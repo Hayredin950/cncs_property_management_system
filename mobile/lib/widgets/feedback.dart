@@ -382,3 +382,135 @@ Future<T?> showAppSheet<T>(
     builder: (context) => SafeArea(top: false, child: child),
   );
 }
+
+/// The fixed refusal reasons `POST /items/:id/refuse-claim` accepts
+/// (workflow-completeness-spec §6). The free text travels beside the code —
+/// sending the textarea's sentence as `reason` is a 400 the server is right to
+/// refuse, and it is what the mobile form used to do.
+const claimRefusalReasons = <String>[
+  'NEVER_RECEIVED',
+  'WRONG_ITEM',
+  'CONDITION_MISMATCH',
+  'OTHER',
+];
+
+String claimRefusalLabel(String code) => switch (code) {
+      'NEVER_RECEIVED' => 'I never received it',
+      'WRONG_ITEM' => 'It was the wrong item',
+      'CONDITION_MISMATCH' => 'The recorded condition is wrong',
+      'OTHER' => 'Something else',
+      _ => code,
+    };
+
+/// What the refusal dialog returns: a code from the fixed set, and the note
+/// beside it when the person wrote one.
+class ClaimRefusal {
+  const ClaimRefusal({required this.reason, this.otherReason});
+
+  final String reason;
+  final String? otherReason;
+}
+
+/// Ask why a claim is being refused, in the two parts the API takes.
+///
+/// `OTHER` without a note is refused here rather than sent: "OTHER" on the
+/// custody record tells the next reader nothing, and the screen should not let
+/// someone file an entry that says only that.
+Future<ClaimRefusal?> showClaimRefusalDialog(
+  BuildContext context, {
+  required String title,
+}) async {
+  String? code;
+  String? error;
+  final controller = TextEditingController();
+
+  final result = await showDialog<ClaimRefusal>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => _DialogFrame(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: AppColors.aauGray900,
+            ),
+          ),
+          const SizedBox(height: AppSpace.s2),
+          const Text(
+            'The item goes back to the college pool and both department heads are told. '
+            'This is a record, not a complaint.',
+            style: TextStyle(fontSize: 13.5, color: AppColors.aauGray600, height: 1.5),
+          ),
+          const SizedBox(height: AppSpace.s4),
+          AppSelectField<String>(
+            label: 'Why not?',
+            value: code,
+            options: claimRefusalReasons,
+            labelOf: claimRefusalLabel,
+            required: true,
+            onChanged: (value) => setState(() {
+              code = value;
+              error = null;
+            }),
+          ),
+          const SizedBox(height: AppSpace.s4),
+          AppTextField(
+            label: code == 'OTHER' ? 'What happened' : 'Anything to add? (optional)',
+            controller: controller,
+            maxLines: 3,
+            maxLength: 500,
+            required: code == 'OTHER',
+            hint: 'e.g. The handover never happened — I was away.',
+          ),
+          if (error != null) ...[
+            const SizedBox(height: AppSpace.s2),
+            Text(
+              error!,
+              style: const TextStyle(fontSize: 13, color: AppColors.danger600),
+            ),
+          ],
+          const SizedBox(height: AppSpace.s5),
+          Row(
+            children: [
+              Expanded(
+                child: AppButton(
+                  label: 'Cancel',
+                  variant: AppButtonVariant.outline,
+                  expand: true,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: AppSpace.s3),
+              Expanded(
+                child: AppButton(
+                  label: 'Refuse the item',
+                  variant: AppButtonVariant.destructive,
+                  expand: true,
+                  onPressed: () {
+                    final note = controller.text.trim();
+                    if (code == null) {
+                      setState(() => error = 'Choose a reason.');
+                      return;
+                    }
+                    if (code == 'OTHER' && note.length < 3) {
+                      setState(() => error = 'Say what happened (at least 3 characters).');
+                      return;
+                    }
+                    Navigator.of(context).pop(
+                      ClaimRefusal(reason: code!, otherReason: note.isEmpty ? null : note),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+
+  controller.dispose();
+  return result;
+}

@@ -70,14 +70,19 @@ describe("the item page — custody actions", () => {
     await waitFor(() => expect(claimed).toBe(true));
   });
 
-  it("refuses the item with a reason, and will not send an empty one", async () => {
-    let reason: string | null = null;
+  it("refuses with a code from the fixed set, with the free text beside it", async () => {
+    // The server takes `reason` from NEVER_RECEIVED / WRONG_ITEM /
+    // CONDITION_MISMATCH / OTHER and free text as `otherReason`. This test
+    // previously asserted the textarea's sentence went through as `reason` —
+    // which is exactly what the server rejects with a 400, so a refusal in the
+    // app never reached it. Assert the shape the API documents.
+    let body: { reason?: string; otherReason?: string } | null = null;
     server.use(
       http.get(`${API}/auth/me`, () => HttpResponse.json({ user: STAFF_USER })),
       http.get(`${API}/items/${PRIVILEGED_ITEM.id}`, () => HttpResponse.json(itemWith({}))),
       http.post(`${API}/items/${PRIVILEGED_ITEM.id}/refuse-claim`, async ({ request }) => {
-        reason = ((await request.json()) as { reason: string }).reason;
-        return HttpResponse.json(itemWith({ status: "ACTIVE" }));
+        body = (await request.json()) as { reason?: string; otherReason?: string };
+        return HttpResponse.json(itemWith({ status: "PENDING_CLAIM" }));
       }),
     );
     renderWithProviders({ initialEntries: [`/items/${PRIVILEGED_ITEM.id}`] });
@@ -87,13 +92,43 @@ describe("the item page — custody actions", () => {
 
     const dialog = await screen.findByRole("dialog");
     const refuse = within(dialog).getByRole("button", { name: /refuse the item/i });
-    // No reason yet — the button says so rather than sending a blank one.
+    // No code yet — the button says so rather than sending anything.
+    expect(refuse).toBeDisabled();
+
+    await user.selectOptions(within(dialog).getByLabelText(/why not/i), "OTHER");
+    // "OTHER" on its own tells the next reader nothing, so the note is required.
     expect(refuse).toBeDisabled();
 
     await user.type(within(dialog).getByLabelText(/what happened/i), "The handover never happened.");
+    await user.click(refuse);
+
+    await waitFor(() =>
+      expect(body).toEqual({
+        reason: "OTHER",
+        otherReason: "The handover never happened.",
+      }),
+    );
+  });
+
+  it("sends a fixed reason without insisting on free text", async () => {
+    let body: { reason?: string; otherReason?: string } | null = null;
+    server.use(
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: STAFF_USER })),
+      http.get(`${API}/items/${PRIVILEGED_ITEM.id}`, () => HttpResponse.json(itemWith({}))),
+      http.post(`${API}/items/${PRIVILEGED_ITEM.id}/refuse-claim`, async ({ request }) => {
+        body = (await request.json()) as { reason?: string; otherReason?: string };
+        return HttpResponse.json(itemWith({ status: "PENDING_CLAIM" }));
+      }),
+    );
+    renderWithProviders({ initialEntries: [`/items/${PRIVILEGED_ITEM.id}`] });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /never received it/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText(/why not/i), "NEVER_RECEIVED");
     await user.click(within(dialog).getByRole("button", { name: /refuse the item/i }));
 
-    await waitFor(() => expect(reason).toBe("The handover never happened."));
+    await waitFor(() => expect(body).toEqual({ reason: "NEVER_RECEIVED" }));
   });
 
   it("offers a department head the verification an unverified item is waiting for", async () => {

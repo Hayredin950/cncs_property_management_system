@@ -1,6 +1,7 @@
 import { apiClient } from "../lib/apiClient";
+import type { ClaimRefusalReason, Item } from "../types/item";
 import type { EditLogEntry, ItemsHistoryResponse } from "../types/history";
-import type { Item, ItemsListQuery, ItemsListResponse } from "../types/item";
+import type { ItemsListQuery, ItemsListResponse } from "../types/item";
 import type { Category } from "../types/category";
 
 /**
@@ -184,10 +185,22 @@ export function claimItemWithCorrection(id: string, actualCondition: string, not
 
 /**
  * `POST /items/:id/refuse-claim` — refuse a PENDING_CLAIM item, reverting it to
- * the college pool. Requires a reason (3–500 characters).
+ * the college pool.
+ *
+ * The server takes `reason` from a fixed set (`NEVER_RECEIVED`, `WRONG_ITEM`,
+ * `CONDITION_MISMATCH`, `OTHER`) plus optional `otherReason` free text — a
+ * free-text `reason` alone is a 400. Sending the textarea's contents as
+ * `reason` was the bug this signature exists to prevent.
  */
-export function refuseClaim(id: string, reason: string): Promise<Item> {
-  return apiClient.post<Item>(`/items/${encodeURIComponent(id)}/refuse-claim`, { reason });
+export function refuseClaim(
+  id: string,
+  reason: ClaimRefusalReason,
+  otherReason?: string,
+): Promise<Item> {
+  return apiClient.post<Item>(`/items/${encodeURIComponent(id)}/refuse-claim`, {
+    reason,
+    ...(otherReason ? { otherReason } : {}),
+  });
 }
 
 /**

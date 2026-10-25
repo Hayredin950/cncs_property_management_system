@@ -1393,6 +1393,16 @@ itemsRouter.post(
       return;
     }
 
+      /**
+       * What goes on the record: the fixed code, and the free text beside it.
+       * The code alone ("OTHER") tells a later reader nothing; the note alone
+       * loses the classification the reports group by. Both, when both were
+       * given — `CONDITION_MISMATCH` with no note still reads as itself.
+       */
+      const refusalText = parsed.data.otherReason
+        ? `${parsed.data.reason}: ${parsed.data.otherReason}`
+        : parsed.data.reason;
+
       const updatedItem = await prisma.$transaction(async (tx) => {
         await tx.item.update({
           where: { id },
@@ -1409,7 +1419,7 @@ itemsRouter.post(
           to: COLLEGE_HOLDER,
           eventType: "CLAIM_REFUSED",
           actingUserId: req.user!.id,
-          reason: parsed.data.reason === "OTHER" ? (parsed.data.otherReason ?? null) : parsed.data.reason,
+          reason: refusalText,
         });
 
         // §2: Notify both department heads when a claim is refused
@@ -1422,7 +1432,7 @@ itemsRouter.post(
             await tx.notification.create({
               data: {
                 userId: unit.headId,
-                message: `[CLAIM_REFUSED] Item ${id} claim refused: ${parsed.data.reason === "OTHER" ? parsed.data.otherReason : parsed.data.reason}`,
+                message: `[CLAIM_REFUSED] Item ${id} claim refused: ${refusalText}`,
               },
             });
           }
@@ -1436,7 +1446,7 @@ itemsRouter.post(
           await tx.notification.create({
             data: {
               userId: propertyOfficer.id,
-              message: `[CLAIM_REFUSED] Item ${id} claim refused from ${item.orgUnitId || "unknown"}: ${parsed.data.reason === "OTHER" ? parsed.data.otherReason : parsed.data.reason}`,
+              message: `[CLAIM_REFUSED] Item ${id} claim refused from ${item.orgUnitId || "unknown"}: ${refusalText}`,
             },
           });
         }

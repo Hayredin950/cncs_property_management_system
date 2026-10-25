@@ -14,7 +14,7 @@ import {
   useVerifyFlagItem,
 } from "../../hooks/useAuthMutations";
 import { hasCapability } from "../../lib/permissions";
-import type { Item } from "../../types/item";
+import type { ClaimRefusalReason, Item } from "../../types/item";
 
 /**
  * The custody actions for one item.
@@ -45,6 +45,7 @@ export function ItemCustodyActions({ item }: { item: Item }) {
   const [flagOpen, setFlagOpen] = useState(false);
   const [reverseOpen, setReverseOpen] = useState(false);
 
+  const [refusalCode, setRefusalCode] = useState<ClaimRefusalReason | "">("");
   const [refuseReason, setRefuseReason] = useState("");
   const [condition, setCondition] = useState("");
   const [note, setNote] = useState("");
@@ -103,12 +104,31 @@ export function ItemCustodyActions({ item }: { item: Item }) {
               The item goes back to the college pool and both department heads are told. Say what
               happened — this is a record, not a complaint.
             </p>
+            {/*
+              The server takes a code from this fixed set, not a sentence
+              (workflow-completeness-spec §6). The textarea is the free text
+              beside it — required when the answer is "something else", because
+              "OTHER" on its own tells the next reader nothing.
+            */}
+            <Select
+              label="Why not?"
+              value={refusalCode}
+              onChange={(event) => setRefusalCode(event.target.value as ClaimRefusalReason | "")}
+              placeholder="Choose a reason…"
+              options={[
+                { value: "NEVER_RECEIVED", label: "I never received it" },
+                { value: "WRONG_ITEM", label: "It was the wrong item" },
+                { value: "CONDITION_MISMATCH", label: "The recorded condition is wrong" },
+                { value: "OTHER", label: "Something else" },
+              ]}
+              required
+            />
             <Textarea
-              label="What happened"
+              label={refusalCode === "OTHER" ? "What happened" : "Anything to add? (optional)"}
               value={refuseReason}
               onChange={(event) => setRefuseReason(event.target.value)}
               placeholder="e.g. The handover never happened — I was away."
-              required
+              required={refusalCode === "OTHER"}
             />
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setRefuseOpen(false)}>
@@ -118,11 +138,23 @@ export function ItemCustodyActions({ item }: { item: Item }) {
                 variant="destructive"
                 size="sm"
                 loading={refuse.isPending}
-                disabled={!refuseReason.trim()}
+                disabled={
+                  !refusalCode || (refusalCode === "OTHER" && refuseReason.trim().length < 3)
+                }
                 onClick={() =>
                   refuse.mutate(
-                    { id: item.id, reason: refuseReason.trim() },
-                    { onSuccess: () => setRefuseOpen(false) },
+                    {
+                      id: item.id,
+                      reason: refusalCode as ClaimRefusalReason,
+                      ...(refuseReason.trim() ? { otherReason: refuseReason.trim() } : {}),
+                    },
+                    {
+                      onSuccess: () => {
+                        setRefuseOpen(false);
+                        setRefusalCode("");
+                        setRefuseReason("");
+                      },
+                    },
                   )
                 }
               >

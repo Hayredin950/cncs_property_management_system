@@ -5,9 +5,10 @@ import { useClaimItem, useRefuseClaim } from "../hooks/useAuthMutations";
 import { Button } from "./Button";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { IconButton } from "./IconButton";
+import { Select } from "./Select";
 import { Textarea } from "./Textarea";
 import { useState } from "react";
-import type { Item } from "../types/item";
+import type { ClaimRefusalReason, Item } from "../types/item";
 
 export interface ItemActionsProps {
   item: Item;
@@ -39,6 +40,7 @@ export function ItemActions({ item, variant = "buttons", className }: ItemAction
   const claimMutation = useClaimItem();
   const refuseMutation = useRefuseClaim();
   const [refusing, setRefusing] = useState<{ itemId: string; reason: string } | null>(null);
+  const [refusalCode, setRefusalCode] = useState<ClaimRefusalReason | "">("");
   const [refuseReason, setRefuseReason] = useState("");
 
   // Anonymous visitors get no staff chrome on the public page.
@@ -59,13 +61,24 @@ export function ItemActions({ item, variant = "buttons", className }: ItemAction
 
   const handleRefuseStart = () => {
     setRefusing({ itemId: item.id, reason: "" });
+    setRefusalCode("");
     setRefuseReason("");
   };
 
+  const refusalNote = refuseReason.trim();
+  const refusalReady =
+    refusalCode !== "" && (refusalCode !== "OTHER" || refusalNote.length >= 3);
+
   const handleRefuseConfirm = async () => {
-    if (refuseReason.trim().length < 3 || refuseReason.trim().length > 500) return;
-    await refuseMutation.mutateAsync({ id: item.id, reason: refuseReason.trim() });
+    if (!refusalReady) return;
+    await refuseMutation.mutateAsync({
+      id: item.id,
+      reason: refusalCode,
+      ...(refusalNote ? { otherReason: refusalNote } : {}),
+    });
     setRefusing(null);
+    setRefusalCode("");
+    setRefuseReason("");
     navigate(`/item/${item.tagId}`);
   };
 
@@ -123,7 +136,7 @@ export function ItemActions({ item, variant = "buttons", className }: ItemAction
           onConfirm={handleRefuseConfirm}
           title={`Refuse ${item.name}?`}
           confirmLabel="Refuse"
-          disabled={refuseReason.trim().length < 3 || refuseReason.trim().length > 500 || refuseMutation.isPending}
+          disabled={!refusalReady || refuseMutation.isPending}
           loading={refuseMutation.isPending}
           body={
             <>
@@ -132,12 +145,27 @@ export function ItemActions({ item, variant = "buttons", className }: ItemAction
                 property officer will see it, and the same address cannot ask again
                 into a void.
               </p>
+              {/* The server takes a code from a fixed set (spec §6); the note is
+                  the free text beside it, required only for "something else". */}
+              <Select
+                label="Why not?"
+                value={refusalCode}
+                onChange={(event) => setRefusalCode(event.target.value as ClaimRefusalReason | "")}
+                placeholder="Choose a reason…"
+                options={[
+                  { value: "NEVER_RECEIVED", label: "I never received it" },
+                  { value: "WRONG_ITEM", label: "It was the wrong item" },
+                  { value: "CONDITION_MISMATCH", label: "The recorded condition is wrong" },
+                  { value: "OTHER", label: "Something else" },
+                ]}
+                required
+              />
               <Textarea
-                label="Refusal reason (required)"
-                hint="3–500 characters."
+                label={refusalCode === "OTHER" ? "What happened" : "Anything to add? (optional)"}
+                hint={refusalCode === "OTHER" ? "3–500 characters." : "Optional."}
                 value={refuseReason}
                 onChange={(e) => setRefuseReason(e.target.value)}
-                required
+                required={refusalCode === "OTHER"}
               />
             </>
           }

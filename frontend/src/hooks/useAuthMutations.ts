@@ -21,7 +21,7 @@ import { initiateLoanReturn, confirmLoanReturn, disputeLoanReturn } from "../api
 import { checkExpiries } from "../api/expiry";
 import { toast } from "../lib/toast";
 import { ROLE_LABELS, type Role } from "../types/enums";
-import type { Item } from "../types/item";
+import type { ClaimRefusalReason, Item } from "../types/item";
 
 /**
  * `POST /users/invite` — the privileged invite (T6).
@@ -190,7 +190,15 @@ export function useClaimItem() {
 export function useRefuseClaim() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason: string }) => refuseClaim(id, reason),
+    mutationFn: ({
+      id,
+      reason,
+      otherReason,
+    }: {
+      id: string;
+      reason: ClaimRefusalReason;
+      otherReason?: string;
+    }) => refuseClaim(id, reason, otherReason),
     onSuccess: (item) => {
       toast.success(`${item.name} refused and returned to the college pool.`);
       void queryClient.invalidateQueries({ queryKey: ["item"] });

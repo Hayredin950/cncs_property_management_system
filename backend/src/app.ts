@@ -119,7 +119,21 @@ app.use(["/api/v1/loans", "/loans"], loansRouter);
 app.use(["/api/v1/notifications", "/notifications"], notificationsRouter);
 app.use(["/api/v1/reports", "/reports"], reportsRouter);
 app.use(["/api/v1/requests", "/requests"], requestsRouter);
-app.use(["/api/v1/system", "/admin/system"], systemConfigRouter);
+/**
+ * The system router is mounted **three** ways, and that is deliberate:
+ *
+ *   - `/api/v1/system` is the current path (and what the clients call: their
+ *     base URL is `/api/v1`, so `/system/status` resolves here);
+ *   - `/system` keeps the contract checker honest. Every other router in this
+ *     file carries an un-prefixed mount so the checker can match a client path
+ *     against a declared route; this one did not, so `GET /system/status`,
+ *     `/system/events` and `/system/statistics` were reported as calls to
+ *     routes that do not exist even though the API answered them.
+ *   - `/admin/system` is the legacy prefix the first web client used. It stays
+ *     until that client is gone; `frontend/src/api/system.ts` already calls
+ *     `/system/…`.
+ */
+app.use(["/api/v1/system", "/system", "/admin/system"], systemConfigRouter);
 app.use(["/api/v1/uploads", "/uploads"], uploadsRouter);
 app.use(["/api/v1/users", "/users"], usersRouter);
 

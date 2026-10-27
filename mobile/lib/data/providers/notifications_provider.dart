@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/notification.dart';
+import 'auth_provider.dart';
 import 'core_providers.dart';
 
 /// The notification inbox (SRS F8.1/F8.2).
@@ -18,7 +19,17 @@ import 'core_providers.dart';
 
 class NotificationsNotifier extends AsyncNotifier<NotificationsListResponse> {
   @override
-  Future<NotificationsListResponse> build() {
+  Future<NotificationsListResponse> build() async {
+    // An inbox is personal: an account switch must not leave the previous
+    // person's notifications on the screen.
+    if (ref.watch(currentUserProvider) == null) {
+      return const NotificationsListResponse(
+        notifications: [],
+        unreadCount: 0,
+        limit: 50,
+        offset: 0,
+      );
+    }
     return ref.watch(notificationsApiProvider).list();
   }
 
@@ -98,6 +109,9 @@ final notificationsProvider =
 /// not in the rows — asking for fifty bodies to display one number is the whole
 /// reason this provider exists separately.
 final unreadCountProvider = FutureProvider<int>((ref) async {
+  // An inbox belongs to the person reading it; a new sign-in must not show the
+  // previous account's unread badge.
+  if (ref.watch(currentUserProvider) == null) return 0;
   final response = await ref.watch(notificationsApiProvider).list(limit: 1);
   return response.unreadCount;
 });

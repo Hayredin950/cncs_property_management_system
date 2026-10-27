@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/misc.dart';
 
 import '../../models/request.dart';
 import '../api/requests_api.dart';
+import 'auth_provider.dart';
 import 'core_providers.dart';
 import 'items_provider.dart';
 import 'notifications_provider.dart';
@@ -46,7 +47,14 @@ final requestQueryProvider =
 
 class RequestListNotifier extends AsyncNotifier<RequestsListResponse> {
   @override
-  Future<RequestsListResponse> build() {
+  Future<RequestsListResponse> build() async {
+    // The server scopes this list by the viewer, so a new account must not
+    // inherit the previous one's rows. Watching the account makes sign-out and
+    // the next sign-in rebuild the queue instead of leaving it on screen.
+    final user = ref.watch(currentUserProvider);
+    if (user == null) {
+      return const RequestsListResponse(requests: [], total: 0, limit: 20, offset: 0);
+    }
     final query = ref.watch(requestQueryProvider);
     return ref.watch(requestsApiProvider).list(
           status: query.status,
@@ -71,6 +79,11 @@ final requestDetailProvider = FutureProvider.family<RequestDetail, String>((ref,
 /// than counting a page of results, so the badge is right even when the queue's
 /// first page is not the whole queue.
 final pendingRequestCountProvider = FutureProvider<int>((ref) {
+  // The number is *this viewer's* queue. Without the account dependency the
+  // badge kept the previous user's count after a sign-out/sign-in in the same
+  // app session — seen on the phone: a head's 8 stayed on the officer's bar
+  // while the officer's own dashboard read 24.
+  if (ref.watch(currentUserProvider) == null) return 0;
   return ref.watch(requestsApiProvider).pendingCount();
 });
 

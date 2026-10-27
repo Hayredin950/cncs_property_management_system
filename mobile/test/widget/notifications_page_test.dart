@@ -1,10 +1,19 @@
+import 'package:cncs_pms_mobile/data/providers/auth_provider.dart';
 import 'package:cncs_pms_mobile/features/notifications/notifications_page.dart';
+import 'package:cncs_pms_mobile/models/user.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fake_api.dart';
 import '../support/fixtures.dart';
 import '../support/pump.dart';
+
+/// The inbox follows the signed-in account (see the session-scoped-provider
+/// suite), so a screen test has to say whose inbox it is. Without this the
+/// provider correctly answers empty and every row assertion would be vacuous.
+final _signedIn = currentUserProvider.overrideWithValue(
+  AuthUser.fromJson(userJson().cast<String, dynamic>()),
+);
 
 void main() {
   testWidgets('an empty inbox says "caught up", not "no notifications"', (tester) async {
@@ -16,7 +25,7 @@ void main() {
         'offset': 0,
       });
 
-    await pumpPage(tester, const NotificationsPage(), api: api);
+    await pumpPage(tester, const NotificationsPage(), api: api, extraOverrides: [_signedIn]);
     await pumpUntilFound(tester, find.textContaining('caught up'));
 
     expect(visibleText(tester), contains('New activity on your requests will show up here.'));
@@ -50,7 +59,7 @@ void main() {
         'offset': 0,
       });
 
-    await pumpPage(tester, const NotificationsPage(), api: api);
+    await pumpPage(tester, const NotificationsPage(), api: api, extraOverrides: [_signedIn]);
     await pumpUntilFound(tester, find.text('UNREAD-NEWER'));
 
     final rendered = tester
@@ -83,7 +92,7 @@ void main() {
         'offset': 0,
       });
 
-    await pumpPage(tester, const NotificationsPage(), api: api);
+    await pumpPage(tester, const NotificationsPage(), api: api, extraOverrides: [_signedIn]);
     await pumpUntilFound(tester, find.text('LEGACY-ROW-WITH-NO-CODE'));
 
     final text = visibleText(tester);
@@ -101,7 +110,7 @@ void main() {
         'offset': 0,
       });
 
-    await pumpPage(tester, const NotificationsPage(), api: api);
+    await pumpPage(tester, const NotificationsPage(), api: api, extraOverrides: [_signedIn]);
     await pumpUntilFound(tester, find.text('ALREADY-READ'));
 
     expect(find.text('Mark all read'), findsNothing);

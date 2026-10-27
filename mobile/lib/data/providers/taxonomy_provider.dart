@@ -4,6 +4,7 @@ import '../../models/building.dart';
 import '../../models/category.dart';
 import '../../models/department.dart';
 import '../../models/user.dart';
+import 'auth_provider.dart';
 import 'core_providers.dart';
 
 /// The three small taxonomies every form needs: categories, departments, accounts.
@@ -105,7 +106,12 @@ final buildingActionsProvider = Provider<BuildingActions>(BuildingActions.new);
 
 class UserListNotifier extends AsyncNotifier<List<UserSummary>> {
   @override
-  Future<List<UserSummary>> build() => ref.watch(usersApiProvider).list();
+  Future<List<UserSummary>> build() async {
+    // Both account lists are scoped by role and department, so they follow the
+    // signed-in account rather than living on after it.
+    if (ref.watch(currentUserProvider) == null) return const [];
+    return ref.watch(usersApiProvider).list();
+  }
 }
 
 final usersProvider = AsyncNotifierProvider<UserListNotifier, List<UserSummary>>(
@@ -114,7 +120,10 @@ final usersProvider = AsyncNotifierProvider<UserListNotifier, List<UserSummary>>
 
 class ApprovalsListNotifier extends AsyncNotifier<List<UserSummary>> {
   @override
-  Future<List<UserSummary>> build() => ref.watch(usersApiProvider).listApprovals();
+  Future<List<UserSummary>> build() async {
+    if (ref.watch(currentUserProvider) == null) return const [];
+    return ref.watch(usersApiProvider).listApprovals();
+  }
 }
 
 /// `GET /users/approvals` — the System Admin's decision queue.

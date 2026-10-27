@@ -156,8 +156,19 @@ export interface DecideRequestResponse {
 /** Kept local: the code enum lives in enums.ts; alias avoids a second import here. */
 type NotificationCodeOf = import("./enums").NotificationCode;
 
+/**
+ * A status filter: one status, or a comma-separated set (`PENDING,PENDING_STAGE1`).
+ *
+ * The dashboard's "Needs your review" counts several statuses, so the list it
+ * opens has to ask for the same set — one status would undercount on a head's
+ * staged transfers and on the officer's return confirmations.
+ */
+export type RequestStatusFilter =
+  | RequestStatus
+  | `${RequestStatus},${string}`;
+
 export interface RequestListQuery {
-  status?: RequestStatus;
+  status?: RequestStatusFilter;
   type?: RequestType;
   departmentId?: string;
   mine?: boolean;

@@ -18,6 +18,7 @@ import {
   canViewOwnRequests,
   canManageAccounts,
   canRunAudits,
+  reviewQueueStatuses,
   seesAssetData,
 } from "../../lib/permissions";
 import { NetworkError } from "../../types/api";
@@ -63,8 +64,10 @@ export function DashboardPage() {
   const approvalsCountQuery = useApprovalsCount(isSystemAdmin && canManageAcc);
   const accountsQuery = useUsers(isSystemAdmin && canManageAcc);
   const auditCountQuery = useAuditSessionCount(3, isAuditor);
-  // For "Needs your review", use the same logic as pending-count: pendingForUser (no date window)
-  const needsReviewQuery = usePendingRequests(5);
+  // "Needs your review" asks the same question as `pending-count` — the status
+  // set that waits on this role's decision, not just initial `PENDING`.
+  const reviewStatuses = reviewQueueStatuses(user?.role);
+  const needsReviewQuery = usePendingRequests(reviewStatuses);
   const requestsQuery = useRequests({ limit: 5 });
 
   // Property Officers see pending requests they can decide; others see their own recent requests
@@ -84,7 +87,11 @@ export function DashboardPage() {
               value={pendingQuery.data?.pendingCount ?? "\u2014"}
               icon={<ClipboardList className="h-5 w-5" />}
               tone="warning"
-              to="/requests?status=PENDING"
+              to={
+                reviewStatuses
+                  ? `/requests?status=${encodeURIComponent(reviewStatuses)}`
+                  : "/requests"
+              }
               className="w-52"
             />
           ) : isAuditor ? (
@@ -230,7 +237,11 @@ export function DashboardPage() {
                 {canDecide ? "Needs your review" : "Your recent requests"}
               </h2>
               <Link
-                to="/requests?status=PENDING"
+                to={
+                  reviewStatuses
+                    ? `/requests?status=${encodeURIComponent(reviewStatuses)}`
+                    : "/requests"
+                }
                 className="text-sm font-medium text-brand-700 underline-offset-4 hover:underline"
               >
                 View all →

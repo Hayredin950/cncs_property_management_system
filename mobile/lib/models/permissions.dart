@@ -232,6 +232,28 @@ bool canEditItem({
 /// is the person who checks it back in; a head has no loan decisions to answer.
 bool canConfirmLoanReturn(Role? role) => hasCapability(role, Capability.loanApprove);
 
+/// The statuses that mean "waiting on this viewer's decision", as the
+/// comma-separated value the API accepts.
+///
+/// The dashboard tile, the dashboard preview and the Requests screen all have
+/// to answer the same question. Counting `PENDING` alone undercounted a
+/// reviewer's real queue: a head with three stage-2 transfers and a stage-1 saw
+/// "4 pending" while those rows were what the queue held, and a Property
+/// Officer's return confirmation was invisible. The set is written down once
+/// here and mirrors `decisionStatusesFor` in
+/// `backend/src/routes/requests.ts`.
+///
+/// `null` for a viewer with no decision rights (a staff member, the admin): they
+/// have no review queue, and their list is their own filings, unfiltered.
+String? reviewQueueStatuses(Role? role) {
+  if (!canDecideRequests(role)) return null;
+  final statuses = <String>['PENDING', 'PENDING_STAGE1', 'PENDING_STAGE2'];
+  // Only the office that lent the item can confirm its return; a head cannot,
+  // so a return waiting on the officer is not in the head's count.
+  if (canConfirmLoanReturn(role)) statuses.add('RETURN_PENDING_CONFIRMATION');
+  return statuses.join(',');
+}
+
 /// May this viewer see the item's **full detail and change history**?
 ///
 /// Mirrors `seesFullItemDetail` in `backend/src/utils/filterItemFields.ts`:

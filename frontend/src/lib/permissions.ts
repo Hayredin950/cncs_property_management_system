@@ -1,5 +1,6 @@
 import type { Item } from "../types/item";
 import type { Role } from "../types/enums";
+import type { RequestStatusFilter } from "../types/request";
 
 /**
  * The frontend half of the permission matrix (`backend/src/services/permissions.ts`).
@@ -136,6 +137,30 @@ export const canCreateItems = (role: Role | undefined | null) => hasCapability(r
 /** Decide a transfer or disposal request. */
 export const canDecideRequests = (role: Role | undefined | null) =>
   hasCapability(role, "REQUEST_DECIDE");
+
+/**
+ * The statuses waiting on this viewer's decision, as the comma-separated value
+ * `GET /requests?status=` accepts.
+ *
+ * The dashboard tile, its preview list and the Requests screen all have to
+ * answer the same question. Counting `PENDING` alone undercounted a reviewer's
+ * real queue: a head with three stage-2 transfers and a stage-1 saw "4 pending"
+ * while those rows were the queue, and the officer's return confirmation was
+ * invisible. Mirrors `decisionStatusesFor` in `backend/src/routes/requests.ts`.
+ *
+ * `undefined` for a viewer with no decision rights (staff, admin): they have no
+ * review queue, and their list is their own filings, unfiltered.
+ */
+export function reviewQueueStatuses(
+  role: Role | undefined | null,
+): RequestStatusFilter | undefined {
+  if (!canDecideRequests(role)) return undefined;
+  const statuses = ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"];
+  // Only the office that lent the item can confirm its return; a head cannot,
+  // so a return waiting on the officer is not in the head's count.
+  if (hasCapability(role, "LOAN_APPROVE")) statuses.push("RETURN_PENDING_CONFIRMATION");
+  return statuses.join(",") as RequestStatusFilter;
+}
 /** Run an audit session — auditors only (spec 8.1). */
 export const canRunAudits = (role: Role | undefined | null) => hasCapability(role, "AUDIT_RUN");
 /** Read audit history and reports. */

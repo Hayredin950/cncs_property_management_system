@@ -6,6 +6,7 @@ import '../../core/format.dart';
 import '../../data/providers/auth_provider.dart';
 import '../../data/providers/requests_provider.dart';
 import '../../models/enums.dart';
+import '../../models/permissions.dart';
 import '../../models/request.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
@@ -59,6 +60,10 @@ class RequestsListPage extends ConsumerWidget {
       children: [
         _StatusFilter(
           value: query.status,
+          // The set "Needs your review" opens: the dashboard tile and its "View
+          // all" both use it, so the chip is already active when the reviewer
+          // arrives from the dashboard. `null` for a viewer with no queue.
+          reviewStatuses: reviewQueueStatuses(ref.watch(currentUserProvider)?.role),
           onChanged: (value) => ref.read(requestQueryProvider.notifier).setStatus(value),
         ),
         const SizedBox(height: AppSpace.s3),
@@ -153,18 +158,27 @@ class RequestsListPage extends ConsumerWidget {
 
 /// A segmented filter over the three statuses plus "All".
 class _StatusFilter extends StatelessWidget {
-  const _StatusFilter({required this.value, required this.onChanged});
+  const _StatusFilter({
+    required this.value,
+    required this.onChanged,
+    this.reviewStatuses,
+  });
 
   final String? value;
   final ValueChanged<String?> onChanged;
+
+  /// The comma-separated set the dashboard counts as "needs your review", or
+  /// `null` for a viewer with no decision queue.
+  final String? reviewStatuses;
 
   @override
   Widget build(BuildContext context) {
     // The stage and return states are work waiting on a person, not archive
     // states — a head's queue is mostly PENDING_STAGE2 and a loan's handshake is
     // RETURN_PENDING_CONFIRMATION, and neither was reachable from this row.
-    const options = <(String?, String)>[
+    final options = <(String?, String)>[
       (null, 'All'),
+      if (reviewStatuses != null) (reviewStatuses, 'Needs review'),
       ('PENDING', 'Pending'),
       ('PENDING_STAGE1', 'Stage 1'),
       ('PENDING_STAGE2', 'Stage 2'),

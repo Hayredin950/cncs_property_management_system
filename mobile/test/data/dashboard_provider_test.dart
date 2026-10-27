@@ -77,7 +77,41 @@ void main() {
     await container.read(dashboardPreviewProvider.future);
 
     final preview = api.requests.singleWhere((row) => row.path == '/requests');
-    expect(preview.queryParameters['status'], 'PENDING');
+    // The officer's queue is every status waiting on a decision, including the
+    // return handshake only the office can confirm.
+    expect(
+      preview.queryParameters['status'],
+      'PENDING,PENDING_STAGE1,PENDING_STAGE2,RETURN_PENDING_CONFIRMATION',
+    );
+  });
+
+  /// A head decides transfers at both stages but never confirms a loan return —
+  /// that is the officer's handshake — so the return status is not in the head's
+  /// count, and the preview must not ask for it either.
+  test('a head preview asks for the stages, not the loan return', () async {
+    final api = FakeApi()
+      ..get('/requests', {
+        'requests': const [],
+        'total': 0,
+        'limit': 5,
+        'offset': 0,
+      });
+
+    final container = ProviderContainer(
+      overrides: [
+        ...api.overridesWithToken('stored-token'),
+        currentUserProvider.overrideWithValue(userFor(Role.departmentHead)),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(dashboardPreviewProvider.future);
+
+    final preview = api.requests.singleWhere((row) => row.path == '/requests');
+    expect(
+      preview.queryParameters['status'],
+      'PENDING,PENDING_STAGE1,PENDING_STAGE2',
+    );
   });
 
   test(

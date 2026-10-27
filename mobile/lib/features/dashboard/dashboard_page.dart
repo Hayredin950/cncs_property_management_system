@@ -9,6 +9,7 @@ import '../../data/providers/system_provider.dart';
 import '../../data/providers/taxonomy_provider.dart';
 import '../../data/providers/items_provider.dart';
 import '../../data/providers/requests_provider.dart';
+import '../../models/permissions.dart';
 import '../../models/request.dart';
 import '../../models/system.dart';
 import '../../theme/tokens.dart';
@@ -101,7 +102,17 @@ class DashboardPage extends ConsumerWidget {
                             : 'Awaiting decision',
                         icon: Icons.schedule_outlined,
                         tone: BadgeTone.warning,
-                        onTap: () => context.push('/requests'),
+                        onTap: () {
+                          // The card's number is the queue, so the list it opens
+                          // is the same queue: the reviewer's status set, or a
+                          // staff member's own `PENDING`. Opening all requests
+                          // under a pending count is what made the two disagree.
+                          final statuses =
+                              reviewQueueStatuses(ref.read(currentUserProvider)?.role) ??
+                              'PENDING';
+                          ref.read(requestQueryProvider.notifier).setStatus(statuses);
+                          context.push('/requests');
+                        },
                       ),
                     ),
                   if (auth.seesAssetData) ...[
@@ -521,9 +532,11 @@ class DashboardPage extends ConsumerWidget {
           actionLabel: 'View all',
           onAction: () {
             // The heading says "Needs your review", so the list it opens is that
-            // queue — pending, not every request ever filed.
+            // queue — the same status set the tile counted, not just initial
+            // `PENDING` and not every request ever filed.
+            final role = ref.read(currentUserProvider)?.role;
             if (decidesRequests) {
-              ref.read(requestQueryProvider.notifier).setStatus('PENDING');
+              ref.read(requestQueryProvider.notifier).setStatus(reviewQueueStatuses(role));
             }
             context.push('/requests');
           },

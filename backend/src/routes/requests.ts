@@ -35,7 +35,7 @@ import {
   ERROR_ITEM_NOT_FOUND,
   ERROR_REQUEST_NOT_FOUND,
 } from "../services/requestWorkflow.js";
-import { REQUEST_STATUSES } from "../constants/requestStatus.js";
+import { REQUEST_STATUSES, type RequestStatus } from "../constants/requestStatus.js";
 
 
 /**
@@ -215,7 +215,17 @@ type CreateRequestBody = z.infer<typeof createRequestSchema>;
  * The totals endpoint returns aggregated counts by status and type.
  */
 const listQuerySchema = z.object({
-  status: z.enum(REQUEST_STATUSES).optional(),
+  /**
+   * One status, or a comma-separated set (`PENDING,PENDING_STAGE1`). The set is
+   * what the dashboard's "Needs your review" asks for: the tile counts several
+   * statuses, so the list it opens has to accept more than one or the two
+   * numbers disagree on screen.
+   */
+  status: z
+    .string()
+    .optional()
+    .transform((value) => (value ? value.split(",").filter(Boolean) : undefined))
+    .pipe(z.array(z.enum(REQUEST_STATUSES)).nonempty().optional()),
   type: z.enum(REQUEST_TYPES).optional(),
   departmentId: z.string().uuid().optional(),
   mine: z.enum(["true", "false"]).optional(),
@@ -344,60 +354,45 @@ const REQUEST_DETAIL_SELECT = {
  */
 
 /**
- * Unified logic: returns the where clause for requests this user can decide on.
- * This is used by:
- * - GET /requests/pending-count (badge count)
- * - GET /requests list endpoint (dashboard "Needs your review")
- * - Should be used consistently everywhere that displays "pending for this user"
+ * The statuses that mean "waiting for a person's decision", per role.
  *
- * Rules:
- * - STAFF: sees only their own pending requests
- * - DEPARTMENT_HEAD: sees pending requests for their department (not just their own)
- * - PROPERTY_OFFICER: sees all pending requests (REQUEST_READ_ALL)
- * - SYSTEM_ADMIN: sees nothing (no REQUEST_READ_ALL)
- * - Also includes staged approvals (PENDING_STAGE1, PENDING_STAGE2) where user is the approver
+ * `PENDING` alone is the **initial** queue, and the dashboard used to count only
+ * it: a Department Head read "4 pending review" while the Requests screen held
+ * three stage-2 transfers and one stage-1 alongside them, and a Property Officer
+ * read 13 while ten staged transfers and a return confirmation waited in the
+ * same queue. The count, the badge and the list must answer the same question,
+ * so the answer is written down once here.
+ *
+ * A loan waiting for its return confirmation is a Property Officer's action (the
+ * lender is the approving officer, and `LOAN_APPROVE` is the office's), so it is
+ * counted for that role and not for a head who cannot confirm it.
  */
-function pendingForUser(user: { id: string; role: UserRole; orgUnitId?: string | null }): Prisma.RequestWhereInput {
-  // Base scope: who can see requests at all
-  if (user.role === "SYSTEM_ADMIN") return { id: { in: [] } };
-  
-  // STAFF only sees their own requests
-  if (user.role === "STAFF") {
-    return { requestedById: user.id };
-  }
-  
-  // DEPARTMENT_HEAD sees requests for their department
-  if (user.role === "DEPARTMENT_HEAD") {
-    if (!user.orgUnitId) {
-      // If no department is set, they see only their own requests
-      return { requestedById: user.id };
-    }
-    return {
-      OR: [
-        // Own requests
-        { requestedById: user.id },
-        // Department requests (item's orgUnitId matches user's orgUnitId)
-        { item: { orgUnitId: user.orgUnitId } },
-      ],
-    };
-  }
-  
-  // PROPERTY_OFFICER with REQUEST_READ_ALL sees all
-  if (hasCapability(user.role, "REQUEST_READ_ALL")) {
-    return {};
-  }
-  
-  // Fallback: own requests only
-  return { requestedById: user.id };
+export function decisionStatusesFor(role: UserRole): RequestStatus[] {
+  // A staff member's own pending filing is what they wait on; the return
+  // confirmation needs somebody else, so counting it would overstate their queue.
+  if (role === "STAFF") return ["PENDING"];
+  // No decision right means no review queue. An auditor reads the register and
+  // runs audits; the administrator owns accounts and sees no asset business.
+  // This is the twin of `reviewQueueStatuses` in the web and mobile clients.
+  if (!hasCapability(role, "REQUEST_DECIDE")) return [];
+  const statuses: RequestStatus[] = ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"];
+  if (hasCapability(role, "LOAN_APPROVE")) statuses.push("RETURN_PENDING_CONFIRMATION");
+  return statuses;
 }
 
 /**
- * Unified scope for request lists. Mirrors pendingForUser so the dashboard
- * count, the sidebar badge, the request list, and the notifications surface
- * all agree on what "pending for this user" means.
+ * The rows this viewer may see at all — one scope for the list, the detail
+ * page, and the review count.
  *
- * DEPARTMENT_HEAD sees their own requests plus requests for items in their
- * department (scoped by orgUnitId). SYSTEM_ADMIN sees nothing.
+ * The count used to have its own narrower copy, so a Department Head could be
+ * shown a cross-department transfer in the Requests list (they were asked about
+ * it) while `pending-count` excluded it, and the dashboard number never matched
+ * the list beneath it. `pending-count` now spreads this same clause; the status
+ * half is `decisionStatusesFor`. Two questions, one scope.
+ *
+ * DEPARTMENT_HEAD sees their own requests, requests for items in their
+ * department (by orgUnitId), and the ones they were asked about.
+ * SYSTEM_ADMIN sees nothing.
  */
 function scopeToViewer(user: { id: string; role: UserRole; orgUnitId?: string | null }): Prisma.RequestWhereInput {
   if (user.role === "SYSTEM_ADMIN") return { id: { in: [] } };
@@ -641,7 +636,8 @@ requestsRouter.post(
 /**
  * GET /api/v1/requests/pending-count
  * Staff/Admin — the badge count. Declared BEFORE `/:id` (see the header note).
- * Uses unified pendingForUser logic for consistency across all surfaces.
+ * Uses `scopeToViewer` + `decisionStatusesFor`: the same scope and the same
+ * status set the Requests list uses, so the number opens exactly the list.
  */
 requestsRouter.get(
   "/pending-count",
@@ -652,8 +648,8 @@ requestsRouter.get(
 
       const pendingCount = await prisma.request.count({
         where: {
-          ...pendingForUser(user),
-          status: "PENDING",
+          ...scopeToViewer(user),
+          status: { in: decisionStatusesFor(user.role) },
         },
       });
       res.status(200).json({ pendingCount });
@@ -726,7 +722,12 @@ requestsRouter.get(
       const where: Prisma.RequestWhereInput = {
         ...scopeToViewer(user),
         ...(query.mine === "true" ? { requestedById: user.id } : {}),
-        ...(query.status ? { status: query.status } : {}),
+        ...(query.status
+          ? {
+              status:
+                query.status.length === 1 ? query.status[0] : { in: query.status },
+            }
+          : {}),
         ...(query.type ? { type: query.type } : {}),
         ...(query.departmentId ? { item: { orgUnitId: query.departmentId } } : {}),
       };

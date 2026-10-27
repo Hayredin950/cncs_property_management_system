@@ -1,7 +1,7 @@
 import { ClipboardList, Search } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
-import { canDecideRequests } from "../../lib/permissions";
+import { canDecideRequests, reviewQueueStatuses } from "../../lib/permissions";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
@@ -13,16 +13,27 @@ import { useRequests } from "../../hooks/useRequests";
 import { formatRelativeTime } from "../../lib/formatters";
 import { NetworkError } from "../../types/api";
 import { REQUEST_STATUSES, REQUEST_STATUS_LABELS, REQUEST_TYPES, REQUEST_TYPE_LABELS, type RequestStatus, type RequestType } from "../../types/enums";
+import type { RequestStatusFilter } from "../../types/request";
 import { useDepartments } from "../../hooks/useDepartments";
 import type { Department } from "../../api/departments";
 
-const STATUS_OPTIONS = [
-  { value: "ALL", label: "All statuses" },
-  ...REQUEST_STATUSES.map((status) => ({
-    value: status,
-    label: REQUEST_STATUS_LABELS[status],
-  })),
-];
+const SINGLE_STATUS_OPTIONS = REQUEST_STATUSES.map((status) => ({
+  value: status,
+  label: REQUEST_STATUS_LABELS[status],
+}));
+
+/**
+ * A status filter may be one status or a comma-separated set. Anything else is
+ * dropped rather than sent to the API to fail — the URL is user-editable.
+ */
+function parseStatusFilter(raw: string): RequestStatusFilter | undefined {
+  if (!raw || raw === "ALL") return undefined;
+  const parts = raw.split(",").filter(Boolean);
+  if (parts.length === 0) return undefined;
+  return parts.every((part) => REQUEST_STATUSES.includes(part as RequestStatus))
+    ? (raw as RequestStatusFilter)
+    : undefined;
+}
 
 const TYPE_OPTIONS = [
   { value: "ALL", label: "All types" },
@@ -57,12 +68,17 @@ export function RequestsListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawStatus = searchParams.get("status") ?? "ALL";
-  const status =
-    rawStatus === "ALL"
-      ? undefined
-      : REQUEST_STATUSES.includes(rawStatus as RequestStatus)
-        ? (rawStatus as RequestStatus)
-        : undefined;
+  const status = parseStatusFilter(rawStatus);
+  // The same set the dashboard tile counts. `undefined` for a staff member, who
+  // has no review queue.
+  const reviewStatuses = reviewQueueStatuses(user?.role);
+  // "Needs review" first, because it is the dashboard's hand-off; the single
+  // statuses stay for narrowing after a reviewer has landed here.
+  const statusOptions = [
+    { value: "ALL", label: "All statuses" },
+    ...(reviewStatuses ? [{ value: reviewStatuses, label: "Needs review" }] : []),
+    ...SINGLE_STATUS_OPTIONS,
+  ];
 
   const rawType = searchParams.get("type") ?? "ALL";
   const type =
@@ -187,21 +203,21 @@ export function RequestsListPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 xl:flex-row xl:items-end">
-          {canDecide && (
+          {canDecide && reviewStatuses && (
             <button
-              onClick={() => updateStatus("PENDING")}
+              onClick={() => updateStatus(reviewStatuses)}
               className={`text-sm font-medium transition-colors ${
-                status === "PENDING"
+                status === reviewStatuses
                   ? "text-brand-600"
                   : "text-slate-600 hover:text-brand-600"
               }`}
             >
-              Pending review
+              Needs review
             </button>
           )}
           <Select
             label="Status"
-            options={STATUS_OPTIONS}
+            options={statusOptions}
             value={rawStatus ?? "ALL"}
             onChange={(event) => updateStatus(event.target.value)}
             className="sm:w-40"

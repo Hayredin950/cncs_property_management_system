@@ -63,6 +63,7 @@ vi.mock("../lib/prisma.js", () => {
 
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
 const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
+const auditorToken = createToken({ id: "auditor-1", role: "AUDITOR" });
 
 const TRANSFER_BODY = {
   type: "TRANSFER",
@@ -519,6 +520,28 @@ describe("GET /requests", () => {
   });
 
   /**
+   * The dashboard's "Needs your review" tile counts several statuses, so the
+   * list it opens asks for the same set. Before this the parameter took one
+   * status only, and a reviewer with staged transfers saw a count that no
+   * single-status list could reproduce.
+   */
+  it("accepts the staged set behind the dashboard's review count", async () => {
+    vi.mocked(prisma.request.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.request.count).mockResolvedValue(0 as never);
+
+    const res = await request(app)
+      .get("/requests?status=PENDING,PENDING_STAGE1,PENDING_STAGE2")
+      .set("Authorization", `Bearer ${officerToken}`);
+
+    expect(res.status).toBe(200);
+    const where = vi.mocked(prisma.request.findMany).mock.calls[0]?.[0]?.where as Record<
+      string,
+      unknown
+    >;
+    expect(where.status).toEqual({ in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2"] });
+  });
+
+  /**
    * §10.3 — account administration is not asset business. This endpoint served a
    * SYSTEM_ADMIN "their own" requests, and every row of `REQUEST_LIST_SELECT`
    * carries the item's tag id, name and room, so the live API handed the admin the
@@ -582,14 +605,45 @@ describe("GET /requests/pending-count", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ pendingCount: 3 });
+    // The officer's queue is every status that waits on a decision, not just the
+    // initial `PENDING` — the staged transfers and a return confirmation are
+    // work on the same desk, and the dashboard must not undercount them.
     expect(prisma.request.count).toHaveBeenCalledWith({
       where: {
-        status: "PENDING",
+        status: {
+          in: ["PENDING", "PENDING_STAGE1", "PENDING_STAGE2", "RETURN_PENDING_CONFIRMATION"],
+        },
       },
     });
     // The Express 5 route-ordering guard: `/:id` is what calls findFirst, so a
     // hit here means "pending-count" was swallowed as an id.
     expect(prisma.request.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("gives an auditor no review queue — auditing is not deciding", async () => {
+    vi.mocked(prisma.request.count).mockResolvedValueOnce(0 as never);
+
+    const res = await request(app)
+      .get("/requests/pending-count")
+      .set("Authorization", `Bearer ${auditorToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ pendingCount: 0 });
+    // Matches `reviewQueueStatuses` on both clients: a role with no
+    // REQUEST_DECIDE has no statuses in its queue.
+    // The status set is empty; the scope is the same `scopeToViewer` the list
+    // uses, so an auditor's number and any list they could open agree.
+    expect(prisma.request.count).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { requestedById: "auditor-1" },
+          { stage1ApprovedById: "auditor-1" },
+          { stage2ApprovedById: "auditor-1" },
+          { reviewedById: "auditor-1" },
+        ],
+        status: { in: [] },
+      },
+    });
   });
 
   it("counts only a staff member's own pending requests", async () => {
@@ -600,10 +654,20 @@ describe("GET /requests/pending-count", () => {
       .set("Authorization", `Bearer ${staffToken}`);
 
     expect(res.status).toBe(200);
+    // A staff member waits on their own filing only; the return that is waiting
+    // for the office is not theirs to confirm, so it is not in their count.
+    // Same scope as the list (`scopeToViewer`): own filings plus the ones a
+    // staff member was asked about — which, with no approval rights, is their
+    // own filing in practice.
     expect(prisma.request.count).toHaveBeenCalledWith({
       where: {
-        status: "PENDING",
-        requestedById: "staff-1",
+        OR: [
+          { requestedById: "staff-1" },
+          { stage1ApprovedById: "staff-1" },
+          { stage2ApprovedById: "staff-1" },
+          { reviewedById: "staff-1" },
+        ],
+        status: { in: ["PENDING"] },
       },
     });
   });

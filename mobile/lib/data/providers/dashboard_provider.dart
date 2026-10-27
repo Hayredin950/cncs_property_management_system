@@ -67,15 +67,15 @@ final dashboardStatsProvider = FutureProvider<DashboardStats>((ref) async {
 /// staff member, their own most recent requests.
 ///
 /// **Status is part of the question, not a presentation detail.** The tile beside
-/// this list shows `GET /requests/pending-count`, which counts `PENDING` rows in the
-/// viewer's queue; the list used to ask for the newest five requests of *any*
-/// status. A Property Officer therefore read "13 Pending review" next to "Nothing
-/// waiting on you", because the five newest rows happened to be decided already.
-/// Both halves now name `PENDING`, and the section's empty state is only allowed to
-/// say "nothing" when the count agrees.
+/// this list shows `GET /requests/pending-count`, which counts every status that
+/// waits on the viewer's decision; the list used to ask for the newest five
+/// requests of *any* status. A Property Officer therefore read "13 Pending review"
+/// next to "Nothing waiting on you", because the five newest rows happened to be
+/// decided already. Both halves now ask the same question — `reviewQueueStatuses`
+/// — so the preview cannot show an empty queue under a non-zero count.
 final dashboardPreviewProvider = FutureProvider((ref) {
   final role = ref.watch(currentUserProvider)?.role;
   return ref
       .watch(requestsApiProvider)
-      .list(limit: 5, status: canDecideRequests(role) ? 'PENDING' : null);
+      .list(limit: 5, status: reviewQueueStatuses(role));
 });

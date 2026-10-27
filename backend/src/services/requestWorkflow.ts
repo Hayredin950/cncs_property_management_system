@@ -745,6 +745,10 @@ export async function returnLoan(
       type: true,
       status: true,
       requestedById: true,
+      // Who approved the loan: the one person the return handshake is owed to.
+      // With `LOAN_APPROVE` held by the Property Officer alone, this is the
+      // officer who let the item go out.
+      reviewedById: true,
       itemId: true,
       loanReturnedAt: true,
       item: {
@@ -765,14 +769,26 @@ export async function returnLoan(
   if (request.type !== "LOAN") {
     throw httpError(400, "Only loan requests can be returned");
   }
-  if (request.status !== "APPROVED") {
-    throw httpError(409, "Loan is not active");
+  /**
+   * The **confirmation** half of the handshake, so the states it accepts are the
+   * ones a return can be waiting in.
+   *
+   * `RETURN_PENDING_CONFIRMATION` is where `POST /requests/:id/return-initiate`
+   * puts the loan; accepting only `APPROVED` here (as this used to) meant the
+   * borrower's "I am handing it back" was followed by a guaranteed 409 —
+   * "Loan is not active" — on the lender's confirmation, and a returned item
+   * could never leave the borrower's custody. `APPROVED` stays accepted so an
+   * officer can record a hand-back that was never announced in the app.
+   */
+  if (request.status !== "RETURN_PENDING_CONFIRMATION" && request.status !== "APPROVED") {
+    throw httpError(409, "Loan is not waiting for a return confirmation");
   }
   if (request.loanReturnedAt) {
     throw httpError(409, "Loan has already been returned");
   }
 
-  // Verify the returner is authorized (borrower, releasing head, or property officer)
+  // The lender, not the borrower: confirming one's own return would let the
+  // person holding the item close the loan without anyone checking it back in.
   const returner = await tx.user.findUnique({
     where: { id: input.returnerId },
     select: { id: true, fullName: true, email: true, role: true },
@@ -781,10 +797,10 @@ export async function returnLoan(
     throw httpError(401, "Not authenticated");
   }
   const isBorrower = request.requestedById === input.returnerId;
-  const isReleasingHead = request.item.holderType === "STAFF" && request.item.holderId === input.returnerId;
   const isPropertyOfficer = returner.role === "PROPERTY_OFFICER";
-  if (!isBorrower && !isReleasingHead && !isPropertyOfficer) {
-    throw httpError(403, "Only the borrower, releasing head, or property officer can return this loan");
+  const isReviewingOfficer = request.reviewedById === input.returnerId;
+  if (isBorrower || (!isPropertyOfficer && !isReviewingOfficer)) {
+    throw httpError(403, "Only the lender or the property officer can confirm this return");
   }
 
   // Update the item back to ACTIVE and restore holder to the original department/college
@@ -798,6 +814,23 @@ export async function returnLoan(
     },
   });
 
+  /**
+   * The condition check the confirmation step exists for.
+   *
+   * `condition` and `notes` were accepted by the schema and then dropped on the
+   * floor, so the officer's "returned damaged" was recorded nowhere. The item's
+   * own `condition` column is an enum and the officer's answer is prose ("Good,
+   * as lent"), so the observation belongs in the custody trail rather than
+   * being coerced into the enum: changes to the asset's recorded condition stay
+   * an edit, which writes an edit-history row.
+   */
+  const returnReason = [
+    `Loan returned — condition: ${input.condition.trim()}`,
+    input.notes?.trim() ? `Notes: ${input.notes.trim()}` : null,
+  ]
+    .filter(Boolean)
+    .join(". ");
+
   // Record custody event
   await recordCustodyEvent(tx, {
     itemId: request.item.id,
@@ -805,7 +838,7 @@ export async function returnLoan(
     to: { holderType: "COLLEGE", holderId: null },
     eventType: "TRANSFERRED",
     actingUserId: input.returnerId,
-    reason: "Loan returned",
+    reason: returnReason,
   });
 
   // Update the request to mark as returned

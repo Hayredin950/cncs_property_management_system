@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_error.dart';
 import '../../../core/files.dart';
+import '../../../data/providers/auth_provider.dart';
 import '../../../data/providers/core_providers.dart';
 import '../../../data/providers/items_provider.dart';
 import '../../../models/item.dart';
@@ -47,6 +48,10 @@ class _TagPanelState extends ConsumerState<TagPanel> {
 
   @override
   Widget build(BuildContext context) {
+    // Regenerating writes new artwork; reading/downloading the sticker does not.
+    // The two used to share one screen with no gate, so every staff member was
+    // offered a button the tag router refuses (TAG_MANAGE).
+    final canRegenerate = ref.watch(authProvider).canManageTags;
     final png = ref.watch(itemTagPngProvider(widget.item.id));
 
     return AppCard(
@@ -95,8 +100,8 @@ class _TagPanelState extends ConsumerState<TagPanel> {
           ),
           const SizedBox(height: AppSpace.s3),
           const Text(
-            'Print it or send it on. Anyone who scans the code opens this item\u2019s public '
-            'page, and the tag ID printed under it is what a lookup by hand needs.',
+            'Print it or send it on. Scanning opens this item\u2019s record after signing in, '
+            'and the tag ID printed under it is what a lookup by hand needs.',
             style: TextStyle(fontSize: 12, color: AppColors.aauGray500, height: 1.45),
           ),
           const SizedBox(height: AppSpace.s4),
@@ -123,23 +128,25 @@ class _TagPanelState extends ConsumerState<TagPanel> {
               ),
             ],
           ),
-          const SizedBox(height: AppSpace.s2),
-          AppButton(
-            label: 'Regenerate sticker design',
-            icon: Icons.refresh,
-            variant: AppButtonVariant.ghost,
-            expand: true,
-            loading: _busy,
-            onPressed: _busy ? null : _regenerate,
-          ),
-          const Padding(
-            padding: EdgeInsets.only(top: AppSpace.s3),
-            child: Text(
-              'Regenerating reissues the artwork only — the Tag ID, and every printed QR '
-              'code bearing it, stays the same.',
-              style: TextStyle(fontSize: 12, color: AppColors.aauGray500, height: 1.45),
+          if (canRegenerate) ...[
+            const SizedBox(height: AppSpace.s2),
+            AppButton(
+              label: 'Regenerate sticker design',
+              icon: Icons.refresh,
+              variant: AppButtonVariant.ghost,
+              expand: true,
+              loading: _busy,
+              onPressed: _busy ? null : _regenerate,
             ),
-          ),
+            const Padding(
+              padding: EdgeInsets.only(top: AppSpace.s3),
+              child: Text(
+                'Regenerating reissues the artwork only — the Tag ID, and every printed QR '
+                'code bearing it, stays the same.',
+                style: TextStyle(fontSize: 12, color: AppColors.aauGray500, height: 1.45),
+              ),
+            ),
+          ],
         ],
       ),
     );

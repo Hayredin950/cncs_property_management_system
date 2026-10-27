@@ -11,6 +11,7 @@ import { SearchBar } from "../../components/SearchBar";
 import { Select } from "../../components/Select";
 import { SkeletonCard } from "../../components/Skeleton";
 import { useAuth } from "../../app/AuthContext";
+import { useBuildings } from "../../hooks/useBuildings";
 import { useCategories } from "../../hooks/useCategories";
 import { useDepartments } from "../../hooks/useDepartments";
 import { useItems } from "../../hooks/useItems";
@@ -33,6 +34,9 @@ export function ItemsBrowsePage() {
   const categoryId = searchParams.get("categoryId") ?? "";
   const orgUnitId = searchParams.get("orgUnitId") ?? "";
   const mine = searchParams.get("mine") === "true";
+  // The building whose items to list, by name — the same value
+  // `/admin/buildings` links with and the register endpoint matches.
+  const building = searchParams.get("building") ?? "";
   /**
    * The scope the list is showing.
    *
@@ -67,7 +71,7 @@ export function ItemsBrowsePage() {
    * filtered anything, and offered them a button that cleared nothing. The
    * honest message for a scoped viewer is "Nothing is assigned to you yet".
    */
-  const hasFilters = Boolean(search || categoryId || orgUnitId);
+  const hasFilters = Boolean(search || categoryId || orgUnitId || building);
 
   // Auto-set department filter based on scope for Department Heads and Staff
   // Only auto-set when user hasn't manually selected a department
@@ -89,14 +93,16 @@ export function ItemsBrowsePage() {
 
   const categoriesQuery = useCategories();
   const departmentsQuery = useDepartments();
+  // A dropdown, not free text: the campus has a countable set of buildings and
+  // the endpoint matches the exact name, so typing one is a spelling test whose
+  // failure reads as "no items here".
+  const buildingsQuery = useBuildings();
   // Whose holdings are being shown — set from the roster, where a person's
   // item count is a link to what they hold.
   const holder = searchParams.get("holder") ?? "";
   // The order the register is listed in.
   const sort = searchParams.get("sort") ?? "";
   const order = searchParams.get("order") ?? "";
-  // The building whose items to list, by name.
-  const building = searchParams.get("building") ?? "";
   const holderName = searchParams.get("holderName") ?? "";
 
   const itemsQuery = useItems({
@@ -143,6 +149,13 @@ export function ItemsBrowsePage() {
   const departmentOptions = useMemo(
     () => (departmentsQuery.data ?? []).map((dept) => ({ value: dept.id, label: dept.name })),
     [departmentsQuery.data],
+  );
+
+  // The server filters on `buildingRef.name`, so the option's *value* is the
+  // name, not the id.
+  const buildingOptions = useMemo(
+    () => (buildingsQuery.data ?? []).map((row) => ({ value: row.name, label: row.name })),
+    [buildingsQuery.data],
   );
 
   // Determine scope options based on role
@@ -230,6 +243,10 @@ export function ItemsBrowsePage() {
           return "The items currently in your custody. Search by name, tag ID, or category.";
         case "department":
           return "All items in your department. Search by name, tag ID, or category.";
+        case "other":
+          return "Items from other departments for transfer requests. Limited view: name, category, building, status.";
+        case "all":
+          return "All items across all departments. Search by name, tag ID, category, or department.";
         default:
           return "The items currently in your custody. Search by name, tag ID, or category.";
       }
@@ -313,6 +330,14 @@ export function ItemsBrowsePage() {
           onChange={(event) => updateParam("orgUnitId", event.target.value)}
           className="sm:w-56"
           disabled={scope === "mine" || scope === "department"}
+        />
+        <Select
+          label="Building"
+          options={buildingOptions}
+          placeholder="All buildings"
+          value={building}
+          onChange={(event) => updateParam("building", event.target.value)}
+          className="sm:w-52"
         />
         {hasFilters && (
           <Button variant="ghost" size="md" leftIcon={<X className="h-4 w-4" />} onClick={clearFilters}>

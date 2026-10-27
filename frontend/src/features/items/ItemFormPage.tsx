@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "../../app/AuthContext";
@@ -18,7 +18,7 @@ import { useCategories } from "../../hooks/useCategories";
 import { useCreateItem, useUpdateItem } from "../../hooks/useItemMutations";
 import { useItemById } from "../../hooks/useItems";
 import { useUsers } from "../../hooks/useUsers";
-import { canReadUsers } from "../../lib/permissions";
+import { canEditItem, canEditItemIdentity, canReadUsers } from "../../lib/permissions";
 import { ApiError, NetworkError } from "../../types/api";
 import { CONDITIONS, CONDITION_LABELS } from "../../types/enums";
 
@@ -59,6 +59,23 @@ const itemSchema = z.object({
 });
 
 type ItemFormValues = z.input<typeof itemSchema>;
+
+/**
+ * What a **custodian** may save: condition and notes (SRS 4.7).
+ *
+ * A staff member or head editing their own item is not filling in the whole
+ * record — identity, financial and photo fields belong to the Property Officer,
+ * and the server answers 403 to a changed one. Validating the identity fields
+ * would also block the save on an item whose purchase cost is empty, for a field
+ * the viewer cannot change anyway. `passthrough` keeps the rest of the values
+ * available to the form; the payload below sends only the two it may write.
+ */
+const custodianEditSchema = z
+  .object({
+    condition: z.enum(CONDITIONS),
+    notes: z.string().trim().max(2000).optional().or(z.literal("")),
+  })
+  .passthrough();
 
 /**
  * A photo source is either an absolute URL or a path on *this* site.
@@ -464,6 +481,21 @@ function EditItemInner({
 
   const [formError, setFormError] = useState<string | null>(null);
 
+  /**
+   * Two questions, mirroring the server (SRS 4.7):
+   *   - **mayEdit**: row scope — Staff edit what they hold, a head their own
+   *     unit, the Property Officer any row.
+   *   - **mayEditIdentity**: field scope — only `ITEM_EDIT_IDENTITY`.
+   *
+   * The form used to enable everything for anyone who could reach it, so a staff
+   * member's save failed with 403 on the first changed identity field.
+   */
+  const mayEditIdentity = canEditItemIdentity(user?.role);
+  const mayEdit =
+    item != null &&
+    user != null &&
+    canEditItem(user.role, user.id, user.departmentId, item);
+
   const defaults = useMemo(
     () => ({
       name: item?.name ?? "",
@@ -493,7 +525,9 @@ function EditItemInner({
     reset,
     formState: { errors, isDirty },
   } = useForm<ItemFormValues>({
-    resolver: zodResolver(itemSchema),
+    resolver: (mayEditIdentity
+      ? zodResolver(itemSchema)
+      : zodResolver(custodianEditSchema)) as Resolver<ItemFormValues>,
     values: defaults as ItemFormValues,
   });
 
@@ -517,16 +551,39 @@ function EditItemInner({
     return <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />;
   }
 
+  // The edit URL can be opened directly. Refuse here rather than let the form
+  // fill in and fail on Save with a 403 the viewer could not have predicted.
+  if (!mayEdit) {
+    return (
+      <ErrorState
+        heading="This item isn't yours to edit"
+        body="You can only edit items in your own custody. This one belongs to someone else — file a transfer request if it should move to you."
+        action={
+          <Link to={`/item/${item.tagId}`}>
+            <Button size="sm" variant="outline">Back to the item</Button>
+          </Link>
+        }
+      />
+    );
+  }
+
   async function onSubmit(values: ItemFormValues) {
     setFormError(null);
     try {
-      // The API computes the edit-log diff server-side; the client sends the
-      // full field set and lets `buildEditLogRows` decide what changed.
-      // The item's own custodian, not the signed-in user's id: reassignment is a
-      // transfer, so an edit must send the owner back unchanged. Sending the
-      // editor's id here quietly reassigned every item anyone else touched, and
-      // now that ownerId is transfer-only it would also refuse the save.
-      await updateMutation.mutateAsync(toPayload(values, item?.ownerId ?? ""));
+      /**
+       * Send only what this viewer may change.
+       *
+       * The Property Officer sends the full field set and lets the server's
+       * `buildEditLogRows` decide what changed. A custodian sends condition and
+       * notes — the two fields SRS 4.7 gives them — because a changed identity
+       * field is a 403, and resubmitting untouched ones would only be noise.
+       * The item's own custodian travels with the full payload, never the
+       * signed-in user's id: reassignment is a transfer.
+       */
+      const payload = mayEditIdentity
+        ? toPayload(values, item?.ownerId ?? "")
+        : { condition: values.condition, notes: values.notes ? values.notes : null };
+      await updateMutation.mutateAsync(payload);
       onDone();
     } catch (err) {
       // 409 (disposed mid-edit) is the one server answer worth restating here.
@@ -555,13 +612,21 @@ function EditItemInner({
       <fieldset disabled={disposed} className="flex flex-col gap-6 disabled:opacity-60">
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-6">
           <FormSection heading="Identity">
-            <Input label="Name" error={errors.name?.message} {...register("name")} required />
+            <Input
+              label="Name"
+              error={errors.name?.message}
+              {...register("name")}
+              readOnly={!mayEditIdentity}
+              hint={mayEditIdentity ? undefined : "Identity fields belong to the Property Officer."}
+              required
+            />
             <Select
               label="Category"
               options={categoryOptions}
               placeholder="Select a category"
               error={errors.categoryId?.message}
               {...register("categoryId")}
+              disabled={!mayEditIdentity}
               required
             />
             {/*
@@ -574,7 +639,7 @@ function EditItemInner({
               value={watch("orgUnitId") || ""}
               onChange={(v) => setDepartment(v)}
               error={errors.orgUnitId?.message}
-              disabled={disposed}
+              disabled={disposed || !mayEditIdentity}
               hint="Editable here — only the building, floor, room and custodian need an approved transfer."
             />
           </FormSection>
@@ -611,8 +676,8 @@ function EditItemInner({
 
           <FormSection heading="Ownership & value" columns>
             <Input label="Owner ID" error={errors.ownerId?.message} {...register("ownerId")} readOnly hint="Reassignment happens through an approved transfer request." />
-            <Input label="Purchase cost (ETB)" type="number" step="0.01" error={errors.purchaseCost?.message} {...register("purchaseCost")} required />
-            <Input label="Current value (ETB, optional)" type="number" step="0.01" error={errors.currentValue?.message} {...register("currentValue")} />
+            <Input label="Purchase cost (ETB)" type="number" step="0.01" error={errors.purchaseCost?.message} {...register("purchaseCost")} readOnly={!mayEditIdentity} required />
+            <Input label="Current value (ETB, optional)" type="number" step="0.01" error={errors.currentValue?.message} {...register("currentValue")} readOnly={!mayEditIdentity} />
           </FormSection>
 
           <FormSection heading="Condition & specs">
@@ -624,9 +689,9 @@ function EditItemInner({
               required
             />
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input label="Brand" error={errors.brand?.message} {...register("brand")} />
-              <Input label="Model" error={errors.model?.message} {...register("model")} />
-              <Input label="Serial number" error={errors.serialNumber?.message} {...register("serialNumber")} />
+              <Input label="Brand" error={errors.brand?.message} {...register("brand")} readOnly={!mayEditIdentity} />
+              <Input label="Model" error={errors.model?.message} {...register("model")} readOnly={!mayEditIdentity} />
+              <Input label="Serial number" error={errors.serialNumber?.message} {...register("serialNumber")} readOnly={!mayEditIdentity} />
             </div>
             {/*
               Like the rest of the form, the photo is committed by Save: picking
@@ -640,7 +705,7 @@ function EditItemInner({
                 setValue("photoUrl", next, { shouldDirty: true, shouldValidate: true })
               }
               error={errors.photoUrl?.message}
-              disabled={disposed}
+              disabled={disposed || !mayEditIdentity}
             />
             <Textarea label="Notes" error={errors.notes?.message} {...register("notes")} />
           </FormSection>

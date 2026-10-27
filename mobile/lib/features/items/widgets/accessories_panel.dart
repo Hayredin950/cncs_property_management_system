@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_error.dart';
+import '../../../data/providers/auth_provider.dart';
 import '../../../data/providers/core_providers.dart';
 import '../../../data/providers/items_provider.dart';
 import '../../../models/item.dart';
@@ -41,6 +42,10 @@ class _AccessoriesPanelState extends ConsumerState<AccessoriesPanel> {
   @override
   Widget build(BuildContext context) {
     final accessories = widget.item.accessories;
+    // Linking and unlinking re-parent rows: ITEM_EDIT_IDENTITY, the Property
+    // Officer's grant. Everyone else could open the picker and be refused on
+    // save, so the panel now reads as a list for them.
+    final canEdit = ref.watch(authProvider).canEditItemIdentity;
 
     return AppCard(
       child: Column(
@@ -81,20 +86,22 @@ class _AccessoriesPanelState extends ConsumerState<AccessoriesPanel> {
                   // question the row cannot answer on its own.
                   ref.invalidate(itemByIdProvider(accessory.id));
                 },
-                onUnlink: () => _unlink(accessory),
+                onUnlink: canEdit ? () => _unlink(accessory) : null,
               ),
               const SizedBox(height: AppSpace.s2),
             ],
 
-          const SizedBox(height: AppSpace.s3),
-          AppButton(
-            label: 'Link accessories',
-            icon: Icons.add_link,
-            variant: AppButtonVariant.outline,
-            expand: true,
-            loading: _busy,
-            onPressed: _busy ? null : _openPicker,
-          ),
+          if (canEdit) ...[
+            const SizedBox(height: AppSpace.s3),
+            AppButton(
+              label: 'Link accessories',
+              icon: Icons.add_link,
+              variant: AppButtonVariant.outline,
+              expand: true,
+              loading: _busy,
+              onPressed: _busy ? null : _openPicker,
+            ),
+          ],
           const Padding(
             padding: EdgeInsets.only(top: AppSpace.s3),
             child: Text(
@@ -180,7 +187,9 @@ class _AccessoryRow extends StatelessWidget {
   final Item accessory;
   final bool busy;
   final VoidCallback onOpen;
-  final VoidCallback onUnlink;
+
+  /// Null when the viewer may read the bundle but not re-parent it.
+  final VoidCallback? onUnlink;
 
   @override
   Widget build(BuildContext context) {
@@ -222,12 +231,13 @@ class _AccessoryRow extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
-            onPressed: busy ? null : onUnlink,
-            tooltip: 'Unlink ${accessory.name}',
-            icon: const Icon(Icons.link_off, size: 18),
-            color: AppColors.danger600,
-          ),
+          if (onUnlink != null)
+            IconButton(
+              onPressed: busy ? null : onUnlink,
+              tooltip: 'Unlink ${accessory.name}',
+              icon: const Icon(Icons.link_off, size: 18),
+              color: AppColors.danger600,
+            ),
         ],
       ),
     );

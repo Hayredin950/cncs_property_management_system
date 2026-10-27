@@ -62,6 +62,7 @@ class ItemsApi {
     String? orgUnitId,
     String? scope,
     String? sort,
+    String? building,
   }) async {
     final json = await _client.get<Map<String, dynamic>>(
       '/items',
@@ -73,6 +74,7 @@ class ItemsApi {
         'orgUnitId': orgUnitId,
         'scope': scope,
         'sort': sort,
+        'building': building,
       },
     );
     return ItemsListResponse.fromJson(json);

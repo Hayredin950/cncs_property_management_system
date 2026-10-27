@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canOpenItem,
   itemInScope,
   itemListScope,
   resolveItemScope,
@@ -122,6 +123,25 @@ describe("Department Head item visibility", () => {
  * `all` means "no restriction", `mine` means the caller's own holdings, and an
  * unknown value falls back to the role's own scope rather than widening it.
  */
+describe("canOpenItem", () => {
+  // Every signed-in reader may open a row the register shows them. The 26 Oct
+  // device pass found the contradiction: a CS head's "All departments" list
+  // drew the Physics pool, and tapping one answered "This item is not assigned
+  // to you". A listed row must open; only editing stays unit-scoped.
+  it("lets staff and heads open another unit's pooled item", () => {
+    const staffCs: ScopedUser = { id: "staff-cs", role: "STAFF", orgUnitId: CS };
+    expect(itemInScope(staffCs, bioDepartmentItem)).toBe(false);
+    expect(canOpenItem(staffCs, bioDepartmentItem)).toBe(true);
+    expect(itemInScope(headCs, bioDepartmentItem)).toBe(false);
+    expect(canOpenItem(headCs, bioDepartmentItem)).toBe(true);
+  });
+
+  it("still refuses a role with no asset access", () => {
+    expect(canOpenItem(admin, csStaffItem)).toBe(false);
+    expect(canOpenItem(null, csStaffItem)).toBe(false);
+  });
+});
+
 describe("resolveItemScope", () => {
   it("narrows an officer's 'mine' to the officer's own holdings", () => {
     // The bug this pins: the college-wide roles answered every value except `all`
@@ -159,5 +179,28 @@ describe("resolveItemScope", () => {
     expect(resolveItemScope(headCs, "other")).toEqual({
       NOT: { OR: [{ orgUnitId: CS }, { holderType: "DEPARTMENT", holderId: CS }] },
     });
+  });
+
+  it("gives a staff member the same 'other departments' meaning as a head", () => {
+    // The bug this pins: `other` used to mean "not mine" for STAFF, so a CS
+    // staff member's "Other departments" list still held the 52 CS items and a
+    // request could be filed against the unit's own pool. Same rule as a head:
+    // a row is in another department when neither its unit nor its department
+    // holder is the caller's unit.
+    const staffCs: ScopedUser = { id: "staff-cs", role: "STAFF", orgUnitId: CS };
+    expect(resolveItemScope(staffCs, "other")).toEqual({
+      NOT: { OR: [{ orgUnitId: CS }, { holderType: "DEPARTMENT", holderId: CS }] },
+    });
+    // The fragment is the same one the head gets, which is the point: "other
+    // departments" cannot mean "not mine" for one role and "not my unit" for
+    // another without the filter row lying to somebody.
+    expect(resolveItemScope(staffCs, "other")).toEqual(resolveItemScope(headCs, "other"));
+  });
+
+  it("leaves a staff member without an org unit on their role scope for 'other'", () => {
+    // No unit means there is no "other" to name; fall back rather than invent a
+    // view that would return the whole college.
+    const staffNoUnit: ScopedUser = { id: "staff-1", role: "STAFF", orgUnitId: null };
+    expect(resolveItemScope(staffNoUnit, "other")).toEqual(itemListScope(staffNoUnit));
   });
 });

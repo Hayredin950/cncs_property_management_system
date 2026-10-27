@@ -26,7 +26,15 @@ process.env.JWT_SECRET = "test_jwt_secret";
 vi.mock("../lib/prisma.js", () => {
   const client = {
     user: { findUnique: vi.fn(), findMany: vi.fn() },
-    item: { findUnique: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
+    item: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      // `returnLoan` writes the item back to the college pool; `updateMany` is
+      // the compare-and-swap the decision path uses.
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      count: vi.fn(),
+    },
     request: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -1569,3 +1577,134 @@ describe("mount paths", () => {
   });
 });
 
+
+/**
+ * The loan return handshake (§3.6).
+ *
+ * Two endpoints, and they used to disagree about the state they hand over in:
+ * `return-initiate` moved the loan to `RETURN_PENDING_CONFIRMATION`, then
+ * `return-confirm` demanded `APPROVED` and answered 409 to every confirmation.
+ * The borrower could announce a hand-back and nobody could ever accept it, so
+ * the item stayed in their custody on the register. These tests pin the
+ * transition and the one role that may close it — the lender, not the borrower.
+ */
+describe("the loan return handshake", () => {
+  const loanItem = {
+    id: "item-1",
+    tagId: "CNCS-LOAN0001",
+    name: "Projector",
+    status: "LOANED",
+    holderType: "STAFF",
+    holderId: "staff-1",
+  };
+
+  function loan(overrides: Record<string, unknown> = {}) {
+    return makeRequest({
+      id: "req-loan-1",
+      type: "LOAN",
+      status: "APPROVED",
+      requestedById: "staff-1",
+      reviewedById: "officer-1",
+      item: loanItem as never,
+      ...overrides,
+    });
+  }
+
+  it("moves an active loan to waiting-for-confirmation when the borrower hands it back", async () => {
+    vi.mocked(prisma.request.findUnique).mockResolvedValue(loan() as never);
+    vi.mocked(prisma.request.update).mockResolvedValue(loan({ status: "RETURN_PENDING_CONFIRMATION" }) as never);
+
+    const res = await request(app)
+      .post("/requests/req-loan-1/return-initiate")
+      .set("Authorization", `Bearer ${staffToken}`);
+
+    expect(res.status).toBe(200);
+    expect(prisma.request.update).toHaveBeenCalledWith({
+      where: { id: "req-loan-1" },
+      data: { status: "RETURN_PENDING_CONFIRMATION" },
+    });
+  });
+
+  it("confirms a return that is waiting for confirmation — the state the initiate step leaves it in", async () => {
+    vi.mocked(prisma.request.findUnique).mockResolvedValue(
+      loan({ status: "RETURN_PENDING_CONFIRMATION" }) as never,
+    );
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(makeOfficer() as never);
+    vi.mocked(prisma.item.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.custodyEvent.create).mockResolvedValue({} as never);
+    vi.mocked(prisma.request.update).mockResolvedValue({} as never);
+
+    const res = await request(app)
+      .post("/requests/req-loan-1/return-confirm")
+      .set("Authorization", `Bearer ${officerToken}`)
+      .send({ condition: "GOOD" });
+
+    expect(res.status).toBe(200);
+    // The item leaves the borrower and goes back to the college pool.
+    expect(prisma.item.update).toHaveBeenCalledWith({
+      where: { id: "item-1" },
+      data: { status: "ACTIVE", holderType: "COLLEGE", holderId: null },
+    });
+    expect(prisma.request.update).toHaveBeenCalledWith({
+      where: { id: "req-loan-1" },
+      data: expect.objectContaining({ status: "APPROVED", loanReturnedById: "officer-1" }),
+    });
+    // The officer's condition check is the point of the confirmation step, so
+    // it must reach the custody trail rather than being accepted and dropped.
+    expect(prisma.custodyEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        itemId: "item-1",
+        reason: "Loan returned — condition: GOOD",
+      }),
+    });
+  });
+
+  it("also accepts a hand-back that was never announced in the app", async () => {
+    vi.mocked(prisma.request.findUnique).mockResolvedValue(loan() as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(makeOfficer() as never);
+    vi.mocked(prisma.item.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.custodyEvent.create).mockResolvedValue({} as never);
+    vi.mocked(prisma.request.update).mockResolvedValue({} as never);
+
+    const res = await request(app)
+      .post("/requests/req-loan-1/return-confirm")
+      .set("Authorization", `Bearer ${officerToken}`)
+      .send({ condition: "GOOD" });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses the borrower confirming their own return", async () => {
+    vi.mocked(prisma.request.findUnique).mockResolvedValue(
+      loan({ status: "RETURN_PENDING_CONFIRMATION" }) as never,
+    );
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(makeUser() as never);
+
+    const res = await request(app)
+      .post("/requests/req-loan-1/return-confirm")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ condition: "GOOD" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Only the lender or the property officer can confirm this return");
+    expect(prisma.item.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a head who did not approve the loan", async () => {
+    const headToken = createToken({ id: "head-1", role: "DEPARTMENT_HEAD", orgUnitId: "unit-cs" });
+    vi.mocked(prisma.request.findUnique).mockResolvedValue(
+      loan({ status: "RETURN_PENDING_CONFIRMATION" }) as never,
+    );
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(
+      makeUser({ id: "head-1", role: "DEPARTMENT_HEAD" }) as never,
+    );
+
+    const res = await request(app)
+      .post("/requests/req-loan-1/return-confirm")
+      .set("Authorization", `Bearer ${headToken}`)
+      .send({ condition: "GOOD" });
+
+    expect(res.status).toBe(403);
+    expect(prisma.item.update).not.toHaveBeenCalled();
+  });
+});

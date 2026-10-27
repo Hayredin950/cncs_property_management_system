@@ -37,18 +37,21 @@ class RequestsListPage extends ConsumerWidget {
     // Decision rights, not a role name: the Property Officer and the Department
     // Head both review requests (spec 2.2).
     final decidesRequests = ref.watch(canDecideRequestsProvider);
+    final canFileRequests = ref.watch(authProvider).canFileRequests;
 
     return PageScaffold(
       title: 'Requests',
       subtitle: decidesRequests ? 'Everything filed against the register' : 'Your requests',
       maxWidth: 900,
       padBottom: 96,
-      trailing: AppIconButton(
-        icon: Icons.add,
-        tooltip: 'File a new request',
-        variant: AppButtonVariant.primary,
-        onPressed: () => context.push('/requests/new'),
-      ),
+      trailing: canFileRequests
+          ? AppIconButton(
+              icon: Icons.add,
+              tooltip: 'File a new request',
+              variant: AppButtonVariant.primary,
+              onPressed: () => context.push('/requests/new'),
+            )
+          : null,
       onRefresh: () async {
         ref.invalidate(requestListProvider);
         await ref.read(requestListProvider.future);
@@ -64,7 +67,7 @@ class RequestsListPage extends ConsumerWidget {
           runSpacing: AppSpace.s2,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            for (final type in [RequestType.transfer, RequestType.disposal])
+            for (final type in [RequestType.transfer, RequestType.disposal, RequestType.loan])
               _TypeToggle(
                 type: type,
                 active: query.type == type.wire,
@@ -157,9 +160,15 @@ class _StatusFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The stage and return states are work waiting on a person, not archive
+    // states — a head's queue is mostly PENDING_STAGE2 and a loan's handshake is
+    // RETURN_PENDING_CONFIRMATION, and neither was reachable from this row.
     const options = <(String?, String)>[
       (null, 'All'),
       ('PENDING', 'Pending'),
+      ('PENDING_STAGE1', 'Stage 1'),
+      ('PENDING_STAGE2', 'Stage 2'),
+      ('RETURN_PENDING_CONFIRMATION', 'Returns'),
       ('APPROVED', 'Approved'),
       ('REJECTED', 'Rejected'),
     ];

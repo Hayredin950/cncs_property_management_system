@@ -48,11 +48,13 @@ import { SmartLayout } from "./SmartLayout";
  * - **Shell B/C** (`AppLayout` behind `RequireAuth`) — everything staff/admin:
  *   dashboard, item management, requests, notifications, and a nested
  *   ADMIN-only guard for the `/admin/*` screens.
- * - **SmartLayout** — `/items`, `/scan` and `/item/:tagId`. Each is a staff
- *   destination *and* a public surface, so the shell is chosen per request
+ * - **SmartLayout** — `/items`, `/map`, `/scan` and `/item/:tagId`. Each is a
+ *   staff destination *and* a public surface, so the shell is chosen per request
  *   (signed in → workbench, anonymous → Shell A). See `SmartLayout.tsx` for the
  *   bug that made this necessary: without it, following a sidebar link — or
- *   landing on the QR destination after a save — dropped the whole nav.
+ *   landing on the QR destination after a save — dropped the whole nav. Only
+ *   `/scan` is actually reachable anonymously; the other three read the register
+ *   and are behind `RequireAuth`.
  *
  * `*` lives under the public shell so an unknown path still gets a header and
  * footer rather than a bare error box — and it's the same 404 a role-scoped
@@ -97,7 +99,6 @@ export const appRoutes: RouteObject[] = [
         element: <PublicLayout />,
         children: [
           { path: "/", element: <LandingPage /> },
-          { path: "/map", element: <MapPage /> },
           { path: "/login", element: <LoginPage /> },
           { path: "/request-account", element: <RequestAccountPage /> },
           // The invited person is not signed in and has no account to sign in
@@ -115,17 +116,48 @@ export const appRoutes: RouteObject[] = [
       // workbench that are also public surfaces. Must not be duplicated in the
       // Shell A block above — React Router matches one route per path, so a
       // second copy would be dead.
+      //
+      // `/scan` is the only one a visitor may use without a token: the camera
+      // reads nothing from the API. Every item read is `authenticate`-only
+      // (`GET /items`, `/items/:tagId`), so `/items`, `/map` and the tag page
+      // sit behind the same guard as the rest of the asset screens. Without
+      // that guard, signing out of `/items` left the browse screen mounted with
+      // no token and the browser fetching the register anonymously — a 401 and
+      // an error toast on what should be a login form. The guard sends the
+      // visitor to `/login?next=…`, which is also what makes a scanned tag
+      // survive sign-in and land back on `/item/<tag>` (P6-3).
       {
         element: <SmartLayout />,
         children: [
-          { path: "/items", element: <ItemsBrowsePage /> },
           { path: "/scan", element: <ScanPage /> },
-          // The QR destination. It is public, but it is also where the item
-          // form lands after a save, where `ItemFormPage`'s and
-          // `ItemStaffPage`'s "public page" links point, and where a staff
-          // scan ends up — so a signed-in user must arrive with the nav they
-          // left from rather than losing it. See `SmartLayout.tsx`.
-          { path: "/item/:tagId", element: <ItemDetailPage /> },
+          {
+            path: "/items",
+            element: (
+              <RequireAuth roles={ASSET_ROLES}>
+                <ItemsBrowsePage />
+              </RequireAuth>
+            ),
+          },
+          {
+            path: "/map",
+            element: (
+              <RequireAuth roles={ASSET_ROLES}>
+                <MapPage />
+              </RequireAuth>
+            ),
+          },
+          // The QR destination. It is public in the sense that the sticker is
+          // printed for anyone to scan, but the record behind it needs an
+          // account — so the guard turns a scan into a sign-in prompt and then
+          // returns the reader to the tag.
+          {
+            path: "/item/:tagId",
+            element: (
+              <RequireAuth roles={ASSET_ROLES}>
+                <ItemDetailPage />
+              </RequireAuth>
+            ),
+          },
         ],
       },
       {

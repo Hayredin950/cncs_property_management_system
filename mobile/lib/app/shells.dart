@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../data/providers/auth_provider.dart';
 import '../data/providers/notifications_provider.dart';
 import '../data/providers/requests_provider.dart';
+import '../data/providers/taxonomy_provider.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_button.dart';
 import '../widgets/feedback.dart';
@@ -47,7 +48,10 @@ class AauLockup extends StatelessWidget {
         Container(
           width: compact ? 30 : 34,
           height: compact ? 30 : 34,
-          decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white,
+          ),
           clipBehavior: Clip.antiAlias,
           child: Image.asset('assets/aau/aau-logo.png', fit: BoxFit.contain),
         ),
@@ -142,11 +146,16 @@ class PublicShell extends StatelessWidget {
               padding: const EdgeInsets.only(right: AppSpace.s3),
               child: TextButton(
                 onPressed: () => context.go('/login'),
-                style: TextButton.styleFrom(foregroundColor: AppColors.brand700),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.brand700,
+                ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Staff login', style: TextStyle(fontWeight: FontWeight.w600)),
+                    Text(
+                      'Staff login',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     SizedBox(width: 4),
                     Icon(Icons.arrow_forward, size: 16),
                   ],
@@ -168,7 +177,11 @@ class PublicShell extends StatelessWidget {
 
 /// Shell C — the authenticated mobile shell: top bar, content, bottom tab bar.
 class WorkbenchShell extends ConsumerWidget {
-  const WorkbenchShell({super.key, required this.child, required this.currentPath});
+  const WorkbenchShell({
+    super.key,
+    required this.child,
+    required this.currentPath,
+  });
 
   final Widget child;
 
@@ -189,7 +202,9 @@ class WorkbenchShell extends ConsumerWidget {
         actions: [
           AppIconButton(
             icon: Icons.notifications_outlined,
-            tooltip: unread > 0 ? 'Notifications, $unread unread' : 'Notifications',
+            tooltip: unread > 0
+                ? 'Notifications, $unread unread'
+                : 'Notifications',
             badgeCount: unread,
             onPressed: () => context.push('/notifications'),
           ),
@@ -227,9 +242,7 @@ class SharedSurface extends ConsumerWidget {
       // Still checking the stored token. Showing the public chrome here would make
       // a signed-in user's tab bar blink into place; an empty branded surface is
       // the honest interim.
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return auth.isAuthenticated
         ? WorkbenchShell(currentPath: currentPath, child: child)
@@ -244,21 +257,26 @@ class _BarTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(bottom: BorderSide(color: AppColors.aauGrayLine)),
-        ),
-        padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 0, AppSpace.gutter, AppSpace.s3),
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: AppColors.aauGray900,
-          ),
-        ),
-      );
+    width: double.infinity,
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      border: Border(bottom: BorderSide(color: AppColors.aauGrayLine)),
+    ),
+    padding: const EdgeInsets.fromLTRB(
+      AppSpace.gutter,
+      0,
+      AppSpace.gutter,
+      AppSpace.s3,
+    ),
+    child: Text(
+      title,
+      style: const TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        color: AppColors.aauGray900,
+      ),
+    ),
+  );
 }
 
 /// The five-slot tab bar (shell C). Five, and no more: §5.5 is explicit that a
@@ -280,6 +298,23 @@ class AppTabBar extends ConsumerWidget {
     // queue anyone is waiting on, so badging them would be a permanent
     // unactionable number.
     final decidesRequests = ref.watch(canDecideRequestsProvider);
+    // The Requests tab is a ledger plus a filing form: it belongs on the bar
+    // for a role that files or reviews (Staff, Department Head, Property
+    // Officer). A SYSTEM_ADMIN cannot file (the API refuses its POST by name),
+    // and an AUDITOR has nothing of its own to see, so for those two the slot
+    // would open on an empty list. `canViewOwnRequests` is exactly that test.
+    final auth = ref.watch(authProvider);
+    // The register is asset data, which the account role does not see (spec
+    // 2.1.1). The tab used to be drawn for everyone, so a System Admin's third
+    // slot opened on an empty list with a 403 behind it.
+    final seesAssetData = auth.seesAssetData;
+    // The account role has three jobs, and two of them deserve a slot rather
+    // than a trip through More: the queue it works every morning and the
+    // profile it is identified by. Its bar is Home · Scan · Accounts ·
+    // Profile · More — still five slots, because §5.5 does not bend for a
+    // role; the slots it does not use (Items, Requests) are simply not there.
+    final managesAccounts = ref.watch(canManageAccountsProvider);
+    final pendingApprovals = ref.watch(pendingApprovalsForTabBar);
 
     return Container(
       decoration: const BoxDecoration(
@@ -307,21 +342,45 @@ class AppTabBar extends ConsumerWidget {
                 raised: true,
                 onTap: () => context.go('/scan'),
               ),
-              _TabSlot(
-                icon: Icons.inventory_2_outlined,
-                activeIcon: Icons.inventory_2,
-                label: 'Items',
-                active: currentPath.startsWith('/item'),
-                onTap: () => context.go('/items'),
-              ),
-              _TabSlot(
-                icon: Icons.assignment_outlined,
-                activeIcon: Icons.assignment,
-                label: 'Requests',
-                active: currentPath.startsWith('/requests'),
-                badgeCount: decidesRequests ? pending : null,
-                onTap: () => context.go('/requests'),
-              ),
+              if (seesAssetData)
+                _TabSlot(
+                  icon: Icons.inventory_2_outlined,
+                  activeIcon: Icons.inventory_2,
+                  label: 'Items',
+                  active: currentPath.startsWith('/item'),
+                  onTap: () => context.go('/items'),
+                ),
+              // A slot for a page with nothing on it is not a feature. The
+              // auditor can neither file a request nor decide one, so its
+              // Requests tab opened on an empty "Your requests" — the web nav
+              // does not offer it, and neither does this bar. The route itself
+              // still answers a deep link, so nothing became unreachable.
+              if (auth.canViewOwnRequests)
+                _TabSlot(
+                  icon: Icons.assignment_outlined,
+                  activeIcon: Icons.assignment,
+                  label: 'Requests',
+                  active: currentPath.startsWith('/requests'),
+                  badgeCount: decidesRequests ? pending : null,
+                  onTap: () => context.go('/requests'),
+                ),
+              if (managesAccounts)
+                _TabSlot(
+                  icon: Icons.people_alt_outlined,
+                  activeIcon: Icons.people_alt,
+                  label: 'Accounts',
+                  active: currentPath.startsWith('/admin/users'),
+                  badgeCount: pendingApprovals,
+                  onTap: () => context.go('/admin/users'),
+                ),
+              if (managesAccounts)
+                _TabSlot(
+                  icon: Icons.person_outline,
+                  activeIcon: Icons.person,
+                  label: 'Profile',
+                  active: currentPath.startsWith('/profile'),
+                  onTap: () => context.go('/profile'),
+                ),
               _TabSlot(
                 icon: Icons.more_horiz,
                 activeIcon: Icons.more_horiz,
@@ -343,6 +402,16 @@ class AppTabBar extends ConsumerWidget {
 final pendingCountForTabBar = Provider<int>((ref) {
   if (!ref.watch(canDecideRequestsProvider)) return 0;
   return ref.watch(pendingRequestCountProvider).value ?? 0;
+});
+
+/// The approvals badge on the account role's bar.
+///
+/// Only an administrator has that queue, so a role without the screen does not
+/// fetch it — a badge over a list the role cannot open is a number with nothing
+/// behind it, the same rule the Requests badge follows.
+final pendingApprovalsForTabBar = Provider<int>((ref) {
+  if (!ref.watch(canManageAccountsProvider)) return 0;
+  return ref.watch(approvalsProvider).value?.length ?? 0;
 });
 
 class _TabSlot extends StatelessWidget {
@@ -389,7 +458,11 @@ class _TabSlot extends StatelessWidget {
                       color: AppColors.accent600,
                       borderRadius: BorderRadius.all(Radius.circular(999)),
                     ),
-                    child: const Icon(Icons.qr_code_scanner, size: 20, color: Colors.white),
+                    child: const Icon(
+                      Icons.qr_code_scanner,
+                      size: 20,
+                      color: Colors.white,
+                    ),
                   )
                 else
                   Stack(
@@ -402,10 +475,15 @@ class _TabSlot extends StatelessWidget {
                           right: -8,
                           child: Container(
                             constraints: const BoxConstraints(minWidth: 16),
-                            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 0.5),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 3,
+                              vertical: 0.5,
+                            ),
                             decoration: const BoxDecoration(
                               color: AppColors.danger600,
-                              borderRadius: BorderRadius.all(Radius.circular(999)),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(999),
+                              ),
                             ),
                             child: Text(
                               badgeCount! > 9 ? '9+' : '$badgeCount',
@@ -442,13 +520,14 @@ class _TabSlot extends StatelessWidget {
 
 /// The "More" sheet.
 ///
-/// A sheet rather than a sixth tab, and it duplicates the Notifications badge from
-/// the top bar so it is reachable one-handed — which is the whole point of the
-/// mobile shell (§5.5).
+/// A sheet rather than a sixth tab, so the things that are not daily work — the
+/// audits, the reports, the administration screens — are one-handed and out of
+/// the way (§5.5). It deliberately does not repeat what the top bar or a tab
+/// already offers: no notification bell, no change-password, no second profile
+/// row.
 Future<void> showMoreSheet(BuildContext context, WidgetRef ref) {
   final auth = ref.read(authProvider);
   final user = auth.user;
-  final unread = ref.read(unreadCountProvider).value ?? 0;
 
   return showAppSheet<void>(
     context,
@@ -489,7 +568,10 @@ Future<void> showMoreSheet(BuildContext context, WidgetRef ref) {
                         ),
                         Text(
                           user.email,
-                          style: const TextStyle(fontSize: 12.5, color: AppColors.aauGray500),
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: AppColors.aauGray500,
+                          ),
                         ),
                       ],
                     ),
@@ -532,40 +614,81 @@ Future<void> showMoreSheet(BuildContext context, WidgetRef ref) {
                 context.push('/reports');
               },
             ),
-          _MoreRow(
-            icon: Icons.notifications_outlined,
-            label: 'Notifications',
-            badgeCount: unread,
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/notifications');
-            },
-          ),
-          // Staff-only as far as the sheet goes: `/map` itself is open to everyone,
-          // but a signed-in user reaching it from the workbench is the one who came
-          // here looking for it, since the public shell already carries the link.
-          _MoreRow(
-            icon: Icons.map_outlined,
-            label: 'Browse by building',
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/map');
-            },
-          ),
+          // No Notifications row: the bell is in the top bar of every shell that
+          // has a More sheet, so a row here was a second door to the same page
+          // (the same reason Change password and Sign out are not repeated).
+          // The map is a staff view now: it is derived from the register, so it
+          // needs the same token every item read does (26 Oct). A role with no
+          // asset data gets no row — the account role used to be offered a
+          // building browser that its route guard then refused (same device pass).
+          if (auth.seesAssetData)
+            _MoreRow(
+              icon: Icons.map_outlined,
+              label: 'Browse by building',
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/map');
+              },
+            ),
           // Two separate capabilities, and the point of the split: accounts are the
           // System Admin's (spec 2.1.1) while the catalogue is the Property
           // Officer's. The old single "admin" gate showed both to one role and
           // neither to the other four.
-          if (auth.canManageAccounts || auth.canManageCategories) ...[
+          if (auth.canManageAccounts ||
+              auth.canApproveAccounts ||
+              auth.canManageCategories) ...[
             const Divider(height: 1),
             const _MoreSectionLabel('Administration'),
-            if (auth.canManageAccounts)
+            // The account role's Accounts tab is on the bar now, so repeating
+            // it here would be a second door to the same room. Heads still need
+            // the row: their approvals screen is not one of their five tabs.
+            // A head administers one thing: the staff of their own unit who
+            // asked for an account. Same screen, approvals mode — it used to be
+            // reachable on the web only.
+            if (!auth.canManageAccounts && auth.canApproveOwnUnitAccounts)
               _MoreRow(
-                icon: Icons.verified_user_outlined,
-                label: 'Accounts',
+                icon: Icons.how_to_reg_outlined,
+                label: 'Account approvals',
                 onTap: () {
                   Navigator.of(context).pop();
                   context.push('/admin/users');
+                },
+              ),
+            // The account role's system surface. Three screens, one grant
+            // (`SYSTEM_CONFIG`), and all three used to be web-only.
+            if (auth.canViewSystemConfig) ...[
+              _MoreRow(
+                icon: Icons.monitor_heart_outlined,
+                label: 'System status',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/admin/system');
+                },
+              ),
+              _MoreRow(
+                icon: Icons.receipt_long_outlined,
+                label: 'System events',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/admin/events');
+                },
+              ),
+              _MoreRow(
+                icon: Icons.account_tree_outlined,
+                label: 'Departments',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/admin/departments');
+                },
+              ),
+            ],
+            if (auth.canManageBuildings)
+              _MoreRow(
+                icon: Icons.domain_outlined,
+                label: 'Buildings',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/admin/buildings');
                 },
               ),
             if (auth.canManageCategories)
@@ -579,40 +702,20 @@ Future<void> showMoreSheet(BuildContext context, WidgetRef ref) {
               ),
           ],
           const Divider(height: 1),
-          _MoreRow(
-            icon: Icons.person_outline,
-            label: 'Profile',
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/profile');
-            },
-          ),
-          _MoreRow(
-            icon: Icons.lock_outline,
-            label: 'Change password',
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/change-password');
-            },
-          ),
-          _MoreRow(
-            icon: Icons.logout,
-            label: 'Sign out',
-            destructive: true,
-            onTap: () async {
-              Navigator.of(context).pop();
-              final confirmed = await showConfirmDialog(
-                context,
-                title: 'Sign out?',
-                body: 'You will need your email and password to sign back in. '
-                    'Anything you have not submitted is discarded.',
-                confirmLabel: 'Sign out',
-                destructive: true,
-                icon: Icons.logout,
-              );
-              if (confirmed) await ref.read(authProvider.notifier).logout();
-            },
-          ),
+          // One row, not two: "Profile" and "Account and sign out" both opened
+          // the same screen, so the sheet looked like it offered two different
+          // actions. The account role's Profile is a tab on its bar, so its
+          // sheet offers nothing here. No Change password either — the Profile
+          // screen owns the account actions.
+          if (!auth.canManageAccounts)
+            _MoreRow(
+              icon: Icons.person_outline,
+              label: 'Profile and sign out',
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/profile');
+              },
+            ),
           const SizedBox(height: AppSpace.s4),
         ],
       ),
@@ -627,22 +730,22 @@ class _MoreSectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpace.s4,
-          AppSpace.s3,
-          AppSpace.s4,
-          AppSpace.s1,
-        ),
-        child: Text(
-          label.toUpperCase(),
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            color: AppColors.aauGray400,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(
+      AppSpace.s4,
+      AppSpace.s3,
+      AppSpace.s4,
+      AppSpace.s1,
+    ),
+    child: Text(
+      label.toUpperCase(),
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.8,
+        color: AppColors.aauGray400,
+      ),
+    ),
+  );
 }
 
 class _MoreRow extends StatelessWidget {
@@ -650,19 +753,18 @@ class _MoreRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
-    this.badgeCount,
-    this.destructive = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final int? badgeCount;
-  final bool destructive;
 
   @override
   Widget build(BuildContext context) {
-    final color = destructive ? AppColors.danger700 : AppColors.aauGray800;
+    // No destructive row lives in this sheet any more: Sign out and the account
+    // actions moved to Profile, so a tone parameter here would be a branch no
+    // caller takes.
+    const color = AppColors.aauGray800;
 
     return InkWell(
       onTap: onTap,
@@ -673,36 +775,23 @@ class _MoreRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 21, color: destructive ? AppColors.danger600 : AppColors.aauGray500),
+            Icon(icon, size: 21, color: AppColors.aauGray500),
             const SizedBox(width: AppSpace.s3),
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: color),
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: color,
+                ),
               ),
             ),
-            if ((badgeCount ?? 0) > 0) ...[
-              Container(
-                constraints: const BoxConstraints(minWidth: 20),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: const BoxDecoration(
-                  color: AppColors.danger600,
-                  borderRadius: BorderRadius.all(Radius.circular(999)),
-                ),
-                child: Text(
-                  badgeCount! > 9 ? '9+' : '$badgeCount',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    height: 1.3,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpace.s2),
-            ],
-            const Icon(Icons.chevron_right, size: 20, color: AppColors.aauGray400),
+            const Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: AppColors.aauGray400,
+            ),
           ],
         ),
       ),

@@ -67,7 +67,10 @@ class ProfilePage extends ConsumerWidget {
                     const SizedBox(height: 2),
                     Text(
                       user.email,
-                      style: const TextStyle(fontSize: 13, color: AppColors.aauGray600),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.aauGray600,
+                      ),
                     ),
                     const SizedBox(height: AppSpace.s2),
                     Row(
@@ -123,14 +126,8 @@ class ProfilePage extends ConsumerWidget {
           onPressed: () => context.push('/change-password'),
         ),
         const SizedBox(height: AppSpace.s2),
-        AppButton(
-          label: 'My notifications',
-          icon: Icons.notifications_outlined,
-          variant: AppButtonVariant.outline,
-          expand: true,
-          onPressed: () => context.push('/notifications'),
-        ),
-        const SizedBox(height: AppSpace.s2),
+        // Notifications stay on the bell in every shell's top bar; repeating
+        // them here was a second door to the same inbox.
         AppButton(
           label: 'Sign out',
           icon: Icons.logout,
@@ -169,9 +166,9 @@ class ProfilePage extends ConsumerWidget {
                 // viewer who can open the accounts screen is offered it.
                 ref.watch(canManageAccountsProvider)
                     ? 'Your own name and email are set by the property office. Every '
-                        'other account can be edited under More \u2192 Accounts.'
+                          'other account can be edited under Accounts.'
                     : 'Your name and email are set by the accounts office. Ask the '
-                        'property office if either needs to change.',
+                          'property office if either needs to change.',
                 style: const TextStyle(
                   fontSize: 12.5,
                   color: AppColors.aauGray600,

@@ -2,6 +2,7 @@ import { AlertCircle, Pencil } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
 import { useClaimItem, useRefuseClaim } from "../hooks/useAuthMutations";
+import { canEditItem, hasCapability } from "../lib/permissions";
 import { Button } from "./Button";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { IconButton } from "./IconButton";
@@ -49,10 +50,25 @@ export function ItemActions({ item, variant = "buttons", className }: ItemAction
   // The edit form loads by tag, not id — same link `ItemStaffPage` uses.
   const editTo = `/items/${item.id}/edit?tag=${encodeURIComponent(item.tagId)}`;
 
-  // Determine if the current user can claim/refuse this item
+  /**
+   * Edit is a **row-level** grant, not a role-wide one. Staff edit items they
+   * hold, a head the items of their own unit, the Property Officer anything;
+   * the server enforces the same rule on `PUT /items/:id`. The button used to be
+   * offered to every signed-in viewer, including on another department's item,
+   * so the only way to discover the limit was a 403 after filling the form.
+   */
+  const mayEdit = canEditItem(user.role, user.id, user.departmentId, item);
+
+  // Claim/refuse is the claim handshake (`ITEM_CLAIM`), addressed to one person:
+  // the holder, or the head standing behind a staff member of their own unit.
+  const canClaim = hasCapability(user.role, "ITEM_CLAIM");
   const isCustodian = item.holderType === "STAFF" && item.holderId === user.id;
-  const isDeptHead = user.role === "DEPARTMENT_HEAD" && item.holderType === "DEPARTMENT" && item.holderId === user.departmentId;
-  const canClaimOrRefuse = item.status === "PENDING_CLAIM" && (isCustodian || isDeptHead);
+  const isDeptHead =
+    user.role === "DEPARTMENT_HEAD" &&
+    ((item.holderType === "DEPARTMENT" && item.holderId === user.departmentId) ||
+      (item.holderType === "STAFF" && item.orgUnitId === user.departmentId));
+  const canClaimOrRefuse = canClaim && item.status === "PENDING_CLAIM" && (isCustodian || isDeptHead);
+
 
   const handleClaim = async () => {
     await claimMutation.mutateAsync(item.id);
@@ -85,25 +101,29 @@ export function ItemActions({ item, variant = "buttons", className }: ItemAction
   return (
     <div className={["flex items-center gap-1.5", className ?? ""].join(" ")}>
       {variant === "icons" ? (
-        /*
-          A button, not a `Link`: the icon sits on top of the card, and the card
-          is already an anchor — an `<a>` wrapping a `<button>` is invalid HTML
-          and the browser decides which one the tap belongs to.
-        */
-        <IconButton
-          size="sm"
-          variant="outline"
-          icon={<Pencil className="h-4 w-4" aria-hidden="true" />}
-          label={`Edit ${item.name}`}
-          onClick={() => navigate(editTo)}
-        />
+        mayEdit ? (
+          /*
+            A button, not a `Link`: the icon sits on top of the card, and the card
+            is already an anchor — an `<a>` wrapping a `<button>` is invalid HTML
+            and the browser decides which one the tap belongs to.
+          */
+          <IconButton
+            size="sm"
+            variant="outline"
+            icon={<Pencil className="h-4 w-4" aria-hidden="true" />}
+            label={`Edit ${item.name}`}
+            onClick={() => navigate(editTo)}
+          />
+        ) : null
       ) : (
         <>
-          <Link to={editTo}>
-            <Button variant="outline" size="sm" leftIcon={<Pencil className="h-4 w-4" aria-hidden="true" />}>
-              Edit item
-            </Button>
-          </Link>
+          {mayEdit && (
+            <Link to={editTo}>
+              <Button variant="outline" size="sm" leftIcon={<Pencil className="h-4 w-4" aria-hidden="true" />}>
+                Edit item
+              </Button>
+            </Link>
+          )}
 
           {canClaimOrRefuse && (
             <div className="flex items-center gap-1.5">

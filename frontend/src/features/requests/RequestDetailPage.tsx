@@ -19,7 +19,14 @@ import {
   useInitiateLoanReturn,
 } from "../../hooks/useAuthMutations";
 import { useDecideRequest, useWithdrawRequest } from "../../hooks/useRequestMutations";
-import { canDecideRequests } from "../../lib/permissions";
+import {
+  canApproveDisposal,
+  canApproveLoan,
+  canApproveTransferStage1,
+  canApproveTransferStage2,
+  canConfirmLoanReturn,
+  canDecideRequests,
+} from "../../lib/permissions";
 import { formatDateTimeUTC, formatRelativeTime } from "../../lib/formatters";
 import { ApiError, NetworkError } from "../../types/api";
 import { REQUEST_STATUS_LABELS } from "../../types/enums";
@@ -35,7 +42,7 @@ import type { DecideRequestResponse, RequestDetail } from "../../types/request";
 export function RequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const canDecide = canDecideRequests(user?.role);
+  const decidesRequests = canDecideRequests(user?.role);
 
   // After a decision, show what changed (if the decision mutation completed successfully)
   const [decisionResult, setDecisionResult] = useState<DecideRequestResponse | null>(null);
@@ -91,13 +98,47 @@ export function RequestDetailPage() {
 
   const request = requestQuery.data.request;
   const decided = ["APPROVED", "REJECTED", "WITHDRAWN", "INVALIDATED"].includes(request.status);
+
+  /**
+   * Three questions, and this screen used to ask only the first.
+   *
+   * `REQUEST_DECIDE` is not "may decide this one": the workflow asks for the
+   * capability of the **type and stage** — a head releases and receives
+   * transfers but may not approve a disposal or a loan, and a transfer waiting
+   * for the second signature needs the receiving grant. One Approve button for
+   * every pending request meant a 403 was the only way to find out, and a head's
+   * own filing offered a self-approval the server refuses.
+   */
+  const isOpen =
+    request.status === "PENDING" ||
+    request.status === "PENDING_STAGE1" ||
+    request.status === "PENDING_STAGE2";
+  const canApproveThisType =
+    request.type === "TRANSFER"
+      ? request.status === "PENDING_STAGE2"
+        ? canApproveTransferStage2(user?.role)
+        : (request.status === "PENDING" || request.status === "PENDING_STAGE1") &&
+          canApproveTransferStage1(user?.role)
+      : request.type === "DISPOSAL"
+        ? canApproveDisposal(user?.role)
+        : request.type === "LOAN"
+          ? canApproveLoan(user?.role)
+          : false;
+  const canDecide =
+    decidesRequests && isOpen && request.requestedById !== user?.id && canApproveThisType;
   const isOwnRequest = user?.id === request.requestedBy.id;
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-slate-900">
-          {request.type === "TRANSFER" ? "Transfer request" : "Disposal request"}
+          {request.type === "TRANSFER"
+            ? "Transfer request"
+            : request.type === "DISPOSAL"
+              ? "Disposal request"
+              : request.type === "LOAN"
+                ? "Loan request"
+                : "Request"}
         </h1>
         <div className="flex items-center gap-2">
           <RequestTypeBadge type={request.type} />
@@ -277,9 +318,11 @@ export function RequestDetailPage() {
         </Card>
       )}
 
-      {!canDecide && !decided && (
+      {!canDecide && !decided && isOpen && (
         <p className="text-sm text-slate-500">
-          Waiting for review. You'll get an in-app notification when it's decided.
+          {decidesRequests && !canApproveThisType
+            ? "Waiting for the reviewer this step belongs to. You'll get an in-app notification when it's decided."
+            : "Waiting for review. You'll get an in-app notification when it's decided."}
         </p>
       )}
       {decided && (
@@ -322,7 +365,10 @@ function LoanReturnPanel({ request }: { request: RequestDetail }) {
   const dispute = useDisputeLoanReturn();
 
   const isBorrower = user?.id === request.requestedById;
-  const canDecideReturn = user?.role === "PROPERTY_OFFICER" || user?.role === "DEPARTMENT_HEAD";
+  // The officer who let the item out checks it back in (`LOAN_APPROVE`); a head
+  // never decides loans, so offering them the confirmation was a 403. The
+  // borrower may not close their own return either.
+  const canDecideReturn = canConfirmLoanReturn(user?.role) && !isBorrower;
 
   if (request.status === "RETURN_PENDING_CONFIRMATION") {
     return (
@@ -347,7 +393,7 @@ function LoanReturnPanel({ request }: { request: RequestDetail }) {
         )}
         {!canDecideReturn && (
           <p className="text-sm text-slate-500">
-            The Property Officer or the lending department head confirms the return.
+            The Property Officer confirms the return.
           </p>
         )}
 

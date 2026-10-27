@@ -31,6 +31,7 @@ import {
   REQUEST_FIXTURE,
   REQUESTS_LIST,
   SYSTEM_EVENTS,
+  SYSTEM_STATISTICS,
   SYSTEM_STATUS,
 } from "../fixtures";
 import { getToken } from "../../lib/storage";
@@ -505,5 +506,8 @@ export const handlers = [
     getToken()
       ? HttpResponse.json({ events: SYSTEM_EVENTS, total: SYSTEM_EVENTS.length, limit: 10, offset: 0 })
       : unauthorized(),
+  ),
+  http.get(`${API}/system/statistics`, () =>
+    getToken() ? HttpResponse.json(SYSTEM_STATISTICS) : unauthorized(),
   ),
 ];

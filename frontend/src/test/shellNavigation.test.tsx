@@ -107,14 +107,15 @@ describe("workbench shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("still gives an anonymous visitor the public shell on the QR destination", async () => {
+  it("sends an anonymous visitor from the QR destination to sign in", async () => {
     clearToken();
     renderWithProviders({ initialEntries: [`/item/${PUBLIC_ITEM.tagId}`] });
 
-    expect(
-      await screen.findByRole("heading", { name: PUBLIC_ITEM.name }),
-    ).toBeInTheDocument();
-    // A QR scan by a member of the public must not reveal staff chrome.
+    // The sticker is printed for anyone to scan, but the record behind it is an
+    // item read — authenticate-only since 15 Oct. The guard turns the scan into
+    // a sign-in prompt and carries the tag into `next`, so signing in lands back
+    // on this item rather than the dashboard.
+    expect(await screen.findByText("Staff sign in")).toBeInTheDocument();
     expect(sidebarPanel()).not.toBeInTheDocument();
     expect(screen.getByText("Sign in")).toBeInTheDocument();
   });

@@ -23,7 +23,7 @@ import type {
   AuditSessionSummary,
 } from "../types/audit";
 import type { ItemsHistoryResponse } from "../types/history";
-import type { SystemEvent, SystemStatus } from "../api/system";
+import type { SystemEvent, SystemStatistics, SystemStatus } from "../api/system";
 import type { DepartmentRoster, InvitableUnit } from "../api/departments";
 import type { ActiveAuditResponse } from "../api/audits";
 import type { RecentItem } from "../api/items";
@@ -584,6 +584,40 @@ export const SYSTEM_STATUS: SystemStatus = {
   startedAt: "2026-10-13T05:58:00.000Z",
   builtAt: "2026-10-13T06:00:00.000Z",
   database: "connected",
+};
+
+/**
+ * `GET /system/statistics` — the counts behind the dashboard's graphs.
+ *
+ * Shaped like the route's answer: totals, a status breakdown and a six-month
+ * strip for accounts, and the same for items. The dashboard asserts on the
+ * numbers, so a widget that renders a zero it invented fails rather than looking
+ * tidy.
+ */
+export const SYSTEM_STATISTICS: SystemStatistics = {
+  accounts: {
+    total: 24,
+    byStatus: { ACTIVE: 20, PENDING_APPROVAL: 3, REJECTED: 1 },
+    perMonth: [
+      { month: "2026-05", count: 2 },
+      { month: "2026-06", count: 4 },
+      { month: "2026-07", count: 3 },
+      { month: "2026-08", count: 5 },
+      { month: "2026-09", count: 6 },
+      { month: "2026-10", count: 4 },
+    ],
+  },
+  decisions: [{ action: "ACCOUNT_APPROVED", count: 9 }],
+  items: {
+    total: 118,
+    byStatus: { ACTIVE: 112, DISPOSED: 6 },
+    byDepartment: [
+      { name: "Computer Science", count: 74 },
+      { name: "Physics", count: 44 },
+    ],
+  },
+  requests: { byStatus: { PENDING: 3, APPROVED: 11 }, byType: { TRANSFER: 9, LOAN: 5 } },
+  audits: { byType: { DEPARTMENT: 2 } },
 };
 
 /**

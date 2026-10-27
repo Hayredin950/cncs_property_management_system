@@ -1,4 +1,5 @@
 import type { Prisma } from "../generated/prisma/client.js";
+import { hasCapability } from "./permissions.js";
 
 /**
  * Who may see which item — the one place both the listing and the single-item
@@ -41,6 +42,25 @@ export interface ScopedItem {
  * clause matches everything (this is the shape of the bug the audit found).
  */
 const MATCHES_NOTHING: Prisma.ItemWhereInput = { id: { in: [] } };
+
+/**
+ * The widest set of rows a role may read **at all** — the ceiling every view
+ * sits under.
+ *
+ * This is the one place "can this role see asset data?" is answered, and it is
+ * answered from the capability matrix, not from a list of role names: a role
+ * granted `ITEM_READ` reads the register, one without it sees nothing. A future
+ * role joins by editing `GRANTS`, not by finding every `role === …` in this
+ * file. The SYSTEM_ADMIN is the one role without the grant (spec 2.1.1).
+ *
+ * `undefined` means "no ceiling". `MATCHES_NOTHING` is returned instead of `{}`
+ * for the same reason `itemListScope` does: a forgotten clause matches
+ * everything.
+ */
+export function itemReadScope(user?: ScopedUser | null): Prisma.ItemWhereInput | undefined {
+  if (!user) return MATCHES_NOTHING;
+  return hasCapability(user.role, "ITEM_READ") ? undefined : MATCHES_NOTHING;
+}
 
 /**
  * The `where` fragment limiting a listing to what the viewer may see.
@@ -93,6 +113,16 @@ export function resolveItemScope(
   user: ScopedUser | null | undefined,
   scopeParam?: string,
 ): Prisma.ItemWhereInput | undefined {
+  /**
+   * The read ceiling comes first, and it **ends** the question for a role
+   * without it. Every branch below narrows or reshapes a view; none may widen
+   * it past what the matrix allows. Without this early return, a role that lost
+   * `ITEM_READ` could still be handed rows by a scope value the switch happens
+   * to recognise (or by the `default` fallback) — the exact shape of "a list
+   * shows what the detail then refuses".
+   */
+  const readable = itemReadScope(user);
+  if (readable) return readable;
   if (!user) return MATCHES_NOTHING;
   if (!scopeParam) return itemListScope(user);
 
@@ -162,12 +192,27 @@ export function resolveItemScope(
         case "all":
           return undefined;
         case "other":
-          return {
-            AND: [
-              { NOT: { ownerId: user.id } },
-              { NOT: { holderType: "STAFF", holderId: user.id } },
-            ],
-          };
+          /**
+           * "Other departments" means *other departments*, the same view a head
+           * gets — not "everything I do not personally hold". The old rule only
+           * removed the caller's own rows, so a CS staff member's "other
+           * departments" list still contained 52 Computer Science items
+           * (including the department's own pool) and could be used to request a
+           * transfer of something the caller's unit already had.
+           *
+           * A staff member without an org unit has no "other" to name; the
+           * caller falls back to the role scope rather than inventing one.
+           */
+          return user.orgUnitId
+            ? {
+                NOT: {
+                  OR: [
+                    { orgUnitId: user.orgUnitId },
+                    { holderType: "DEPARTMENT", holderId: user.orgUnitId },
+                  ],
+                },
+              }
+            : itemListScope(user);
         default:
           return itemListScope(user);
       }
@@ -176,8 +221,7 @@ export function resolveItemScope(
   }
 }
 
-/** Equality under Prisma's rules: `null` and `undefined` are both "no value". */
-function sameValue(rowValue: unknown, filterValue: unknown): boolean {
+/** Equality under Prisma's rules: `null` and `undefined` are both "no value". */function sameValue(rowValue: unknown, filterValue: unknown): boolean {
   const normalise = (value: unknown) => (value === null || value === undefined ? null : value);
   return normalise(rowValue) === normalise(filterValue);
 }
@@ -258,13 +302,23 @@ export function canOpenItem(
   if (!user) return false;
   if (itemInScope(user, item)) return true;
 
-  const isReader = user.role === "STAFF" || user.role === "DEPARTMENT_HEAD";
-  if (!isReader) return false;
-
-  // Another department's pool is not a catalogue.
-  if (item.holderType === "DEPARTMENT" && item.holderId !== user.orgUnitId) return false;
-
-  return true;
+  /**
+   * A register reader may **open** any row the register can list.
+   *
+   * Both clients list the whole register (`scope=all`) and offer "Other
+   * departments" so somebody can find an item to request, so a row drawn by the
+   * list must open. This used to refuse another unit's `DEPARTMENT`-held pool,
+   * which made that row a dead end — the list said 7 Physics items and tapping
+   * one answered "This item is not assigned to you" (26 Oct device pass).
+   *
+   * The rule is the capability, not a role name: `ITEM_READ` is exactly "this
+   * role uses the register", so a future role gets the behaviour from the
+   * matrix. Reading is safe by construction — `sanitizeItem` already shows the
+   * whole record to every college member, and **editing** is still
+   * `itemInScope`-only in `PUT /items/:id`. This answers "may they open it",
+   * never "may they change it".
+   */
+  return hasCapability(user.role, "ITEM_READ");
 }
 
 export function itemInScope(user: ScopedUser | null | undefined, item: ScopedItem): boolean {

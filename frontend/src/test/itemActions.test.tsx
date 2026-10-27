@@ -3,7 +3,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
-import { setToken } from "../lib/storage";
+import { clearToken, setToken } from "../lib/storage";
 import { PRIVILEGED_ITEM, STAFF_USER } from "./fixtures";
 
 const API = "http://localhost:4000/api/v1";
@@ -49,11 +49,14 @@ describe("item actions", () => {
       expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
     });
 
-    it("shows no staff chrome to an anonymous visitor", async () => {
+    it("sends an anonymous scanner to sign in, with no staff chrome", async () => {
+      clearToken();
       renderWithProviders({ initialEntries: [`/item/${PRIVILEGED_ITEM.tagId}`] });
 
-      // The public detail renders, but no edit control comes with it.
-      await screen.findByRole("heading", { name: PRIVILEGED_ITEM.name });
+      // Every item read needs a token, so the QR destination is a sign-in
+      // prompt for a visitor. No edit control — or any other staff action — comes
+      // with it.
+      expect(await screen.findByText("Staff sign in")).toBeInTheDocument();
       expect(screen.queryByRole("link", { name: /edit item/i })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
     });

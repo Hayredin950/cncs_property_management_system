@@ -5,7 +5,11 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers/auth_provider.dart';
 import '../features/admin/admin_categories_page.dart';
+import '../features/admin/admin_buildings_page.dart';
 import '../features/admin/admin_users_page.dart';
+import '../features/admin/departments_page.dart';
+import '../features/admin/system_events_page.dart';
+import '../features/admin/system_status_page.dart';
 import '../features/audits/audit_list_page.dart';
 import '../features/audits/audit_new_page.dart';
 import '../features/audits/audit_report_page.dart';
@@ -75,10 +79,19 @@ class _AuthRefresh extends ChangeNotifier {
   }
 }
 
-/// Routes an anonymous visitor may open. `/item/:tagId` is in the shared group
-/// rather than here because staff reach it too — but an anonymous visitor must be
-/// able to scan a sticker and land on it, which is the single most important
-/// journey in the product.
+/// Routes an anonymous visitor may open.
+///
+/// The register (`/items`), the map derived from it, and an item's own page all
+/// read `GET /items*` — which the API has required a token for since 15 Oct
+/// (`authenticate`, no anonymous fallback). They therefore cannot be public
+/// destinations: the old list admitted them, so signing out of a register screen
+/// left it mounted with no token and the visitor reading "Missing or malformed
+/// Authorization header" instead of a login form. They are not listed here; the
+/// anonymous branch below sends them through sign-in and back.
+///
+/// `/scan` stays public because the camera is the one part of the journey that
+/// needs no data: a visitor may scan a sticker, and the tag they land on then
+/// asks them to sign in with the tag as `from`.
 ///
 /// `/splash` is deliberately **not** here: it is the holding state the router parks
 /// on *while* it checks a stored token, never a destination. Listing it as public
@@ -86,18 +99,23 @@ class _AuthRefresh extends ChangeNotifier {
 /// public rule and stayed there for good, showing the logo and a spinner forever.
 bool _isPublic(String path) =>
     path == '/' ||
-    path == '/map' ||
     path == '/login' ||
     path == '/request-account' ||
     path == '/accept-invite';
 
-/// The shared addresses: public, and also inside the workbench.
-bool _isShared(String path) =>
-    path == '/map' || path == '/scan' || path == '/items' || path.startsWith('/item/');
+/// The one shared address: a camera screen that reads nothing from the API.
+bool _isShared(String path) => path == '/scan';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = _AuthRefresh(ref);
   ref.onDispose(refresh.dispose);
+
+  /// The address the app was asked for *before* the stored token was checked.
+  ///
+  /// The splash is a redirect target, not a page, so without this a cold start
+  /// forgot whether the visitor had opened a deep link — and every anonymous
+  /// start went to the login form instead of the front door.
+  String? pendingLocation;
 
   return GoRouter(
     initialLocation: '/',
@@ -120,15 +138,31 @@ final routerProvider = Provider<GoRouter>((ref) {
       // splash is what stops a returning user seeing the login screen flash on
       // each cold start.
       if (auth.status == AuthStatus.unknown) {
-        return path == '/splash' ? null : '/splash';
+        if (path == '/splash') return null;
+        pendingLocation = state.uri.toString();
+        return '/splash';
       }
 
       if (!auth.isAuthenticated) {
         // The token was checked and there is nobody signed in: leave the splash for
-        // the login screen. Checked before the public rule because the splash is not
-        // a page a visitor may stay on — it has no way out of its own.
-        if (path == '/splash') return '/login';
-        if (_isPublic(path) || _isShared(path) || path == '/not-found') return null;
+        // the address that was asked for. A cold start with no deep link is the
+        // anonymous front door — the landing page the web app shows — not the
+        // login form. Checked before the public rule because the splash is not a
+        // page a visitor may stay on.
+        if (path == '/splash') {
+          final target = pendingLocation;
+          pendingLocation = null;
+          if (target == null) return '/';
+          final targetPath = Uri.tryParse(target)?.path ?? '/';
+          if (_isPublic(targetPath)) return target;
+          if (_isShared(targetPath)) return target;
+          // `from` survives the round trip so the login screen can put the user
+          // back where the 401 interrupted them (§10.13).
+          return '/login?from=${Uri.encodeComponent(target)}';
+        }
+        if (_isPublic(path) || _isShared(path) || path == '/not-found') {
+          return null;
+        }
         // `from` survives the round trip so the login screen can put the user back
         // where the 401 interrupted them (§10.13).
         return '/login?from=${Uri.encodeComponent(state.uri.toString())}';
@@ -147,12 +181,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       // 401 interrupted you" true rather than aspirational.
       if (path == '/login' || path == '/request-account') {
         final from = state.uri.queryParameters['from'];
-        if (from != null && from.startsWith('/') && !from.startsWith('/login')) {
+        if (from != null &&
+            from.startsWith('/') &&
+            !from.startsWith('/login')) {
           return from;
         }
         return '/dashboard';
       }
       if (path == '/splash') return '/dashboard';
+
+      // The landing page is the anonymous front door. A signed-in session that
+      // asks for it belongs on the dashboard — the public chrome has no tab bar
+      // and would offer "Staff login" to somebody already signed in.
+      if (path == '/') return '/dashboard';
 
       // Role-gated *frontend* routes: a viewer without the capability gets the 404,
       // not a 403 (§9.1) — the same shared 404 an unknown path renders. The
@@ -208,14 +249,19 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(path: '/scan', builder: (context, state) => const ScanPage()),
           GoRoute(path: '/map', builder: (context, state) => const MapPage()),
-          GoRoute(path: '/items', builder: (context, state) => const ItemsBrowsePage()),
+          GoRoute(
+            path: '/items',
+            builder: (context, state) => const ItemsBrowsePage(),
+          ),
           GoRoute(
             path: '/item/:tagId',
-            builder: (context, state) => ItemDetailPage(
-              tagId: state.pathParameters['tagId'] ?? '',
-            ),
+            builder: (context, state) =>
+                ItemDetailPage(tagId: state.pathParameters['tagId'] ?? ''),
           ),
-          GoRoute(path: '/not-found', builder: (context, state) => const NotFoundPage()),
+          GoRoute(
+            path: '/not-found',
+            builder: (context, state) => const NotFoundPage(),
+          ),
         ],
       ),
 
@@ -224,31 +270,44 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state, child) =>
             WorkbenchShell(currentPath: state.uri.path, child: child),
         routes: [
-          GoRoute(path: '/dashboard', builder: (context, state) => const DashboardPage()),
+          GoRoute(
+            path: '/dashboard',
+            builder: (context, state) => const DashboardPage(),
+          ),
           GoRoute(
             path: '/change-password',
             builder: (context, state) => const ChangePasswordPage(),
           ),
-          GoRoute(path: '/profile', builder: (context, state) => const ProfilePage()),
+          GoRoute(
+            path: '/profile',
+            builder: (context, state) => const ProfilePage(),
+          ),
 
           // `/items/new` is declared **before** `/items/:id`: go_router matches in
           // declaration order, so the reverse order would resolve "new" as an id.
-          GoRoute(path: '/items/new', builder: (context, state) => const ItemFormPage()),
+          GoRoute(
+            path: '/items/new',
+            builder: (context, state) => const ItemFormPage(),
+          ),
           GoRoute(
             path: '/items/:id/edit',
-            builder: (context, state) => ItemFormPage(itemId: state.pathParameters['id']),
+            builder: (context, state) =>
+                ItemFormPage(itemId: state.pathParameters['id']),
           ),
           GoRoute(
             path: '/items/:id',
-            builder: (context, state) => ItemStaffPage(itemId: state.pathParameters['id'] ?? ''),
+            builder: (context, state) =>
+                ItemStaffPage(itemId: state.pathParameters['id'] ?? ''),
           ),
 
-          GoRoute(path: '/requests', builder: (context, state) => const RequestsListPage()),
+          GoRoute(
+            path: '/requests',
+            builder: (context, state) => const RequestsListPage(),
+          ),
           GoRoute(
             path: '/requests/new',
-            builder: (context, state) => RequestFormPage(
-              itemId: state.uri.queryParameters['itemId'],
-            ),
+            builder: (context, state) =>
+                RequestFormPage(itemId: state.uri.queryParameters['itemId']),
           ),
           GoRoute(
             path: '/requests/:id',
@@ -256,27 +315,64 @@ final routerProvider = Provider<GoRouter>((ref) {
                 RequestDetailPage(requestId: state.pathParameters['id'] ?? ''),
           ),
 
-          GoRoute(path: '/notifications', builder: (context, state) => const NotificationsPage()),
+          GoRoute(
+            path: '/notifications',
+            builder: (context, state) => const NotificationsPage(),
+          ),
 
           // `/audits` (plural) is the history; `/audit/...` (singular) is one
           // session — the same plural/singular split the web router uses.
-          GoRoute(path: '/audits', builder: (context, state) => const AuditListPage()),
-          GoRoute(path: '/audit/new', builder: (context, state) => const AuditNewPage()),
+          GoRoute(
+            path: '/audits',
+            builder: (context, state) => const AuditListPage(),
+          ),
+          GoRoute(
+            path: '/audit/new',
+            builder: (context, state) => const AuditNewPage(),
+          ),
           GoRoute(
             path: '/audit/:id/scan',
-            builder: (context, state) => AuditScanPage(auditId: state.pathParameters['id'] ?? ''),
+            builder: (context, state) =>
+                AuditScanPage(auditId: state.pathParameters['id'] ?? ''),
           ),
           GoRoute(
             path: '/audit/:id/report',
-            builder: (context, state) => AuditReportPage(auditId: state.pathParameters['id'] ?? ''),
+            builder: (context, state) =>
+                AuditReportPage(auditId: state.pathParameters['id'] ?? ''),
           ),
 
-          GoRoute(path: '/reports', builder: (context, state) => const ReportsPage()),
+          GoRoute(
+            path: '/reports',
+            builder: (context, state) => const ReportsPage(),
+          ),
 
-          GoRoute(path: '/admin/users', builder: (context, state) => const AdminUsersPage()),
+          GoRoute(
+            path: '/admin/users',
+            // `?section=requests|invite|accounts` is how the tab bar and the
+            // dashboard open one of the administrator's three jobs without
+            // three routes that would each re-fetch the same lists.
+            builder: (context, state) =>
+                AdminUsersPage(section: state.uri.queryParameters['section']),
+          ),
           GoRoute(
             path: '/admin/categories',
             builder: (context, state) => const AdminCategoriesPage(),
+          ),
+          GoRoute(
+            path: '/admin/buildings',
+            builder: (context, state) => const AdminBuildingsPage(),
+          ),
+          GoRoute(
+            path: '/admin/system',
+            builder: (context, state) => const SystemStatusPage(),
+          ),
+          GoRoute(
+            path: '/admin/events',
+            builder: (context, state) => const SystemEventsPage(),
+          ),
+          GoRoute(
+            path: '/admin/departments',
+            builder: (context, state) => const DepartmentsPage(),
           ),
         ],
       ),
@@ -291,17 +387,56 @@ final routerProvider = Provider<GoRouter>((ref) {
 /// signed in, which is how a staff account could start a session the API then
 /// refused to write to.
 bool _mayOpen(String path, AuthState auth) {
-  if (path.startsWith('/admin/users')) return auth.canManageAccounts;
+  // Accounts is two jobs on one screen: a System Admin administers every
+  // account, a Department Head decides the registrations of their own unit.
+  // The head used to be refused the route (and never offered it), so the one
+  // account task the role has was unreachable from the phone.
+  if (path.startsWith('/admin/users')) {
+    return auth.canManageAccounts || auth.canApproveOwnUnitAccounts;
+  }
+  if (path.startsWith('/admin/buildings')) return auth.canManageBuildings;
   if (path.startsWith('/admin/categories')) return auth.canManageCategories;
+  // The account role's three system screens are one grant — `SYSTEM_CONFIG` —
+  // and they are not account *management*: the status page reads aggregates, the
+  // log is append-only, and departments is the college's shape.
+  if (path.startsWith('/admin/system') ||
+      path.startsWith('/admin/events') ||
+      path.startsWith('/admin/departments')) {
+    return auth.canViewSystemConfig;
+  }
   if (path.startsWith('/admin')) return auth.canManageAccounts;
   if (path == '/items/new') return auth.canCreateItems;
+  // Editing is custody-scoped: the item and the viewer's relation to it decide
+  // the row, but the role must hold the capability before the form opens at all.
+  // Checked before the general register rule below, which would otherwise answer
+  // first for `/items/<id>/edit`.
+  if (path.startsWith('/items/') && path.endsWith('/edit')) {
+    return auth.canEditItemCustody;
+  }
+  // The register is asset data; the account role has no grant to read a row
+  // (`GET /items` answers 403), so the browse screen is not offered to it. The
+  // map is derived from the same register, and the tag page reads one row, so
+  // both follow the same rule.
+  if (path == '/items' || path.startsWith('/items/')) return auth.seesAssetData;
+  if (path == '/map' || path.startsWith('/item/')) return auth.seesAssetData;
+  // Account administration does not file, transfer or dispose: the API refuses
+  // a SYSTEM_ADMIN request by name, so the list and its form are dead ends.
+  if (path == '/requests' || path.startsWith('/requests/')) {
+    return auth.canFileRequests;
+  }
   // Note the prefix on both scan rules: the bare `/scan` is the public QR reader,
   // open to everyone, and only a scan *inside a session* needs `AUDIT_RUN`.
-  if (path == '/audit/new' || (path.startsWith('/audit/') && path.endsWith('/scan'))) {
+  if (path == '/audit/new' ||
+      (path.startsWith('/audit/') && path.endsWith('/scan'))) {
     return auth.canRunAudits;
   }
-  if (path.startsWith('/audits') || path.contains('/report')) return auth.canViewAudits;
-  if (path.startsWith('/reports')) return auth.canViewReports;
+  // `/reports` before `/report`: the plural page contains the singular string, so
+  // the old order asked for AUDIT_VIEW — a capability a Department Head does not
+  // hold — and sent the head's Reports row to the 404 screen.
+  if (path == '/reports') return auth.canViewReports;
+  if (path.startsWith('/audits') || path.contains('/report')) {
+    return auth.canViewAudits;
+  }
   return true;
 }
 
@@ -313,35 +448,38 @@ class _SplashPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-                clipBehavior: Clip.antiAlias,
-                child: Image.asset('assets/aau/aau-logo.png', fit: BoxFit.contain),
-              ),
-              const SizedBox(height: AppSpace.s4),
-              const Text(
-                kAppTitle,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.aauGray800,
-                ),
-              ),
-              const SizedBox(height: AppSpace.s5),
-              const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ],
+    backgroundColor: Colors.white,
+    body: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Image.asset('assets/aau/aau-logo.png', fit: BoxFit.contain),
           ),
-        ),
-      );
+          const SizedBox(height: AppSpace.s4),
+          const Text(
+            kAppTitle,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.aauGray800,
+            ),
+          ),
+          const SizedBox(height: AppSpace.s5),
+          const SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ],
+      ),
+    ),
+  );
 }

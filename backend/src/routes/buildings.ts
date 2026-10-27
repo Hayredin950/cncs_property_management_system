@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import {
   authenticate,
+  requireAnyCapability,
   requireCapability,
   type AuthenticatedRequest,
 } from "../middleware/auth.js";
@@ -21,12 +22,19 @@ const buildingSchema = z.object({
 const buildingUpdateSchema = buildingSchema.partial();
 
 /**
- * GET /buildings — list buildings (Property Officer only).
+ * GET /buildings — list buildings.
+ *
+ * Readable by anyone who may use the register (`ITEM_READ`), not only the
+ * officer who maintains them. The list is the picker behind the register's
+ * building filter, and it is taxonomy the register already shows on every row:
+ * a Staff member filtering by building needs the same names the officer typed,
+ * and asking them to type one produced a filter that missed on any spelling
+ * difference. Writes below stay `BUILDING_MANAGE`.
  */
 buildingsRouter.get(
   "/",
   authenticate,
-  requireCapability("BUILDING_MANAGE"),
+  requireAnyCapability("BUILDING_MANAGE", "ITEM_READ"),
   async (req, res, next) => {
     try {
       const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);

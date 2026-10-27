@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/format.dart';
 import '../../data/providers/audits_provider.dart';
+import '../../data/providers/auth_provider.dart';
 import '../../models/audit.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
@@ -31,17 +32,23 @@ class AuditListPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final audits = ref.watch(auditListProvider);
     final query = ref.watch(auditQueryProvider);
+    // Reading findings and running a session are different grants (spec 2.2).
+    // The Property Officer reads history but may not start a session, so the "+"
+    // opened the guard's 404 instead of the form.
+    final canRunAudits = ref.watch(canRunAuditsProvider);
 
     return PageScaffold(
       title: 'Audit history',
       subtitle: 'Every session, newest first',
       maxWidth: 720,
-      trailing: AppIconButton(
-        icon: Icons.add,
-        tooltip: 'Start an audit',
-        variant: AppButtonVariant.primary,
-        onPressed: () => context.push('/audit/new'),
-      ),
+      trailing: canRunAudits
+          ? AppIconButton(
+              icon: Icons.add,
+              tooltip: 'Start an audit',
+              variant: AppButtonVariant.primary,
+              onPressed: () => context.push('/audit/new'),
+            )
+          : null,
       onRefresh: () async {
         ref.invalidate(auditListProvider);
         await ref.read(auditListProvider.future);

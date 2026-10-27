@@ -33,6 +33,9 @@ vi.mock("../lib/prisma.js", () => {
 });
 
 const staffToken = createToken({ id: "staff-1", role: "STAFF" });
+const otherStaffToken = createToken({ id: "staff-2", role: "STAFF" });
+const headCsToken = createToken({ id: "head-cs", role: "DEPARTMENT_HEAD", orgUnitId: "org-unit-cs" });
+const headBioToken = createToken({ id: "head-bio", role: "DEPARTMENT_HEAD", orgUnitId: "org-unit-bio" });
 const officerToken = createToken({ id: "officer-1", role: "PROPERTY_OFFICER" });
 
 /**
@@ -367,8 +370,11 @@ describe("GET /items/:tagId", () => {
     expect(otherStaff.body.serialNumber).toBe("SN-998822");
     expect(otherStaff.body.purchaseCost).toBe(45000);
 
-    // Another department's **pool** is the one thing nobody may open: it is the
-    // department's own business, not a catalogue of things you may request.
+    // Another department's **pool** is part of the register the list shows, so
+    // it opens too — the 26 Oct device pass found the contradiction: a CS head
+    // saw 7 Physics rows and every one answered "not assigned to you". The row
+    // is read-only (the PUT test below still refuses it), and history stays
+    // with the people who answer for the asset.
     vi.mocked(prisma.item.findUnique).mockResolvedValue({
       ...FULL_ITEM,
       ownerId: "staff-2",
@@ -381,11 +387,8 @@ describe("GET /items/:tagId", () => {
     const pooled = await request(app)
       .get("/items/CNCS-DEMO-0001")
       .set("Authorization", `Bearer ${createToken({ id: "staff-9", role: "STAFF" })}`);
-    expect(pooled.status).toBe(404);
-    // F2: the status still hides existence, but the sentence tells the person
-    // holding the sticker what to do next.
-    expect(pooled.body.error).toMatch(/not assigned to you/i);
-    expect(pooled.body.error).toMatch(/Property Office/);
+    expect(pooled.status).toBe(200);
+    expect(pooled.body.name).toBe(FULL_ITEM.name);
 
     // An account role sees no asset data, by the same rule as the listing.
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
@@ -677,6 +680,84 @@ describe("PUT /items/:id", () => {
     expect(prisma.item.updateMany).not.toHaveBeenCalled();
   });
 
+  /**
+   * The scope half of the edit rule. The field-level rule (identity/financial
+   * fields belong to the Property Officer) was enforced; the row-level rule was
+   * not, so any staff member could edit the condition and notes of anybody's
+   * item — including another department's. These pin the rule the clients now
+   * mirror.
+   */
+  it("refuses a staff member editing a colleague's item", async () => {
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({
+      ...FULL_ITEM,
+      ownerId: "staff-2",
+      holderType: "STAFF",
+      holderId: "staff-2",
+    } as never);
+
+    const res = await request(app)
+      .put("/items/item-1")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ condition: "FAIR" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("own custody");
+    expect(prisma.item.updateMany).not.toHaveBeenCalled();
+    expect(prisma.itemEditLog.createMany).not.toHaveBeenCalled();
+  });
+
+  it("lets a staff member edit the item they hold", async () => {
+    const res = await request(app)
+      .put("/items/item-1")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ condition: "FAIR" });
+
+    expect(res.status).toBe(200);
+    expect(prisma.item.updateMany).toHaveBeenCalled();
+  });
+
+  it("refuses a head editing another department's item", async () => {
+    const res = await request(app)
+      .put("/items/item-1")
+      .set("Authorization", `Bearer ${headBioToken}`)
+      .send({ condition: "FAIR" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("own custody");
+    expect(prisma.item.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("lets a head edit an item in their own department", async () => {
+    const res = await request(app)
+      .put("/items/item-1")
+      .set("Authorization", `Bearer ${headCsToken}`)
+      .send({ condition: "FAIR" });
+
+    expect(res.status).toBe(200);
+    expect(prisma.item.updateMany).toHaveBeenCalled();
+  });
+
+  it("refuses another department's pool through the write, while the read opens it", async () => {
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({
+      ...FULL_ITEM,
+      orgUnitId: "org-unit-bio",
+      holderType: "DEPARTMENT",
+      holderId: "org-unit-bio",
+    } as never);
+
+    const res = await request(app)
+      .put("/items/item-1")
+      .set("Authorization", `Bearer ${headCsToken}`)
+      .send({ condition: "FAIR" });
+
+    // The row is readable (GET returns 200 above), so pretending it does not
+    // exist would be a lie to someone looking at it. It is not editable: the
+    // capability says what a head may do, the row scope says which rows.
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("own custody");
+    expect(prisma.item.updateMany).not.toHaveBeenCalled();
+  });
+
   it("409s on a disposed item without writing anything (F7.2 — disposal is terminal)", async () => {
     vi.mocked(prisma.item.findUnique).mockResolvedValue({
       ...FULL_ITEM,
@@ -704,6 +785,37 @@ describe("PUT /items/:id", () => {
     expect(res.body.error).toBe(
       "parentItemId cannot be set here — use POST /items/:id/accessories to link an accessory"
     );
+    expect(prisma.item.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("edits a row whose version has moved on when the client sends no version", async () => {
+    // Both clients omit `version` (the web form and the phone send only the
+    // fields they may change). The schema used to default it to 0, so this
+    // ordinary save was answered 409 "modified by another user" on every row
+    // that had ever been edited. A missing version means "no check", not "zero".
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({ ...FULL_ITEM, version: 7 } as never);
+
+    const res = await request(app)
+      .put("/items/item-1")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ condition: "FAIR", notes: "Repaired" });
+
+    expect(res.status).toBe(200);
+    expect(prisma.item.updateMany).toHaveBeenCalled();
+  });
+
+  it("still refuses a version that does not match the row", async () => {
+    // The lock must still work when a client *does* opt in by sending what it
+    // read: a stale value is a real conflict.
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({ ...FULL_ITEM, version: 7 } as never);
+
+    const res = await request(app)
+      .put("/items/item-1")
+      .set("Authorization", `Bearer ${staffToken}`)
+      .send({ condition: "FAIR", version: 6 });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("modified by another user");
     expect(prisma.item.updateMany).not.toHaveBeenCalled();
   });
 
@@ -835,9 +947,12 @@ describe("PUT /items/:id", () => {
       ownerId: OWNER_UUID,
     } as never);
 
+    // A head, not a staff member: the point is unchanged fields being accepted,
+    // and the row has to be in the caller's own edit scope now that PUT enforces
+    // it (see the "whose item" tests below).
     const res = await request(app)
       .put("/items/item-1")
-      .set("Authorization", `Bearer ${staffToken}`)
+      .set("Authorization", `Bearer ${headCsToken}`)
       .send({
         buildingId: FULL_ITEM.buildingId,
         floor: FULL_ITEM.floor,
@@ -890,11 +1005,12 @@ describe("PUT /items/:id", () => {
 
     const res = await request(app)
       .put("/items/item-1")
-      .set("Authorization", `Bearer ${staffToken}`)
+      .set("Authorization", `Bearer ${headCsToken}`)
       .send({ condition: "FAIR", ownerId: OWNER_UUID });
 
     // `ownerId` is present but unchanged, so it is not a transfer and there is
-    // nothing to expand — the common edit costs no extra queries.
+    // nothing to expand — the common edit costs no extra queries. A head, because
+    // the stored owner is not the staff caller and PUT now enforces edit scope.
     expect(res.status).toBe(200);
     expect(prisma.user.findMany).not.toHaveBeenCalled();
     expect(prisma.category.findMany).not.toHaveBeenCalled();

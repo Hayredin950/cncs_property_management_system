@@ -53,6 +53,25 @@ String? formatDateTimeUtc(String? iso) {
 String todayStampUtc([DateTime? now]) =>
     (now ?? DateTime.now()).toUtc().toIso8601String().substring(0, 10);
 
+/// Seconds into a short duration — `42s`, `3m 07s`, `1h 04m`.
+///
+/// The web status page's formatter, kept identical so the two screens' uptime
+/// line reads the same. On a serverless platform a cold start resets it; the
+/// screen says "of the instance serving this request" rather than implying the
+/// deployment's age.
+String formatUptimeLabel(double seconds) {
+  if (!seconds.isFinite || seconds < 0) return 'Unknown';
+  if (seconds < 60) return '${seconds.floor()}s';
+  if (seconds < 3600) {
+    final minutes = seconds ~/ 60;
+    final rest = seconds.floor() % 60;
+    return '${minutes}m ${rest.toString().padLeft(2, '0')}s';
+  }
+  final hours = seconds ~/ 3600;
+  final minutes = (seconds % 3600) ~/ 60;
+  return '${hours}h ${minutes}m';
+}
+
 /// e.g. `"3 hr. ago"`. Pair with [formatDateTimeUtc] wherever the absolute time is
 /// worth showing as well.
 ///

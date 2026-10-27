@@ -94,7 +94,7 @@ describe("/items tells the viewer which list they are looking at", () => {
     const main = screen.getByRole("main");
 
     expect(within(main).getByRole("heading", { name: "Browse items" })).toBeInTheDocument();
-    expect(within(main).getByText("No items registered yet")).toBeInTheDocument();
+    expect(await within(main).findByText("No items registered yet")).toBeInTheDocument();
     expect(within(main).queryByRole("heading", { name: "My items" })).not.toBeInTheDocument();
   });
 });

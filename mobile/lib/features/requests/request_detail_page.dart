@@ -7,6 +7,7 @@ import '../../core/format.dart';
 import '../../data/providers/auth_provider.dart';
 import '../../data/providers/requests_provider.dart';
 import '../../models/enums.dart';
+import '../../models/permissions.dart';
 import '../../models/request.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
@@ -20,14 +21,17 @@ import '../../widgets/status_badges.dart';
 
 /// `/requests/:id` (§10.7).
 ///
-/// The decision rules are the most specific in the whole app, and all three are
-/// required before the buttons appear:
+/// The decision rules are the most specific in the whole app, and every one of
+/// them is required before the buttons appear:
 ///
-///   1. **Admin only.** A staff member never sees them — and never needs to, because
-///      the server requires `ADMIN` on both endpoints.
-///   2. **`status === PENDING` only.** A decided request is a record, not a task.
-///   3. **Not your own request.** An admin filing a request and then approving it
-///      themselves is the cheapest possible fraud in this system, so the API refuses
+///   1. **The capability for this type and stage.** `REQUEST_DECIDE` alone is not
+///      enough: a head releases and receives transfers but may not approve a
+///      disposal or a loan, and a transfer waiting for its second signature needs
+///      the receiving grant.
+///   2. **An open status.** A decided request is a record, not a task — and a
+///      two-stage transfer is open in `PENDING_STAGE1/2`, not only `PENDING`.
+///   3. **Not your own request.** An approver filing a request and then approving
+///      it themselves is the cheapest possible fraud in this system, so the API refuses
 ///      it and the UI does not offer it.
 ///
 /// After a decision, the response's `itemChanges` and `cascadedItemIds` are rendered
@@ -96,17 +100,55 @@ class _RequestDetailPageState extends ConsumerState<RequestDetailPage> {
 
   Widget _body(RequestDetail detail) {
     final request = detail.summary;
+    final auth = ref.watch(authProvider);
     final currentUserId = ref.watch(currentUserProvider)?.id;
-    // The right to decide, plus two conditions that are not about roles: the
-    // request must still be pending, and nobody reviews their own filing.
-    final decidesRequests = ref.watch(canDecideRequestsProvider);
+    final decidesRequests = auth.canDecideRequests;
+
+    /**
+     * Three questions, and the old code asked only the first.
+     *
+     * `REQUEST_DECIDE` does not mean "may decide this one": the workflow also
+     * asks for the capability of the **type and stage** — a head releases and
+     * receives transfers but may not approve a disposal or a loan, and a
+     * transfer waiting for the second signature needs the receiving head's
+     * grant. The screen showed one Approve button for every pending request and
+     * a 403 was the only way to find out; worse, it required the status to be
+     * exactly `PENDING`, so a request at `PENDING_STAGE1/2` — the state a head
+     * actually works in — had no buttons at all.
+     */
+    final canApproveThisType = switch (request.type) {
+      RequestType.transfer => request.status == RequestStatus.pendingStage2
+          ? auth.canApproveTransferStage2
+          : (request.status == RequestStatus.pending ||
+                  request.status == RequestStatus.pendingStage1) &&
+              auth.canApproveTransferStage1,
+      RequestType.disposal => auth.canApproveDisposal,
+      RequestType.loan => auth.canApproveLoan,
+      RequestType.unknown => false,
+    };
 
     final canDecide = decidesRequests &&
-        request.status == RequestStatus.pending &&
+        request.status.isOpen &&
+        request.requestedById != currentUserId &&
+        canApproveThisType;
+
+    // The lender side of the loan return handshake. This block used to test
+    // `canDecide`, which requires a request status of PENDING — so it could
+    // never be true for a return that is, by definition, in
+    // RETURN_PENDING_CONFIRMATION. The buttons were dead code. The grant is
+    // `LOAN_APPROVE` (the officer who let the item out), and the borrower may
+    // not close their own return.
+    final canConfirmReturn = canConfirmLoanReturn(auth.role) &&
+        request.status == RequestStatus.returnPendingConfirmation &&
         request.requestedById != currentUserId;
 
     return PageScaffold(
-      title: request.type == RequestType.transfer ? 'Transfer request' : 'Disposal request',
+      title: switch (request.type) {
+        RequestType.transfer => 'Transfer request',
+        RequestType.disposal => 'Disposal request',
+        RequestType.loan => 'Loan request',
+        RequestType.unknown => 'Request',
+      },
       subtitle: request.item.name,
       maxWidth: 640,
       onRefresh: () async {
@@ -301,10 +343,17 @@ class _RequestDetailPageState extends ConsumerState<RequestDetailPage> {
                 'review rights has to decide it.',
             tone: InfoTone.warning,
           )
-        else if (request.status == RequestStatus.pending && !decidesRequests)
+        else if (request.status.isOpen && !decidesRequests)
           const InfoNote(
             icon: Icons.schedule_outlined,
             message: 'This is under review. You will be notified when it is decided.',
+            tone: InfoTone.neutral,
+          )
+        else if (request.status.isOpen && canApproveThisType == false)
+          const InfoNote(
+            icon: Icons.schedule_outlined,
+            message: 'Waiting for the reviewer this step belongs to. You will be notified '
+                'when it is decided.',
             tone: InfoTone.neutral,
           ),
 
@@ -345,14 +394,14 @@ class _RequestDetailPageState extends ConsumerState<RequestDetailPage> {
           const SizedBox(height: AppSpace.s2),
           const InfoNote(
             icon: Icons.info_outline,
-            message: 'The loan stays open until the department head or the property officer '
-                'confirms the item arrived back.',
+            message: 'The loan stays open until the property officer confirms the item '
+                'arrived back.',
             tone: InfoTone.neutral,
           ),
         ],
         if (request.type == RequestType.loan &&
             request.status == RequestStatus.returnPendingConfirmation &&
-            canDecide) ...[
+            canConfirmReturn) ...[
           const SizedBox(height: AppSpace.s3),
           AppButton(
             label: 'Confirm it came back',
@@ -375,12 +424,11 @@ class _RequestDetailPageState extends ConsumerState<RequestDetailPage> {
         ],
         if (request.type == RequestType.loan &&
             request.status == RequestStatus.returnPendingConfirmation &&
-            !canDecide) ...[
+            !canConfirmReturn) ...[
           const SizedBox(height: AppSpace.s3),
           const InfoNote(
             icon: Icons.hourglass_empty_outlined,
-            message: 'Waiting for the department head or the property officer to confirm the '
-                'item came back.',
+            message: 'Waiting for the property officer to confirm the item came back.',
             tone: InfoTone.info,
           ),
         ],

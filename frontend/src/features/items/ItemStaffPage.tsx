@@ -1,5 +1,6 @@
 import { PackageOpen } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
+import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
 import { ErrorState, OfflineState } from "../../components/ErrorState";
 import { ItemActions } from "../../components/ItemActions";
@@ -10,6 +11,7 @@ import { NetworkError } from "../../types/api";
 import { ConditionBadge, ItemStatusBadge } from "../../components/StatusBadges";
 import { ItemCustodyActions } from "./ItemCustodyActions";
 import { ItemHistorySection } from "./ItemHistorySection";
+import { seesFullItemDetail } from "../../lib/permissions";
 import { AccessoriesSection, TagRegenerateSection } from "./ItemStaffSections";
 
 /**
@@ -28,6 +30,7 @@ import { AccessoriesSection, TagRegenerateSection } from "./ItemStaffSections";
  */
 export function ItemStaffPage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
 
   const itemQuery = useItemById(id);
 
@@ -124,7 +127,10 @@ export function ItemStaffPage() {
         <AccessoriesSection itemId={item.id} tagId={item.tagId} />
       </div>
 
-      <ItemHistorySection itemId={item.id} />
+      {user &&
+        seesFullItemDetail(user.role, user.id, user.departmentId, item) && (
+          <ItemHistorySection itemId={item.id} />
+        )}
     </div>
   );
 }

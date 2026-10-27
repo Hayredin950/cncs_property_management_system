@@ -400,7 +400,7 @@ Dual-mount note: every router is mounted at BOTH `/api/v1/<name>` AND `/<name>` 
 | `POST /auth/change-password` | [DONE] | ChangePasswordPage | change-password | Yes | bumps `tokenVersion` (multi-session kill) |
 | `POST /auth/account-requests` self-registration | [BROKEN] | RequestAccountPage | request-account | **Partial** | server intake is broken (`User.department` write — §13); no `staffId`, no `PENDING_EMAIL_VERIFICATION`, no duplicate-email opacity (see Backlog B03/B09) |
 | `POST /auth/accept-invite` | [DONE] | AcceptInvitePage | **no mobile screen** | Partial | 72 h hashed token |
-| `GET /items` role-scoped list | [DONE] | ItemsBrowsePage | ItemsListPage | Yes | `authenticate` hard-required (no anonymous fallback); web still routes `/items` through a public shell for anonymous visitors — unresolved redirect/content decision (see §12) |
+| `GET /items` role-scoped list | [DONE] | ItemsBrowsePage | ItemsListPage | Yes | `authenticate` hard-required (no anonymous fallback); both clients now guard the route — anonymous → `/login?next=/items` (26 Oct, §12). SYSTEM_ADMIN blocked on web and mobile |
 | `GET /items/:tagId` scope-enforced | [DONE] | ItemDetailPage | ItemDetailPage | Yes | disposed ⇒ 410; scope to-viewer |
 | `GET /items/:id` scope-enforced | [DONE] | ItemStaffPage | — | Yes | — |
 | `GET /items/recent` | [DONE] | RecentlyRegisteredItems widget | no widget | Yes | route-order fix captures `/recent` ABOVE `/:tagId` pattern |
@@ -603,7 +603,7 @@ Legend: `[DONE]` = built, wired, tested + live behavior proof · `[PARTIAL]` = b
 An endpoint is `[DONE]` only when it appears with **Wired=Yes** in this file AND the frontends SEND/READ the API properly:
 
 - All endpoints exist dual-mounted at `/api/v1/<name>` and `/<name>` (see §6). Canonical: `/api/v1` only — keep the legacy mounts until both frontends use the canonical prefix everywhere, then drop them.
-- **`GET /items` requires authentication** (no anonymous fallback since 15 Oct). The web router still serves `/items` through the public shell for anonymous visitors — decide and implement: either redirect anonymous visitors from `/items` to `/login?next=/items`, or render a clear "sign in to browse the register" state instead of a failed fetch.
+- **`GET /items` requires authentication** (no anonymous fallback since 15 Oct) — and since 26 Oct both clients *gate* on it instead of fetching and failing. **Decided and implemented (option A): anonymous → `/login?next=/items`.** On web, `/items`, `/map` and `/item/:tagId` are wrapped in `RequireAuth` (`SmartLayout` still picks the chrome, so a signed-in reader keeps the nav); on mobile the router's anonymous branch sends those addresses to `/login?from=…`. `/scan` is the only anonymous surface that stays open, because the camera reads no API data — a typed or scanned tag is carried into sign-in as `next`/`from` and returned to afterwards (P6-3's flow). The consequence is deliberate: printed sticker lookups require a CNCS account, and the "open to anyone" promise in older copy is gone.
 - Frontend keeps **Bearer token from localStorage** in `lib/apiClient.ts`; **single 401 handler** clears token + React Query cache + toast + redirect to `/login?next`.
 - Every fetch path goes through `lib/apiClient.ts` — NO bare tokenless `fetch` (this was the 15 Oct dashboard-tiles bug series: bare root-relative fetches resolved against the frontend host and swallowed every failure into fake empty states).
 
@@ -964,7 +964,7 @@ The 20 Oct audit found 19 places where two "current" documents disagreed. Each i
 | C4 | Route-shadowing fix state | The literal routes (`/items/recent`, `/items/held-by-me`, `/audits/active`, `/audits/findings`) are registered ABOVE their `:param` siblings — verified in the current tree. A regression test pins it; do not reorder. |
 | C5 | Is `AdminActionLog` ever written? | **Yes** — invite/resend/accept (invites service) and approve/reject/escalate (users.ts) write it. Old "never written" claims are stale. Append-only is still not DB-enforced (G08). |
 | C6 | Does a void route exist? | **Yes** — `POST /items/:id/void` exists, unit-tested; no e2e flow verification yet. |
-| C7 | Must `GET /items` require auth? | **Yes** — hard `authenticate` since 15 Oct; no anonymous downgrade. The remaining question (what an anonymous visitor sees at `/items` in the web shell) is a UX decision → §12 + Backlog. |
+| C7 | Must `GET /items` require auth? | **Yes** — hard `authenticate` since 15 Oct; no anonymous downgrade. The UX question is closed (26 Oct): anonymous visitors are redirected to `/login?next=…` from `/items`, `/map` and `/item/:tagId` on both clients; `/scan` stays open as a camera-only surface (§12). |
 | C8 | Is by-id scanning scope-checked? | **Yes** — `itemInScope` is applied before the row is returned; out-of-scope → 404. |
 | C9 | Must pending approvals be reassigned to a new head? | **No per-approver queue exists** — the queue is derived from status + unit on read, so a head change is automatically reflected. Reassignment is therefore unnecessary; only a log line is meaningful. |
 | C10 | May an admin set/reset another user's password? | **No.** The workflow-spec rule wins: no admin of any role ever sees or sets a password. The dead admin-reset UI is removed; the only path back in is a token-based reset (F15). |

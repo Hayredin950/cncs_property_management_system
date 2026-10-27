@@ -37,13 +37,16 @@ export function MapPage() {
   const itemsQuery = useQuery({
     queryKey: ["items", "all-for-map"],
     queryFn: async ({ signal }) => {
-      const first = await fetchItems({ page: 1, limit: PAGE_SIZE }, signal);
+      // `scope: "all"` explicitly: without it the server narrows a Staff or Head
+      // caller to their own holdings, so the map showed one building and read as
+      // broken while the register listed 118 items.
+      const first = await fetchItems({ page: 1, limit: PAGE_SIZE, scope: "all" }, signal);
       const totalPages = Math.min(first.pagination.totalPages, MAX_PAGES);
       if (totalPages <= 1) return first;
 
       const rest = await Promise.all(
         Array.from({ length: totalPages - 1 }, (_, index) =>
-          fetchItems({ page: index + 2, limit: PAGE_SIZE }, signal),
+          fetchItems({ page: index + 2, limit: PAGE_SIZE, scope: "all" }, signal),
         ),
       );
 

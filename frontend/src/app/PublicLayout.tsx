@@ -8,10 +8,12 @@ import { useAuth } from "./AuthContext";
 
 /**
  * Shell A (frontend-design-system.md §9.2 / §5.5): the read/discover surfaces
- * open to everyone — `/`, `/map`, `/login`, and `*`. The three addresses that
- * are also staff destinations (`/items`, `/scan`, `/item/:tagId`) render this
- * shell only for an anonymous visitor; a signed-in one gets the workbench via
- * `SmartLayout`.
+ * open to everyone — `/`, `/login`, `/request-account` and `*`. The addresses
+ * that are also staff destinations (`/items`, `/map`, `/scan`, `/item/:tagId`)
+ * render this shell only for an anonymous visitor; a signed-in one gets the
+ * workbench via `SmartLayout`. Of those, only `/scan` is usable without a token:
+ * the rest read the register, so `RequireAuth` turns them into a sign-in prompt
+ * that returns the visitor to where they were headed.
  *
  * The chrome is the official AAU chrome (`components/aau/*`): the white
  * `aau.edu.et` header, then the page, then the navy `blue-900` footer on the

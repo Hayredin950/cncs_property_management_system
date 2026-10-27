@@ -7,14 +7,17 @@ import '../../core/format.dart';
 import '../../data/providers/auth_provider.dart';
 import '../../data/providers/taxonomy_provider.dart';
 import '../../models/enums.dart';
+import '../../models/permissions.dart';
 import '../../models/user.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/badge.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_fields.dart';
 import '../../widgets/feedback.dart';
 import '../../widgets/media.dart';
 import '../../widgets/page_scaffold.dart';
+import '../../widgets/segmented_tabs.dart';
 import '../../widgets/states.dart';
 import '../../widgets/status_badges.dart';
 
@@ -49,13 +52,43 @@ import '../../widgets/status_badges.dart';
 /// password, so no administrator ever knows a credential — and no appointment is
 /// recorded without the authority behind it.
 class AdminUsersPage extends ConsumerStatefulWidget {
-  const AdminUsersPage({super.key});
+  const AdminUsersPage({super.key, this.section});
+
+  /// Which of the administrator's three jobs to open on — `requests`, `invite`
+  /// or `accounts`. The tab bar links straight to each, so "Accounts" and the
+  /// queue are one screen with a chosen section rather than three routes that
+  /// would each re-fetch the same lists. An unknown or missing value opens the
+  /// queue, which is the job an administrator starts the day with.
+  final String? section;
 
   @override
   ConsumerState<AdminUsersPage> createState() => _AdminUsersPageState();
 }
 
 class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
+  /// The three jobs, in the order the segment row shows them. One list keeps
+  /// the labels, the query values and the indices from drifting apart.
+  static const _sections = ['requests', 'invite', 'accounts'];
+
+  late int _section = _sectionFrom(widget.section);
+
+  static int _sectionFrom(String? value) {
+    final index = _sections.indexOf(value ?? 'requests');
+    return index < 0 ? 0 : index;
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminUsersPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The tab bar and the dashboard link to `/admin/users?section=…` while the
+    // screen may already be mounted; following a second link has to move the
+    // segment, not silently stay where it was.
+    if (widget.section != oldWidget.section) {
+      final next = _sectionFrom(widget.section);
+      if (next != _section) setState(() => _section = next);
+    }
+  }
+
   final _email = TextEditingController();
   final _authorizedBy = TextEditingController();
   final _authorizationRef = TextEditingController();
@@ -84,24 +117,51 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final users = ref.watch(usersProvider);
+    // The signed-in account, read directly rather than through `authProvider`'s
+    // convenience getters: this page only needs the role and the id, and taking
+    // the user as the single input keeps the two modes testable by overriding
+    // `currentUserProvider` alone (the same seam the rest of the screens use).
+    final currentUser = ref.watch(currentUserProvider);
+    // One screen, two jobs. A System Admin administers every account; a
+    // Department Head decides the registrations of their own unit and nothing
+    // else. Asking `GET /users` as a head is a 403 (the role has no USER_READ),
+    // and the invite form is a 403 too — so neither is fetched or drawn for them.
+    final adminMode = canManageAccounts(currentUser?.role);
+    final users = adminMode ? ref.watch(usersProvider) : null;
     final approvals = ref.watch(approvalsProvider);
-    final currentUserId = ref.watch(currentUserProvider)?.id;
+    final currentUserId = currentUser?.id;
 
     return PageScaffold(
-      title: 'Accounts',
-      subtitle: 'Who can sign in, and what they can do',
+      title: adminMode ? 'Accounts' : 'Account approvals',
+      subtitle: adminMode
+          ? 'Who can sign in, and what they can do'
+          : 'The staff of your department waiting to sign in',
       maxWidth: 900,
       onRefresh: () async {
-        ref.invalidate(usersProvider);
+        if (adminMode) {
+          ref.invalidate(usersProvider);
+          ref.invalidate(invitesProvider);
+        }
         ref.invalidate(approvalsProvider);
+        ref.invalidate(decidedAccountsProvider);
         await Future.wait([
-          ref.read(usersProvider.future),
+          if (adminMode) ref.read(usersProvider.future),
+          if (adminMode) ref.read(invitesProvider.future),
           ref.read(approvalsProvider.future),
+          ref.read(decidedAccountsProvider.future),
         ]);
       },
       children: [
-        approvals.when(
+        if (adminMode) ...[
+          SegmentedTabs(
+            labels: const ['Requests', 'Invite', 'Accounts'],
+            index: _section,
+            onChanged: (index) => setState(() => _section = index),
+          ),
+          const SizedBox(height: AppSpace.s5),
+        ],
+        if (!adminMode || _section == 0)
+          approvals.when(
           loading: () => const SkeletonList(count: 2, height: 72),
           error: (error, _) => InlineError(
             error: error,
@@ -140,7 +200,18 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
           ),
         ),
 
-        AppCard(
+        // The queue empties as the work gets done, so the section also shows
+        // what has already been decided. Without it the only trace of an
+        // approval is the notification that went out with it.
+        // A Department Head decides their own unit's requests and needs the same
+        // record of what they decided; the endpoint answers them too.
+        if (!adminMode || _section == 0) ...[
+          const _DecidedSection(),
+          const SizedBox(height: AppSpace.s6),
+        ],
+
+        if (adminMode && _section == 1)
+          AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -236,13 +307,23 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
           ),
         ),
 
-        if (_issued != null) ...[
+        if (adminMode && _section == 1 && _issued != null) ...[
           const SizedBox(height: AppSpace.s4),
           _issuedCard(_issued!),
         ],
 
+        // Every invitation, and what became of it: the link is single-use and
+        // expires, so "did they take it up?" is a question the form cannot
+        // answer once the administrator has closed it.
+        if (adminMode && _section == 1) ...[
+          const SizedBox(height: AppSpace.s6),
+          const _InviteList(),
+        ],
+
+        if (adminMode && _section == 2) ...[
         const SizedBox(height: AppSpace.s6),
-        users.when(
+        if (users != null)
+          users.when(
           loading: () => const SkeletonList(count: 4, height: 84),
           error: (error, _) => InlineError(
             error: error,
@@ -266,6 +347,10 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                   // change to your own is a self-lockout, so it is not offered.
                   onSetRole: account.id == currentUserId ? null : () => _changeRole(account),
                   onReset: () => _sendResetLink(account),
+                  onDeactivate: account.id == currentUserId ||
+                          account.accountStatus == AccountStatus.deactivated
+                      ? null
+                      : () => _deactivate(account),
                   onRemove: account.id == currentUserId ? null : () => _remove(account),
                 ),
                 const SizedBox(height: AppSpace.s2),
@@ -281,6 +366,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
             ],
           ),
         ),
+        ],
       ],
     );
   }
@@ -670,6 +756,32 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
     }
   }
 
+  /// `POST /users/:id/deactivate` — close an account without erasing it.
+  ///
+  /// Offered next to Remove because the two answer different questions: an
+  /// account that owns items or decided requests cannot be deleted (the server
+  /// answers 409), but it can be closed — the person cannot sign in and the row
+  /// stays as part of the record. The reason is required by the API and is what
+  /// the log keeps.
+  Future<void> _deactivate(UserSummary account) async {
+    final reason = await showPromptDialog(
+      context,
+      title: 'Deactivate ${account.fullName}?',
+      label: 'Reason',
+      body: 'The account can no longer sign in, but its items and decisions stay on the '
+          'record. 3\u2013500 characters, kept on the account log.',
+      confirmLabel: 'Deactivate',
+      minLength: 3,
+      maxLength: 500,
+    );
+    if (reason == null || !mounted) return;
+
+    await _guard(account, () async {
+      final message = await ref.read(userActionsProvider).deactivate(account.id, reason);
+      if (mounted) showAppToast(context, message: message, tone: ToastTone.info);
+    });
+  }
+
   Future<void> _remove(UserSummary account) async {
     final confirmed = await showConfirmDialog(
       context,
@@ -843,6 +955,7 @@ class _AccountRow extends StatelessWidget {
     required this.onEdit,
     required this.onSetRole,
     required this.onReset,
+    required this.onDeactivate,
     required this.onRemove,
   });
 
@@ -852,6 +965,7 @@ class _AccountRow extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback? onSetRole;
   final VoidCallback onReset;
+  final VoidCallback? onDeactivate;
   final VoidCallback? onRemove;
 
   @override
@@ -930,6 +1044,7 @@ class _AccountRow extends StatelessWidget {
                     'edit' => onEdit(),
                     'role' => onSetRole?.call(),
                     'reset' => onReset(),
+                    'deactivate' => onDeactivate?.call(),
                     'remove' => onRemove?.call(),
                     _ => null,
                   },
@@ -938,6 +1053,11 @@ class _AccountRow extends StatelessWidget {
                     if (onSetRole != null)
                       const PopupMenuItem(value: 'role', child: Text('Change role')),
                     const PopupMenuItem(value: 'reset', child: Text('Send reset link')),
+                    if (onDeactivate != null)
+                      const PopupMenuItem(
+                        value: 'deactivate',
+                        child: Text('Deactivate account'),
+                      ),
                     if (onRemove != null)
                       const PopupMenuItem(
                         value: 'remove',
@@ -969,3 +1089,301 @@ class _AccountRow extends StatelessWidget {
 /// password), so the menu item had become a 404 in the hand. It now sends a
 /// single-use reset link instead ([UserActions.sendResetLink]) and the account
 /// holder chooses the password themselves.
+
+
+/// The requests an administrator has already decided.
+///
+/// Read-only, and deliberately quiet: a decision is history, not a control. The
+/// status chip is what was decided (approved or declined), the role is what was
+/// assigned, and the date is when. Rows the server returns here are the same
+/// `UserSummary` rows the queue used, so nothing has to be re-fetched to draw
+/// them.
+class _DecidedSection extends ConsumerWidget {
+  const _DecidedSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final decided = ref.watch(decidedAccountsProvider);
+
+    return decided.when(
+      loading: () => const SkeletonList(count: 2, height: 64),
+      error: (error, _) => InlineError(
+        error: error,
+        onRetry: () => ref.invalidate(decidedAccountsProvider),
+      ),
+      data: (rows) {
+        if (rows.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SectionHeader(
+              title: 'Recently decided',
+              subtitle: 'The last decisions on account requests, newest first.',
+            ),
+            for (final account in rows.take(20)) ...[
+              AppCard(
+                padding: const EdgeInsets.all(AppSpace.s3),
+                child: Row(
+                  children: [
+                    InitialsAvatar(
+                      initial: account.fullName.isEmpty ? '?' : account.fullName.substring(0, 1),
+                      id: account.id,
+                    ),
+                    const SizedBox(width: AppSpace.s3),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            account.fullName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.aauGray900,
+                            ),
+                          ),
+                          Text(
+                            account.email,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12.5, color: AppColors.aauGray600),
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: AppSpace.s2,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              AppBadge(
+                                tone: account.accountStatus == AccountStatus.rejected
+                                    ? BadgeTone.danger
+                                    : BadgeTone.success,
+                                icon: account.accountStatus == AccountStatus.rejected
+                                    ? Icons.close
+                                    : Icons.check,
+                                label: account.accountStatus.label,
+                                dense: true,
+                              ),
+                              RoleBadge(role: account.role, dense: true),
+                              Text(
+                                account.reviewedAt == null
+                                    ? ''
+                                    : 'decided ${formatDateUtc(account.reviewedAt)}',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppColors.aauGray400,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpace.s2),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Every invitation and what became of it.
+///
+/// Resend and revoke are offered only while the link is still open: an accepted
+/// invitation has already been used, and an expired one has to be reissued
+/// through the invite form (which the server treats as a renewal anyway). The
+/// status is the server's — `PENDING`, `RESENT`, `ACCEPTED`, `EXPIRED` — so the
+/// phone does not invent a second table of states.
+class _InviteList extends ConsumerStatefulWidget {
+  const _InviteList();
+
+  @override
+  ConsumerState<_InviteList> createState() => _InviteListState();
+}
+
+class _InviteListState extends ConsumerState<_InviteList> {
+  String? _busyId;
+
+  Future<void> _act(InviteRow invite, {required bool resend}) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: resend ? 'Resend the invitation?' : 'Revoke this invitation?',
+      body: resend
+          ? 'A fresh single-use link goes to ${invite.email}. The previous link stops '
+              'working, and the invitation expires ${formatDateUtc(invite.expiresAt) ?? ''}.'
+          : '${invite.email} will no longer be able to use the link. The account can be '
+              'invited again later; nothing else about it changes.',
+      confirmLabel: resend ? 'Resend' : 'Revoke',
+      destructive: !resend,
+      icon: resend ? Icons.forward_to_inbox_outlined : Icons.link_off,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busyId = invite.id);
+    try {
+      final message = resend
+          ? await ref.read(userActionsProvider).resendInvite(invite.id)
+          : await ref.read(userActionsProvider).revokeInvite(invite.id);
+      if (mounted) showAppToast(context, message: message, tone: ToastTone.info);
+    } on ApiError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } on NetworkError catch (error) {
+      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final invites = ref.watch(invitesProvider);
+
+    return invites.when(
+      loading: () => const SkeletonList(count: 3, height: 64),
+      error: (error, _) => InlineError(
+        error: error,
+        onRetry: () => ref.invalidate(invitesProvider),
+      ),
+      data: (rows) {
+        if (rows.isEmpty) {
+          return const AppCard(
+            child: Text(
+              'No invitations have been issued. The form above creates the first one.',
+              style: TextStyle(fontSize: 13.5, color: AppColors.aauGray500),
+            ),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SectionHeader(
+              title: '${rows.length} ${rows.length == 1 ? 'invitation' : 'invitations'}',
+              subtitle: 'A link works once. Resend replaces it; revoke stops it.',
+            ),
+            for (final invite in rows) ...[
+              AppCard(
+                padding: const EdgeInsets.all(AppSpace.s3),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                invite.fullName.isEmpty ? invite.email : invite.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.aauGray900,
+                                ),
+                              ),
+                              Text(
+                                invite.email,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppColors.aauGray600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: AppSpace.s2,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  AppBadge(
+                                    tone: switch (invite.status) {
+                                      'ACCEPTED' => BadgeTone.success,
+                                      'EXPIRED' => BadgeTone.neutral,
+                                      'RESENT' => BadgeTone.info,
+                                      _ => BadgeTone.warning,
+                                    },
+                                    icon: switch (invite.status) {
+                                      'ACCEPTED' => Icons.check,
+                                      'EXPIRED' => Icons.schedule,
+                                      'RESENT' => Icons.autorenew,
+                                      _ => Icons.mail_outline,
+                                    },
+                                    label: invite.status == 'PENDING'
+                                        ? 'Waiting'
+                                        : invite.status == 'RESENT'
+                                            ? 'Resent'
+                                            : invite.status == 'ACCEPTED'
+                                                ? 'Accepted'
+                                                : 'Expired',
+                                    dense: true,
+                                  ),
+                                  RoleBadge(role: invite.role, dense: true),
+                                  Text(
+                                    invite.acceptedAt != null
+                                        ? 'accepted ${formatDateUtc(invite.acceptedAt)}'
+                                        : 'expires ${formatDateUtc(invite.expiresAt) ?? ''}',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      color: AppColors.aauGray400,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_busyId == invite.id)
+                          const Padding(
+                            padding: EdgeInsets.all(AppSpace.s2),
+                            child: InlineSpinner(size: 18),
+                          ),
+                      ],
+                    ),
+                    if (invite.isOpen && _busyId != invite.id) ...[
+                      const SizedBox(height: AppSpace.s3),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: AppButton(
+                              label: 'Resend',
+                              icon: Icons.forward_to_inbox_outlined,
+                              variant: AppButtonVariant.outline,
+                              size: AppButtonSize.sm,
+                              expand: true,
+                              onPressed: () => _act(invite, resend: true),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpace.s2),
+                          Expanded(
+                            child: AppButton(
+                              label: 'Revoke',
+                              icon: Icons.link_off,
+                              variant: AppButtonVariant.outline,
+                              size: AppButtonSize.sm,
+                              expand: true,
+                              onPressed: () => _act(invite, resend: false),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpace.s2),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}

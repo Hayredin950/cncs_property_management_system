@@ -77,25 +77,63 @@ void main() {
     expect(visibleText(tester), contains('Buildings appear here as soon as items are registered'));
   });
 
-  testWidgets('a visitor reaches it from the chrome, not only the landing page',
+  testWidgets('a visitor tapping the chrome is sent to sign in, with map as the return',
       (tester) async {
     final api = registerOf([publicItemJson(tagId: 'CNCS-DEMO-0001', name: 'Dell Latitude 5420')]);
 
     await pumpApp(tester, api);
-    // A visitor's cold start settles on the sign-in card, which deliberately
-    // carries no map action — so the journey starts where a visitor really starts
-    // once they have tapped a link or scanned a sticker: the shared surface.
     await pumpUntilFound(tester, find.text('Staff sign in'));
 
     final context = tester.element(find.byType(CncsPmsApp));
-    ProviderScope.containerOf(context).read(routerProvider).go('/scan');
+    final router = ProviderScope.containerOf(context).read(routerProvider);
+    router.go('/scan');
     await pumpUntilFound(tester, find.byTooltip('Browse by building'));
 
     await tester.tap(find.byTooltip('Browse by building'));
+    await pumpFrames(tester, frames: 20);
+
+    // `/map` is the register grouped by building, so it needs a session — only
+    // `/scan` is anonymous. The tap forwards to sign in and remembers where the
+    // visitor was going, rather than showing a 404 or an empty page.
+    expect(visibleText(tester), contains('Staff sign in'));
+    expect(router.state.uri.queryParameters['from'], '/map');
+  });
+
+  testWidgets('a signed-in viewer reaches the grouped register from the chrome',
+      (tester) async {
+    final api = registerOf([publicItemJson(tagId: 'CNCS-DEMO-0001', name: 'Dell Latitude 5420')])
+      ..get('/auth/me', {
+        'user': {
+          'id': 'user-1',
+          'fullName': 'Selam Bekele',
+          'email': 'selam@aau.edu.et',
+          'role': 'STAFF',
+          'createdAt': '2026-01-01T00:00:00.000Z',
+          'mustChangePassword': false,
+        },
+      });
+
+    await pumpApp(tester, api, overrides: api.overridesWithToken('good-token'));
+    await pumpFrames(tester, frames: 20);
+
+    // A signed-in viewer's chrome is the workbench, where the building browser
+    // is the More sheet's row rather than the visitor bar's icon.
+    await pumpUntilFound(tester, find.text('More'));
+    await tester.tap(find.text('More').last);
+    await pumpFrames(tester, frames: 10);
+    await tester.tap(find.text('Browse by building'));
     await pumpUntilFound(tester, find.text('Dell Latitude 5420'));
 
     // Landed on the page itself: the grouping and the item, not a 404 or an empty
-    // surface.
+    // surface. The register is asked for `scope=all`, so a Staff viewer sees the
+    // whole campus rather than only their own holdings.
     expect(visibleText(tester), contains('CNCS Building'));
+    expect(
+      api.requests
+          .where((request) => request.path == '/items')
+          .any((request) => request.queryParameters['scope'] == 'all'),
+      isTrue,
+      reason: 'the map must ask for the whole register, not the role default',
+    );
   });
 }

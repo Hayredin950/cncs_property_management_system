@@ -49,6 +49,18 @@ class AuthState {
   bool get canCreateItems => permissions.canCreateItems(role);
   bool get canViewOwnRequests => permissions.canViewOwnRequests(role);
   bool get canManageCategories => permissions.canManageCategories(role);
+  bool get canManageBuildings => permissions.canManageBuildings(role);
+  bool get canViewSystemConfig => permissions.canViewSystemConfig(role);
+  bool get canEditItemCustody => permissions.canEditItemCustody(role);
+  bool get canEditItemIdentity => permissions.canEditItemIdentity(role);
+  bool get canManageTags => permissions.canManageTags(role);
+  bool get canFileRequests => permissions.canFileRequests(role);
+  bool get canApproveAccounts => permissions.canApproveAccounts(role);
+  bool get canApproveOwnUnitAccounts => permissions.canApproveOwnUnitAccounts(role);
+  bool get canApproveTransferStage1 => permissions.canApproveTransferStage1(role);
+  bool get canApproveTransferStage2 => permissions.canApproveTransferStage2(role);
+  bool get canApproveDisposal => permissions.canApproveDisposal(role);
+  bool get canApproveLoan => permissions.canApproveLoan(role);
   bool get seesAllItems => permissions.seesAllItems(role);
   bool get seesAssetData => permissions.seesAssetData(role);
 

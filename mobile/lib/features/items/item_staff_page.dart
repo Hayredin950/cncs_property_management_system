@@ -4,9 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/providers/items_provider.dart';
 import '../../data/providers/auth_provider.dart';
+import '../../models/item.dart';
+import '../../models/permissions.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/page_scaffold.dart';
+import '../../widgets/segmented_tabs.dart';
 import '../../widgets/states.dart';
 import 'widgets/accessories_panel.dart';
 import 'widgets/history_list.dart';
@@ -45,6 +48,24 @@ class _ItemStaffPageState extends ConsumerState<ItemStaffPage> {
   @override
   Widget build(BuildContext context) {
     final item = ref.watch(itemByIdProvider(widget.itemId));
+    final auth = ref.watch(authProvider);
+    final user = auth.user;
+
+    /// The row-level half of the edit rule. The capability says Staff and heads
+    /// may edit; this says *which* items — the ones in their custody — so the
+    /// button does not invite a save the API will refuse.
+    bool canEdit(Item row) {
+      if (user == null) return false;
+      return canEditItem(
+        role: user.role,
+        userId: user.id,
+        departmentId: user.departmentId,
+        ownerId: row.ownerId,
+        holderType: row.holderType,
+        holderId: row.holderId,
+        orgUnitId: row.orgUnitId,
+      );
+    }
 
     return item.when(
       loading: () => const PageScaffold(
@@ -62,14 +83,32 @@ class _ItemStaffPageState extends ConsumerState<ItemStaffPage> {
           ),
           const SizedBox(height: AppSpace.s3),
           AppButton(
-            label: 'Back to the register',
+            label: 'Back to browse items',
             variant: AppButtonVariant.outline,
             expand: true,
             onPressed: () => context.go('/items'),
           ),
         ],
       ),
-      data: (data) => PageScaffold(
+      data: (data) {
+        final editable = canEdit(data);
+        // The History tab is the item's edit log: the server serves it to the
+        // people who see the item in full (the holder, their head, the officer,
+        // an auditor) and answers 404 to a colleague reading the catalogue. The
+        // tab used to be offered to everyone, so the last tab on a stranger's
+        // item was an error message. A head's `ITEM_READ_ALL` is not enough on
+        // its own — another department's row is still not theirs.
+        final canViewHistory = user != null &&
+            seesFullItemDetail(
+              role: user.role,
+              userId: user.id,
+              departmentId: user.departmentId,
+              ownerId: data.ownerId,
+              holderType: data.holderType,
+              holderId: data.holderId,
+              orgUnitId: data.orgUnitId,
+            );
+        return PageScaffold(
         title: data.name,
         subtitle: data.locationLine,
         maxWidth: 640,
@@ -90,14 +129,16 @@ class _ItemStaffPageState extends ConsumerState<ItemStaffPage> {
               ),
             ),
 
-          _SegmentedTabs(
-            labels: const ['Details', 'History'],
-            index: _tab,
+          SegmentedTabs(
+            labels: canViewHistory ? const ['Details', 'History'] : const ['Details'],
+            index: canViewHistory ? _tab : 0,
             onChanged: (index) => setState(() => _tab = index),
           ),
           const SizedBox(height: AppSpace.s4),
 
-          if (_tab == 0) ...[
+          // A viewer without the history grant has no second tab, so a stale
+          // `_tab` must not route them into a section they cannot load.
+          if (!canViewHistory || _tab == 0) ...[
             ItemDetailView(item: data, showPublicLink: true),
             const SizedBox(height: AppSpace.s2),
             ItemActionBar(
@@ -105,9 +146,12 @@ class _ItemStaffPageState extends ConsumerState<ItemStaffPage> {
               onEdit: () => context.push('/items/${data.id}/edit'),
               onViewTag: () => context.push('/item/${data.tagId}'),
               onFileRequest: () => context.push('/requests/new?itemId=${data.id}'),
-              currentUserId: ref.read(currentUserProvider)?.id ?? '',
-              currentUserRole: ref.read(currentUserProvider)?.role.name ?? '',
-              currentUserDepartmentId: ref.read(currentUserProvider)?.departmentId,
+              currentUserId: user?.id ?? '',
+              currentUserRole: user?.role.name ?? '',
+              currentUserDepartmentId: user?.departmentId,
+              canEdit: editable && !data.isDisposed,
+              canFileRequest: auth.canFileRequests,
+              canClaim: canClaimItems(user?.role),
             ),
             const SizedBox(height: AppSpace.s5),
             TagPanel(item: data),
@@ -118,61 +162,8 @@ class _ItemStaffPageState extends ConsumerState<ItemStaffPage> {
           ] else
             HistoryList(itemId: data.id),
         ],
-      ),
-    );
-  }
-}
-
-/// Two-tab segmented control, underline style.
-///
-/// Hand-rolled rather than a `TabBar` because the page is one `SingleChildScrollView`
-/// and a `TabBarView` needs a bounded height — a `TabBarView` inside a scroll view is
-/// the classic "unbounded height" crash. Two buttons and an index are less machinery
-/// for the same result, and the active state keeps §8's rule that a bold weight always
-/// accompanies the colour.
-class _SegmentedTabs extends StatelessWidget {
-  const _SegmentedTabs({required this.labels, required this.index, required this.onChanged});
-
-  final List<String> labels;
-  final int index;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.aauGrayLine)),
-      ),
-      child: Row(
-        children: [
-          for (final (position, label) in labels.indexed)
-            Expanded(
-              child: InkWell(
-                onTap: () => onChanged(position),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpace.s3),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: position == index ? AppColors.brand600 : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: position == index ? FontWeight.w600 : FontWeight.w500,
-                      color: position == index ? AppColors.brand700 : AppColors.aauGray500,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+      );
+      },
     );
   }
 }

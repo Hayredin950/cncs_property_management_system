@@ -211,3 +211,48 @@ class LoginResponse {
   final String token;
   final AuthUser user;
 }
+
+
+/// `GET /users/invites` — one invitation, and what became of it.
+///
+/// The list is how an administrator answers "who did we invite, and did they
+/// take it up?" without re-reading the mail they sent. `status` is the server's
+/// computed value: `PENDING`, `RESENT`, `ACCEPTED` or `EXPIRED`.
+class InviteRow {
+  const InviteRow({
+    required this.id,
+    required this.fullName,
+    required this.email,
+    required this.role,
+    required this.createdAt,
+    required this.expiresAt,
+    required this.status,
+    this.acceptedAt,
+  });
+
+  factory InviteRow.fromJson(Map<String, dynamic> json) => InviteRow(
+    id: asString(json['id']),
+    fullName: asString(json['fullName']),
+    email: asString(json['email']),
+    role: Role.fromJson(json['role']),
+    createdAt: asString(json['createdAt']),
+    expiresAt: asString(json['expiresAt']),
+    status: asString(json['status'], fallback: 'PENDING'),
+    acceptedAt: asStringOrNull(json['acceptedAt']),
+  );
+
+  final String id;
+  final String fullName;
+  final String email;
+  final Role role;
+  final String createdAt;
+  final String expiresAt;
+
+  /// `PENDING`, `RESENT`, `ACCEPTED` or `EXPIRED`.
+  final String status;
+  final String? acceptedAt;
+
+  /// Still waiting on the invitee: the only state in which resending or
+  /// revoking means anything.
+  bool get isOpen => status == 'PENDING' || status == 'RESENT';
+}

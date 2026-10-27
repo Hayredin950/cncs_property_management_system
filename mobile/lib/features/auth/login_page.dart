@@ -65,7 +65,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     setState(() => _submitting = true);
     try {
-      await ref.read(authProvider.notifier).login(email: email, password: password);
+      await ref
+          .read(authProvider.notifier)
+          .login(email: email, password: password);
       // No navigation here: the router's redirect moves an authenticated user off
       // /login, and it is the only thing that knows about `from`, the forced
       // password change, and role gating. A `context.go` in this method would be a
@@ -89,85 +91,117 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         padding: const EdgeInsets.all(AppSpace.gutter),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
-          child: AppCard(
-            padding: const EdgeInsets.all(AppSpace.s5),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Staff sign in',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.aauGray900,
-                  ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // The way back to the front door. The app opens on the public
+              // landing page (the same one the web app serves), so the login
+              // form is one tap deeper — and a page you can only leave with the
+              // hardware Back key is not a page with an exit (§10.14).
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Builder(
+                  builder: (context) {
+                    final router = GoRouter.maybeOf(context);
+                    if (router == null) return const SizedBox.shrink();
+                    return TextButton.icon(
+                      onPressed: () =>
+                          router.canPop() ? router.pop() : router.go('/'),
+                      icon: const Icon(Icons.arrow_back, size: 18),
+                      label: const Text('Back to home'),
+                    );
+                  },
                 ),
-                const SizedBox(height: AppSpace.s1),
-                const Text(
-                  'The register is maintained by CNCS staff and administrators.',
-                  style: TextStyle(fontSize: 13.5, color: AppColors.aauGray500, height: 1.45),
-                ),
-                const SizedBox(height: AppSpace.s5),
-
-                AppTextField(
-                  label: 'Email',
-                  controller: _email,
-                  hint: 'you@aau.edu.et',
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  prefixIcon: Icons.mail_outline,
-                  errorText: _emailError,
-                  enabled: !_submitting,
-                  onSubmitted: (_) => _passwordFocus.requestFocus(),
-                ),
-                const SizedBox(height: AppSpace.stack),
-                AppTextField(
-                  label: 'Password',
-                  controller: _password,
-                  focusNode: _passwordFocus,
-                  obscureText: _obscure,
-                  textInputAction: TextInputAction.go,
-                  prefixIcon: Icons.lock_outline,
-                  errorText: _passwordError,
-                  enabled: !_submitting,
-                  onSubmitted: (_) => _submit(),
-                  suffix: IconButton(
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                    tooltip: _obscure ? 'Show password' : 'Hide password',
-                    icon: Icon(
-                      _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                      size: 19,
+              ),
+              const SizedBox(height: AppSpace.s1),
+              AppCard(
+                padding: const EdgeInsets.all(AppSpace.s5),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Staff sign in',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.aauGray900,
+                      ),
                     ),
-                  ),
-                ),
+                    const SizedBox(height: AppSpace.s1),
+                    const Text(
+                      'The register is maintained by CNCS staff and administrators.',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        color: AppColors.aauGray500,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpace.s5),
 
-                if (_error != null) ...[
-                  const SizedBox(height: AppSpace.stack),
-                  InlineError(error: _error!),
-                ],
+                    AppTextField(
+                      label: 'Email',
+                      controller: _email,
+                      hint: 'you@aau.edu.et',
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      prefixIcon: Icons.mail_outline,
+                      errorText: _emailError,
+                      enabled: !_submitting,
+                      onSubmitted: (_) => _passwordFocus.requestFocus(),
+                    ),
+                    const SizedBox(height: AppSpace.stack),
+                    AppTextField(
+                      label: 'Password',
+                      controller: _password,
+                      focusNode: _passwordFocus,
+                      obscureText: _obscure,
+                      textInputAction: TextInputAction.go,
+                      prefixIcon: Icons.lock_outline,
+                      errorText: _passwordError,
+                      enabled: !_submitting,
+                      onSubmitted: (_) => _submit(),
+                      suffix: IconButton(
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                        tooltip: _obscure ? 'Show password' : 'Hide password',
+                        icon: Icon(
+                          _obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 19,
+                        ),
+                      ),
+                    ),
 
-                const SizedBox(height: AppSpace.s5),
-                AppButton(
-                  label: 'Sign in',
-                  expand: true,
-                  size: AppButtonSize.lg,
-                  loading: _submitting,
-                  onPressed: _submit,
+                    if (_error != null) ...[
+                      const SizedBox(height: AppSpace.stack),
+                      InlineError(error: _error!),
+                    ],
+
+                    const SizedBox(height: AppSpace.s5),
+                    AppButton(
+                      label: 'Sign in',
+                      expand: true,
+                      size: AppButtonSize.lg,
+                      loading: _submitting,
+                      onPressed: _submit,
+                    ),
+                    const SizedBox(height: AppSpace.s4),
+                    const InfoNote(
+                      icon: Icons.info_outline,
+                      message:
+                          'Need access? Request an account — a system administrator '
+                          'must approve before you can sign in.',
+                      tone: InfoTone.neutral,
+                    ),
+                    const SizedBox(height: AppSpace.s2),
+                    TextButton(
+                      onPressed: () => context.push('/request-account'),
+                      child: const Text('Request an account'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: AppSpace.s4),
-                const InfoNote(
-                  icon: Icons.info_outline,
-                  message: 'Need access? Request an account — a system administrator '
-                      'must approve before you can sign in.',
-                  tone: InfoTone.neutral,
-                ),
-                const SizedBox(height: AppSpace.s2),
-                TextButton(
-                  onPressed: () => context.push('/request-account'),
-                  child: const Text('Request an account'),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

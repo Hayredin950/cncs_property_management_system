@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/building.dart';
 import '../../models/category.dart';
 import '../../models/department.dart';
 import '../../models/user.dart';
@@ -41,6 +42,67 @@ final departmentsProvider = FutureProvider<List<Department>>((ref) {
   return ref.watch(departmentsApiProvider).list();
 });
 
+/// `GET /buildings` — the college's buildings, with item counts.
+///
+/// Readable by anyone who may use the register (`ITEM_READ`) because the same
+/// list is the register's building filter; writes still need `BUILDING_MANAGE`,
+/// which is the Property Officer. `POST /items` takes `buildingId`; the register
+/// still shows the name.
+final buildingsProvider = FutureProvider<List<Building>>((ref) {
+  return ref.watch(buildingsApiProvider).list();
+});
+
+/// The three writes on `/admin/buildings`, in one place.
+///
+/// A rename is visible on every item filed under the building (the register reads
+/// the name through the relation, not a copy), so the list is invalidated too —
+/// otherwise the register would keep showing the old spelling until its next
+/// natural refresh.
+class BuildingActions {
+  const BuildingActions(this._ref);
+
+  final Ref _ref;
+
+  Future<void> create({
+    required String name,
+    required String code,
+    String? address,
+    String? description,
+  }) async {
+    await _ref.read(buildingsApiProvider).create(
+      name: name,
+      code: code,
+      address: address,
+      description: description,
+    );
+    _ref.invalidate(buildingsProvider);
+  }
+
+  Future<void> update(
+    String id, {
+    required String name,
+    required String code,
+    String? address,
+    String? description,
+  }) async {
+    await _ref.read(buildingsApiProvider).update(
+      id,
+      name: name,
+      code: code,
+      address: address,
+      description: description,
+    );
+    _ref.invalidate(buildingsProvider);
+  }
+
+  Future<void> remove(String id) async {
+    await _ref.read(buildingsApiProvider).delete(id);
+    _ref.invalidate(buildingsProvider);
+  }
+}
+
+final buildingActionsProvider = Provider<BuildingActions>(BuildingActions.new);
+
 class UserListNotifier extends AsyncNotifier<List<UserSummary>> {
   @override
   Future<List<UserSummary>> build() => ref.watch(usersApiProvider).list();
@@ -58,6 +120,33 @@ class ApprovalsListNotifier extends AsyncNotifier<List<UserSummary>> {
 /// `GET /users/approvals` — the System Admin's decision queue.
 final approvalsProvider = AsyncNotifierProvider<ApprovalsListNotifier, List<UserSummary>>(
   ApprovalsListNotifier.new,
+);
+
+/// `GET /users/approvals?decided=true` — the requests already decided, newest
+/// first.
+///
+/// The queue empties as the work gets done, so without this the only trace of a
+/// decision is the notification that went out with it. A separate provider from
+/// the queue because the two lists are fetched and refreshed independently: one
+/// shrinks as the other grows.
+class DecidedAccountsNotifier extends AsyncNotifier<List<UserSummary>> {
+  @override
+  Future<List<UserSummary>> build() => ref.watch(usersApiProvider).listDecided();
+}
+
+final decidedAccountsProvider =
+    AsyncNotifierProvider<DecidedAccountsNotifier, List<UserSummary>>(
+      DecidedAccountsNotifier.new,
+    );
+
+/// `GET /users/invites` — every invitation, and what became of it (T8).
+class InvitesNotifier extends AsyncNotifier<List<InviteRow>> {
+  @override
+  Future<List<InviteRow>> build() => ref.watch(usersApiProvider).listInvites();
+}
+
+final invitesProvider = AsyncNotifierProvider<InvitesNotifier, List<InviteRow>>(
+  InvitesNotifier.new,
 );
 
 /// `GET /departments/invitable` — the unit picker on the invite form (T6).
@@ -128,6 +217,7 @@ class UserActions {
     final user = await _ref.read(usersApiProvider).approve(id, role: role);
     _ref.invalidate(usersProvider);
     _ref.invalidate(approvalsProvider);
+    _ref.invalidate(decidedAccountsProvider);
     return user;
   }
 
@@ -136,6 +226,7 @@ class UserActions {
     final user = await _ref.read(usersApiProvider).reject(id, reason);
     _ref.invalidate(usersProvider);
     _ref.invalidate(approvalsProvider);
+    _ref.invalidate(decidedAccountsProvider);
     return user;
   }
 
@@ -157,6 +248,33 @@ class UserActions {
   Future<void> remove(String id) async {
     await _ref.read(usersApiProvider).delete(id);
     _ref.invalidate(usersProvider);
+  }
+
+  /// `POST /users/:id/deactivate` — close an account that is part of the record.
+  ///
+  /// This is the action for an account that cannot be deleted because it owns
+  /// items or decided requests: the row stays, the history stays, and the person
+  /// simply cannot sign in. The reason is kept on the record, which is why it is
+  /// required rather than a free-text afterthought.
+  Future<String> deactivate(String id, String reason) async {
+    final message = await _ref.read(usersApiProvider).deactivate(id, reason);
+    _ref.invalidate(usersProvider);
+    return message;
+  }
+
+  /// `POST /users/invites/:id/resend` — reissue an unaccepted invitation.
+  Future<String> resendInvite(String id) async {
+    final message = await _ref.read(usersApiProvider).resendInvite(id);
+    _ref.invalidate(invitesProvider);
+    return message;
+  }
+
+  /// `DELETE /users/invites/:id` — revoke a link that has not been accepted.
+  Future<String> revokeInvite(String id) async {
+    final message = await _ref.read(usersApiProvider).revokeInvite(id);
+    _ref.invalidate(invitesProvider);
+    _ref.invalidate(invitableUnitsProvider);
+    return message;
   }
 }
 

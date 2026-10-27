@@ -1,4 +1,5 @@
 import '../../core/api/api_client.dart';
+import '../../models/json.dart';
 import '../../models/user.dart';
 
 /// `frontend/src/api/users.ts`. `list()` needs `USER_READ` (spec 2.1.1) and the
@@ -124,6 +125,58 @@ class UsersApi {
       body: {'role': role},
     );
     return UserSummary.fromJson(json);
+  }
+
+  /// `GET /users/approvals?decided=true` — the requests this viewer has
+  /// already decided, newest first.
+  ///
+  /// The queue empties as the work gets done, so without this the only trace of
+  /// a decision is the notification that went out with it.
+  Future<List<UserSummary>> listDecided() async {
+    final json = await _client.get<List<dynamic>>(
+      '/users/approvals',
+      query: {'decided': 'true'},
+    );
+    return [
+      for (final row in json)
+        if (row is Map) UserSummary.fromJson(Map<String, dynamic>.from(row)),
+    ];
+  }
+
+  /// `GET /users/invites` — every invitation and what became of it (T8).
+  Future<List<InviteRow>> listInvites() async {
+    final json = await _client.get<List<dynamic>>('/users/invites');
+    return [
+      for (final row in json)
+        if (row is Map) InviteRow.fromJson(Map<String, dynamic>.from(row)),
+    ];
+  }
+
+  /// `POST /users/invites/:id/resend` — reissue an unaccepted invitation's link.
+  Future<String> resendInvite(String id) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/users/invites/${Uri.encodeComponent(id)}/resend',
+    );
+    return asString(json['message'], fallback: 'Invitation resent.');
+  }
+
+  /// `DELETE /users/invites/:id` — revoke a link that has not been accepted.
+  Future<String> revokeInvite(String id) async {
+    final json = await _client.delete<Map<String, dynamic>>(
+      '/users/invites/${Uri.encodeComponent(id)}',
+    );
+    return asString(json['message'], fallback: 'Invitation revoked.');
+  }
+
+  /// `POST /users/:id/deactivate` — close an account, with the reason kept on
+  /// the record. Unlike `DELETE`, this is offered for accounts that are part of
+  /// the record: their items and decisions stay, and they simply cannot sign in.
+  Future<String> deactivate(String id, String reason) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/users/${Uri.encodeComponent(id)}/deactivate',
+      body: {'reason': reason},
+    );
+    return asString(json['message'], fallback: 'Account deactivated.');
   }
 
   /// `DELETE /users/:id` — refused for any account that is part of the record

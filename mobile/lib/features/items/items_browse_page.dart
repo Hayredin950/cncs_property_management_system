@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/providers/auth_provider.dart';
 import '../../data/providers/items_provider.dart';
 import '../../data/providers/taxonomy_provider.dart';
+import '../../models/building.dart';
 import '../../models/category.dart';
 import '../../models/department.dart';
 import '../../models/enums.dart';
@@ -63,6 +64,10 @@ class _ItemsBrowsePageState extends ConsumerState<ItemsBrowsePage> {
     final role = ref.watch(currentUserProvider)?.role;
     final categories = ref.watch(categoriesProvider).value ?? const <Category>[];
     final departments = ref.watch(departmentsProvider).value ?? const <Department>[];
+    // A dropdown, not free text: `GET /items?building=` matches the building's
+    // exact name, and the campus has a countable set of them. Picking one is
+    // faster and cannot misspell itself into an empty result.
+    final buildings = ref.watch(buildingsProvider).value ?? const <Building>[];
     final activeFilters = ref.watch(activeFilterCountProvider);
     final hasFilters = activeFilters > 0 || query.search != null;
 
@@ -158,6 +163,15 @@ class _ItemsBrowsePageState extends ConsumerState<ItemsBrowsePage> {
               // screen disables it in exactly these two cases.
               enabled: !departmentLocked,
               onChanged: (value) => ref.read(itemQueryProvider.notifier).setOrgUnit(value),
+            ),
+            AppFilterChip<String>(
+              label: 'Building',
+              icon: Icons.domain_outlined,
+              value: query.building,
+              allLabel: 'All buildings',
+              options: [for (final building in buildings) building.name],
+              labelOf: (name) => name,
+              onChanged: (value) => ref.read(itemQueryProvider.notifier).setBuilding(value),
             ),
             if (hasFilters)
               AppButton(

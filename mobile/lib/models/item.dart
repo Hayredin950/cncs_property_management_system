@@ -20,6 +20,8 @@ class Item {
     required this.name,
     required this.categoryId,
     required this.categoryName,
+    required this.orgUnitId,
+    required this.buildingId,
     required this.department,
     required this.building,
     required this.floor,
@@ -64,6 +66,8 @@ class Item {
       name: asString(json['name']),
       categoryId: asString(json['categoryId']),
       categoryName: asString(asMap(json['category'])['name'], fallback: 'Uncategorised'),
+      orgUnitId: asStringOrNull(json['orgUnitId']),
+      buildingId: asStringOrNull(json['buildingId']),
       department: asString(json['department']),
       building: asString(json['building']),
       floor: asString(json['floor']),
@@ -107,6 +111,14 @@ class Item {
   final String name;
   final String categoryId;
   final String categoryName;
+
+  /// The owning org unit's id. The display name travels as `department`; the id
+  /// is what a head's own-unit checks compare (a name is not an identifier).
+  final String? orgUnitId;
+
+  /// The building's id. `building` above is the display name; a write path takes
+  /// this one, and the server answers 400 to a name.
+  final String? buildingId;
   final String department;
   final String building;
   final String floor;
@@ -214,8 +226,8 @@ class CreateItemPayload {
   const CreateItemPayload({
     required this.name,
     required this.categoryId,
-    required this.department,
-    required this.building,
+    required this.orgUnitId,
+    required this.buildingId,
     required this.floor,
     required this.room,
     required this.ownerId,
@@ -231,8 +243,16 @@ class CreateItemPayload {
 
   final String name;
   final String categoryId;
-  final String department;
-  final String building;
+
+  /// The owning department's id — `createItemSchema.orgUnitId`, **not** the
+  /// display name. The phone used to send `department: 'Computer Science'`,
+  /// which the schema does not accept, so registration failed on a form that had
+  /// every field filled in. `Item.department` remains the name for display.
+  final String orgUnitId;
+
+  /// The building's id — `createItemSchema.buildingId`, same story.
+  final String buildingId;
+
   final String floor;
   final String room;
   final String ownerId;
@@ -248,8 +268,8 @@ class CreateItemPayload {
   Map<String, dynamic> toJson() => {
         'name': name,
         'categoryId': categoryId,
-        'department': department,
-        'building': building,
+        'orgUnitId': orgUnitId,
+        'buildingId': buildingId,
         'floor': floor,
         'room': room,
         'ownerId': ownerId,

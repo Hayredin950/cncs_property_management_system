@@ -5,6 +5,7 @@ import '../../core/api/token_storage.dart';
 import '../api/audits_api.dart';
 import '../api/auth_api.dart';
 import '../api/categories_api.dart';
+import '../api/buildings_api.dart';
 import '../api/departments_api.dart';
 import '../api/items_api.dart';
 import '../api/misc_api.dart';
@@ -56,6 +57,9 @@ final categoriesApiProvider = Provider<CategoriesApi>(
 );
 final departmentsApiProvider = Provider<DepartmentsApi>(
   (ref) => DepartmentsApi(ref.watch(apiClientProvider)),
+);
+final buildingsApiProvider = Provider<BuildingsApi>(
+  (ref) => BuildingsApi(ref.watch(apiClientProvider)),
 );
 final systemApiProvider = Provider<SystemApi>((ref) => SystemApi(ref.watch(apiClientProvider)));
 final uploadsApiProvider = Provider<UploadsApi>((ref) => UploadsApi(ref.watch(apiClientProvider)));

@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {Check, ClipboardCopy, Mail, Pencil, RotateCcw, Send, ShieldCheck, Trash2, UserPlus, X, KeyRound, ClipboardCheck, UserX } from "lucide-react";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useAuth } from "../../app/AuthContext";
@@ -147,9 +148,21 @@ export function AdminUsersPage() {
   // landing them on a queue they also own was leaving them one click away
   // from the work they do most. (Both branches used to be "approvals" — a
   // leftover from when the screen had no tabs at all.)
-  const [activeTab, setActiveTab] = useState<
-    "approvals" | "decided" | "invite" | "invitations" | "accounts"
-  >(isDeptHead ? "approvals" : "accounts");
+  //
+  // `?tab=` makes a tab linkable, which is what the dashboard's account cards
+  // use: "Waiting for approval" opens the queue itself rather than dropping the
+  // administrator on the directory to find it. An unknown value is ignored, so
+  // an old bookmark still lands somewhere sensible.
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const accountTabs = ["approvals", "decided", "invite", "invitations", "accounts"] as const;
+  type AccountTab = (typeof accountTabs)[number];
+  const requestedTab = accountTabs.includes(tabParam as AccountTab)
+    ? (tabParam as AccountTab)
+    : null;
+  const [activeTab, setActiveTab] = useState<AccountTab>(
+    isDeptHead ? "approvals" : (requestedTab ?? "accounts"),
+  );
 
   // Search and filter state for Existing Accounts tab
   const [searchQuery, setSearchQuery] = useState("");

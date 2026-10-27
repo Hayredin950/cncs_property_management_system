@@ -15,6 +15,10 @@ enum Capability {
   itemClaim,
   itemVoid,
   itemReadAll,
+  /// Use the register: list what the role's scope allows and open any listed
+  /// row. Every asset role holds it, Staff included, so a row the list draws is
+  /// never a dead end. Editing is `itemEditCustody` plus the row scope.
+  itemRead,
   buildingManage,
   tagManage,
   categoryManage,
@@ -54,6 +58,7 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.itemClaim,
     Capability.itemVoid,
     Capability.itemReadAll,
+    Capability.itemRead,
     Capability.buildingManage,
     Capability.tagManage,
     Capability.categoryManage,
@@ -75,6 +80,7 @@ const Map<Role, Set<Capability>> _grants = {
     // per-item there, so it opens the read routes and the row scope limits
     // them to the head's own unit.
     Capability.itemReadAll,
+    Capability.itemRead,
     Capability.requestDecide,
     Capability.transferApproveStage1,
     Capability.transferApproveStage2,
@@ -82,9 +88,10 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.accountDeactivateOwnUnit,
     Capability.reportViewAll,
   },
-  Role.staff: {Capability.itemEditCustody, Capability.itemClaim},
+  Role.staff: {Capability.itemEditCustody, Capability.itemClaim, Capability.itemRead},
   Role.auditor: {
     Capability.itemReadAll,
+    Capability.itemRead,
     Capability.auditRun,
     Capability.auditView,
     Capability.reportViewAll,
@@ -125,9 +132,7 @@ bool canViewOwnRequests(Role? role) =>
 /// asset tile or section should make before rendering: "0 items tracked" and
 /// "No items registered yet" are not true statements about the register, they are
 /// statements about a viewer who cannot see it.
-const Set<Role> _assetRoles = {Role.propertyOfficer, Role.departmentHead, Role.staff, Role.auditor};
-
-bool seesAssetData(Role? role) => role != null && _assetRoles.contains(role);
+bool seesAssetData(Role? role) => hasCapability(role, Capability.itemRead);
 
 /// Account administration — the accounts screen and its write endpoints.
 bool canManageAccounts(Role? role) => hasCapability(role, Capability.accountManage);
@@ -140,6 +145,17 @@ bool canClaimItems(Role? role) => hasCapability(role, Capability.itemClaim);
 
 /// Manage the category list.
 bool canManageCategories(Role? role) => hasCapability(role, Capability.categoryManage);
+
+/// Manage the college's buildings. The Property Officer's grant, and the same
+/// role that registers items — so the list the form picks from and the screen
+/// that keeps it correct are one audience.
+bool canManageBuildings(Role? role) => hasCapability(role, Capability.buildingManage);
+
+/// Read the system's build facts, the account log and the college's units.
+///
+/// One capability, three screens: they are one administrative surface, and the
+/// API gates all of them on `SYSTEM_CONFIG` (spec 2.1.1).
+bool canViewSystemConfig(Role? role) => hasCapability(role, Capability.systemConfig);
 
 /// See every item's staff detail, whichever role holds it.
 bool seesAllItems(Role? role) => hasCapability(role, Capability.itemReadAll);
@@ -155,3 +171,88 @@ bool canApproveDisposal(Role? role) => hasCapability(role, Capability.disposalAp
 
 /// Approve a loan request (property officer only).
 bool canApproveLoan(Role? role) => hasCapability(role, Capability.loanApprove);
+
+/// Edit an item at all — the capability, before the row is considered.
+bool canEditItemCustody(Role? role) => hasCapability(role, Capability.itemEditCustody);
+
+/// Edit identity/financial/photo fields — the Property Officer's half (spec 4.7).
+bool canEditItemIdentity(Role? role) => hasCapability(role, Capability.itemEditIdentity);
+
+/// Regenerate a printed tag (the artwork, never the tag id).
+bool canManageTags(Role? role) => hasCapability(role, Capability.tagManage);
+
+/// File an item request. Every role may except the SYSTEM_ADMIN, which the API
+/// refuses by name — an account role does not borrow, transfer or dispose.
+bool canFileRequests(Role? role) => role != null && role != Role.systemAdmin;
+
+/// A Department Head approves the staff registrations of their own unit.
+bool canApproveOwnUnitAccounts(Role? role) => hasCapability(role, Capability.accountApproveOwnUnit);
+
+/// A System Admin approves any registration.
+bool canApproveAnyAccounts(Role? role) => hasCapability(role, Capability.accountApproveAny);
+
+/// May open the account-approvals queue at all.
+bool canApproveAccounts(Role? role) =>
+    canApproveOwnUnitAccounts(role) || canApproveAnyAccounts(role);
+
+/// May this viewer edit **this** item?
+///
+/// The capability says *what* a role may edit; the row decides *which* rows.
+/// Staff edit what they hold, a head edits their own unit's items (and anything
+/// they personally hold), and the Property Officer edits any row. This mirrors
+/// `itemInScope` on the server, which is the authority — the check here exists so
+/// the phone does not offer a button the API will refuse.
+bool canEditItem({
+  required Role? role,
+  required String? userId,
+  required String? departmentId,
+  required String? ownerId,
+  required String? holderType,
+  required String? holderId,
+  required String? orgUnitId,
+}) {
+  if (!canEditItemCustody(role)) return false;
+  if (canEditItemIdentity(role)) return true;
+  if (role == Role.staff) {
+    return ownerId == userId || (holderType == 'STAFF' && holderId == userId);
+  }
+  if (role == Role.departmentHead) {
+    return (departmentId != null && orgUnitId == departmentId) ||
+        (holderType == 'DEPARTMENT' && holderId == departmentId) ||
+        ownerId == userId;
+  }
+  return false;
+}
+
+/// May this viewer confirm/dispute a loan return? The lender side of the
+/// handshake — the Property Officer, never the borrower. Loans are approved
+/// under `LOAN_APPROVE` (the officer alone), so the person who let the item out
+/// is the person who checks it back in; a head has no loan decisions to answer.
+bool canConfirmLoanReturn(Role? role) => hasCapability(role, Capability.loanApprove);
+
+/// May this viewer see the item's **full detail and change history**?
+///
+/// Mirrors `seesFullItemDetail` in `backend/src/utils/filterItemFields.ts`:
+/// the Property Officer and the Auditor see every row, a custodian sees their
+/// own, and a head sees their **own unit's** rows. `ITEM_READ_ALL` alone is not
+/// enough for a head — another department's history answers 404 — which is why
+/// this is a per-item predicate rather than `seesAllItems(role)`.
+bool seesFullItemDetail({
+  required Role? role,
+  required String? userId,
+  required String? departmentId,
+  required String? ownerId,
+  required String? holderType,
+  required String? holderId,
+  required String? orgUnitId,
+}) {
+  if (role == Role.propertyOfficer || role == Role.auditor) return true;
+  if (userId == null) return false;
+  if (ownerId == userId) return true;
+  if (holderType == 'STAFF' && holderId == userId) return true;
+  if (role == Role.departmentHead && departmentId != null) {
+    if (orgUnitId == departmentId) return true;
+    if (holderType == 'DEPARTMENT' && holderId == departmentId) return true;
+  }
+  return false;
+}

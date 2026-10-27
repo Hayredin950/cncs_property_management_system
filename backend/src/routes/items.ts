@@ -77,7 +77,18 @@ const createItemSchema = z.object({
 });
 
 const updateItemSchema = createItemSchema.partial().extend({
-  version: z.number().int().nonnegative("Version must be a non-negative integer").optional().default(0),
+  /**
+   * Optimistic-locking token: **optional, and absent means "do not check"**.
+   *
+   * This used to default to 0, which turned "the client did not send a version"
+   * into "the client read version 0". Every row that had been edited once has
+   * version 1 or more, so every edit from a client that omits the field — which
+   * is what both the web form and the phone actually send — was refused with
+   * 409 "modified by another user". On the phone that made a custodian's
+   * condition/notes save impossible, and the message blamed a second editor who
+   * did not exist. `default(0)` is the whole bug: omitted is not zero.
+   */
+  version: z.number().int().nonnegative("Version must be a non-negative integer").optional(),
 });
 
 /**
@@ -141,7 +152,6 @@ const IDENTITY_FIELDS = [
   "purchaseCost",
   "currentValue",
   "photoUrl",
-  "orgUnitId",
   "orgUnitId",
 ] as const;
 
@@ -903,6 +913,33 @@ itemsRouter.put(
       if (!existingItem) {
         res.status(404).json({ error: "Item not found" });
         return;
+      }
+
+      /**
+       * **Whose item is this to edit?** (KB §4.4 / SRS 4.7)
+       *
+       * `ITEM_EDIT_CUSTODY` is a scoped capability: Staff may edit the items
+       * they hold, a Department Head the items of their own unit, and only the
+       * Property Officer's `ITEM_EDIT_IDENTITY` may edit any row. The
+       * field-level rule further down stops a custodian changing identity and
+       * financial fields, but it assumed the row itself was theirs — so a staff
+       * member could change the condition and notes of a colleague's or another
+       * department's item, editing away from the phone exactly what the register
+       * says is there. The by-id read has had this check since the 14 Oct audit;
+       * the write did not.
+       *
+       * Out of sight stays out of sight: a row the caller cannot even open is
+       * "not found", the same answer `GET /items/:id` gives. A row they may open
+       * but not edit (a catalogue item in another unit) is a plain 403, because
+       * pretending it vanished from a page they are looking at would be a lie.
+       */
+      if (!capabilitiesFor(req.user!.role).includes("ITEM_EDIT_IDENTITY")) {
+        if (!canOpenItem(req.user, existingItem)) {
+          throw httpError(404, "Item not found");
+        }
+        if (!itemInScope(req.user, existingItem)) {
+          throw httpError(403, "You may only edit items in your own custody");
+        }
       }
 
       /**

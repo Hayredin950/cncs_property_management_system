@@ -1,5 +1,6 @@
 import { Link2, Printer, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "../../app/AuthContext";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -9,6 +10,7 @@ import { SkeletonText } from "../../components/Skeleton";
 import { ConditionBadge } from "../../components/StatusBadges";
 import { TagPanel } from "../../components/TagPanel";
 import { useItemByTagId, useItems } from "../../hooks/useItems";
+import { canEditItemIdentity, canManageTags } from "../../lib/permissions";
 import {
   useLinkAccessories,
   useRegenerateTag,
@@ -38,6 +40,11 @@ export function TagRegenerateSection({
   itemName: string;
   disposed: boolean;
 }) {
+  const { user } = useAuth();
+  // Reading/printing a sticker is not managing it: regenerating writes new
+  // artwork and needs `TAG_MANAGE` (Property Officer). The button used to be
+  // offered to everyone, so a staff member's click was a 403.
+  const mayRegenerate = canManageTags(user?.role);
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Bumped on every successful regeneration so `TagPanel` knows to re-fetch.
   const [tagVersion, setTagVersion] = useState(0);
@@ -55,17 +62,20 @@ export function TagRegenerateSection({
       >
         Print sticker
       </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        leftIcon={<RefreshCw className="h-4 w-4" />}
-        onClick={() => setConfirmOpen(true)}
-        disabled={disposed}
-      >
-        Regenerate tag
-      </Button>
+      {mayRegenerate && (
+        <Button
+          variant="outline"
+          size="sm"
+          leftIcon={<RefreshCw className="h-4 w-4" />}
+          onClick={() => setConfirmOpen(true)}
+          disabled={disposed}
+        >
+          Regenerate tag
+        </Button>
+      )}
 
-      <ConfirmDialog
+      {mayRegenerate && (
+        <ConfirmDialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => {
@@ -84,13 +94,18 @@ export function TagRegenerateSection({
             only if the old one is damaged or lost.
           </>
         }
-      />
+        />
+      )}
     </div>
   );
 }
 
 /** The bundle list (F2.2) — link by tag ID search, unlink inline. */
 export function AccessoriesSection({ itemId, tagId }: { itemId: string; tagId: string }) {
+  const { user } = useAuth();
+  // Re-parenting items into a bundle is `ITEM_EDIT_IDENTITY` (Property Officer).
+  // Everyone else read the list; the controls used to be offered to them too.
+  const mayEdit = canEditItemIdentity(user?.role);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState<{ id: string; name: string } | null>(null);
   const linkMutation = useLinkAccessories(itemId);
@@ -105,9 +120,11 @@ export function AccessoriesSection({ itemId, tagId }: { itemId: string; tagId: s
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
           Accessories ({accessories.length})
         </h2>
-        <Button variant="outline" size="sm" leftIcon={<Link2 className="h-4 w-4" />} onClick={() => setPickerOpen(true)}>
-          Link accessory
-        </Button>
+        {mayEdit && (
+          <Button variant="outline" size="sm" leftIcon={<Link2 className="h-4 w-4" />} onClick={() => setPickerOpen(true)}>
+            Link accessory
+          </Button>
+        )}
       </div>
 
       {accessories.length === 0 ? (
@@ -127,13 +144,15 @@ export function AccessoriesSection({ itemId, tagId }: { itemId: string; tagId: s
               </span>
               <span className="flex items-center gap-2">
                 <ConditionBadge condition={accessory.condition} />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfirmUnlink({ id: accessory.id, name: accessory.name })}
-                >
-                  Unlink
-                </Button>
+                {mayEdit && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmUnlink({ id: accessory.id, name: accessory.name })}
+                  >
+                    Unlink
+                  </Button>
+                )}
               </span>
             </li>
           ))}

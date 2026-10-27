@@ -1,4 +1,4 @@
-import { ClipboardCheck, ClipboardList, History, Package, ScanLine } from "lucide-react";
+import { ClipboardCheck, ClipboardList, History, Package, ScanLine, UserCheck, UserPlus, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
 import { PortalPageHeader, PortalTile } from "../../components/aau/PortalPageHeader";
@@ -10,6 +10,7 @@ import { SkeletonText } from "../../components/Skeleton";
 import { RequestStatusBadge, RequestTypeBadge } from "../../components/StatusBadges";
 import { StatCard } from "../../components/StatCard";
 import { usePendingCount, useRequests, usePendingRequests } from "../../hooks/useRequests";
+import { useApprovalsCount, useUsers } from "../../hooks/useUsers";
 import { useAuditSessionCount } from "../../hooks/useAudits";
 import { formatRelativeTime } from "../../lib/formatters";
 import {
@@ -29,6 +30,7 @@ import { OpenFindings } from "./widgets/OpenFindings";
 import { AuditHistoryQuickList } from "./widgets/AuditHistoryQuickList";
 import { SystemStatus } from "./widgets/SystemStatus";
 import { RecentSystemEvents } from "./widgets/RecentSystemEvents";
+import { SystemUsage } from "./widgets/SystemUsage";
 
 /**
  * `/dashboard` \u2014 Shell B/C, Staff/Admin (F1.3), frontend-design-system.md \u00a710.4.
@@ -55,6 +57,11 @@ export function DashboardPage() {
   const isAuditor = canRunAudits(user?.role);
 
   const pendingQuery = usePendingCount();
+  // The account role's two numbers. Both are `enabled` only for an
+  // administrator: the endpoints behind them answer 403 to everyone else, and a
+  // dashboard must not fire requests its viewer cannot be answered.
+  const approvalsCountQuery = useApprovalsCount(isSystemAdmin && canManageAcc);
+  const accountsQuery = useUsers(isSystemAdmin && canManageAcc);
   const auditCountQuery = useAuditSessionCount(3, isAuditor);
   // For "Needs your review", use the same logic as pending-count: pendingForUser (no date window)
   const needsReviewQuery = usePendingRequests(5);
@@ -172,12 +179,47 @@ export function DashboardPage() {
         <AuditHistoryQuickList />
       )}
 
-      {/* SYSTEM_ADMIN specific widgets */}
+      {/* SYSTEM_ADMIN specific widgets.
+          The account role's dashboard used to open on system-status panels with
+          no number anywhere on it, while every other role had at least one. It
+          now answers the two questions an administrator arrives with — is
+          anybody waiting, and how many accounts are there — and each card opens
+          the tab that answers it (`?tab=`, the same sections the phone's
+          Accounts screen shows). */}
       {isSystemAdmin && canManageAcc && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SystemStatus />
-          <RecentSystemEvents />
-        </div>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <StatCard
+              label="Waiting for approval"
+              value={approvalsCountQuery.data?.count ?? "\u2014"}
+              icon={<UserCheck className="h-5 w-5" />}
+              tone="warning"
+              to="/admin/users?tab=approvals"
+            />
+            <StatCard
+              label="Accounts"
+              value={accountsQuery.data?.length ?? "\u2014"}
+              icon={<Users className="h-5 w-5" />}
+              tone="brand"
+              to="/admin/users?tab=accounts"
+            />
+            <PortalTile
+              to="/admin/users?tab=invite"
+              icon={<UserPlus className="h-7 w-7" />}
+              title="Invite an account"
+              description="Heads, officers, auditors and admins set their own password from the link."
+            />
+          </div>
+          {/* The graphs. The status page has four; the dashboard carries the
+              two that answer "how much is there, and is it growing?" — a count
+              in a tile says how many, a strip of columns says which way it is
+              going. */}
+          <SystemUsage />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SystemStatus />
+            <RecentSystemEvents />
+          </div>
+        </>
       )}
 
       {canViewOwn && (

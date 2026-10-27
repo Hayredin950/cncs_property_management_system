@@ -270,8 +270,8 @@ class ItemDetailView extends StatelessWidget {
                 icon: Icons.public_outlined,
                 rows: [
                   const Text(
-                    'Printed on the sticker and open to anyone: it shows the item\u2019s '
-                    'name, tag, condition and location, and nothing else.',
+                    'Printed on the sticker. A colleague who scans it signs in first, then '
+                    'sees the item\u2019s name, tag, condition and location \u2014 nothing else.',
                     style: TextStyle(fontSize: 13, color: AppColors.aauGray600, height: 1.5),
                   ),
                 ],
@@ -313,6 +313,9 @@ class ItemActionBar extends ConsumerWidget {
     required this.currentUserId,
     required this.currentUserRole,
     required this.currentUserDepartmentId,
+    required this.canEdit,
+    required this.canFileRequest,
+    required this.canClaim,
   });
 
   final Item item;
@@ -323,18 +326,33 @@ class ItemActionBar extends ConsumerWidget {
   final String currentUserRole;
   final String? currentUserDepartmentId;
 
+  /// Capability **and** row: the caller has already answered both for Edit.
+  final bool canEdit;
+
+  /// SYSTEM_ADMIN may not file a request; the API refuses it by name.
+  final bool canFileRequest;
+
+  /// `ITEM_CLAIM` — Staff, Department Head, Property Officer.
+  final bool canClaim;
+
   bool get _isPendingClaim => item.status == ItemStatus.pendingClaim;
 
   bool _canClaimOrRefuse(String? holderType, String? holderId) {
-    if (!_isPendingClaim) return false;
+    if (!canClaim || !_isPendingClaim) return false;
+    // The person the handshake is addressed to, whether staff or head.
     if (holderType == 'STAFF' && holderId == currentUserId) return true;
-    if (currentUserRole == 'DEPARTMENT_HEAD' &&
-        holderType == 'DEPARTMENT' &&
-        holderId == currentUserDepartmentId) return true;
-    if (currentUserRole == 'DEPARTMENT_HEAD' &&
-        holderType == 'STAFF' &&
-        currentUserDepartmentId != null &&
-        item.department == currentUserDepartmentId) return true;
+    if (currentUserRole == 'DEPARTMENT_HEAD') {
+      if (holderType == 'DEPARTMENT' && holderId == currentUserDepartmentId) return true;
+      // A head stands behind the staff of their unit. This compared the item's
+      // department *name* with the head's department *id*, which can never be
+      // equal — so a head could not claim a handover addressed to their own
+      // staff member.
+      if (holderType == 'STAFF' &&
+          currentUserDepartmentId != null &&
+          item.orgUnitId == currentUserDepartmentId) {
+        return true;
+      }
+    }
     return false;
   }
 
@@ -348,35 +366,39 @@ class ItemActionBar extends ConsumerWidget {
       children: [
         Row(
           children: [
-            Expanded(
-              child: AppButton(
-                label: 'Edit',
-                icon: Icons.edit_outlined,
-                variant: AppButtonVariant.primary,
-                expand: true,
-                onPressed: item.isDisposed ? null : onEdit,
+            if (canEdit) ...[
+              Expanded(
+                child: AppButton(
+                  label: 'Edit',
+                  icon: Icons.edit_outlined,
+                  variant: AppButtonVariant.primary,
+                  expand: true,
+                  onPressed: item.isDisposed ? null : onEdit,
+                ),
               ),
-            ),
-            const SizedBox(width: AppSpace.s2),
+              const SizedBox(width: AppSpace.s2),
+            ],
             Expanded(
               child: AppButton(
                 label: 'Tag',
                 icon: Icons.qr_code_2_outlined,
-                variant: AppButtonVariant.outline,
+                variant: canEdit ? AppButtonVariant.outline : AppButtonVariant.secondary,
                 expand: true,
                 onPressed: onViewTag,
               ),
             ),
           ],
         ),
-        const SizedBox(height: AppSpace.s2),
-        AppButton(
-          label: 'File a transfer or disposal request',
-          icon: Icons.assignment_add,
-          variant: AppButtonVariant.secondary,
-          expand: true,
-          onPressed: onFileRequest,
-        ),
+        if (canFileRequest) ...[
+          const SizedBox(height: AppSpace.s2),
+          AppButton(
+            label: 'File a transfer or disposal request',
+            icon: Icons.assignment_add,
+            variant: AppButtonVariant.secondary,
+            expand: true,
+            onPressed: onFileRequest,
+          ),
+        ],
         if (canClaimRefuse) ...[
           const SizedBox(height: AppSpace.s2),
           Row(

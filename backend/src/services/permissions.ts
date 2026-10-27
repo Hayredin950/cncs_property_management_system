@@ -28,6 +28,15 @@ export type Capability =
   | "ITEM_VOID"
   /** Read every item in full, including on a scan (spec 2.2; Yanet's scan rule). */
   | "ITEM_READ_ALL"
+  /**
+   * Read the register: list the rows the role's scope allows and open any row
+   * that list shows. This is the capability `itemScope` asks when it decides
+   * whether a row may be opened at all — a role without it sees no asset data.
+   * Editing is a separate, narrower question (`ITEM_EDIT_CUSTODY` plus the row
+   * scope), which is what keeps "everyone can read a listed item" from also
+   * granting a write.
+   */
+  | "ITEM_READ"
   /** Maintain buildings (spec 7.3). */
   | "BUILDING_MANAGE"
   /** Generate and manage QR tags. */
@@ -95,6 +104,7 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "ITEM_CLAIM",
     "ITEM_VOID",
     "ITEM_READ_ALL",
+    "ITEM_READ",
     "BUILDING_MANAGE",
     "TAG_MANAGE",
     "CATEGORY_MANAGE",
@@ -117,6 +127,7 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "ITEM_EDIT_CUSTODY",
     "ITEM_CLAIM",
     "ITEM_READ_ALL",
+    "ITEM_READ",
     "REQUEST_DECIDE",
     "TRANSFER_APPROVE_STAGE1",
     "TRANSFER_APPROVE_STAGE2",
@@ -126,9 +137,9 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
   ],
   // Scoped to one department. Holds and claims items, files requests, edits
   // condition and notes of what they hold — nothing else.
-  STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM"],
+  STAFF: ["ITEM_EDIT_CUSTODY", "ITEM_CLAIM", "ITEM_READ"],
   // Conducts audits and reads everything read-only. Approves nothing.
-  AUDITOR: ["ITEM_READ_ALL", "AUDIT_RUN", "AUDIT_VIEW", "REPORT_VIEW_ALL"],
+  AUDITOR: ["ITEM_READ_ALL", "ITEM_READ", "AUDIT_RUN", "AUDIT_VIEW", "REPORT_VIEW_ALL"],
 };
 
 export function hasCapability(role: UserRole, capability: Capability): boolean {

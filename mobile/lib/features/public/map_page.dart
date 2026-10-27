@@ -45,7 +45,11 @@ final buildingItemsProvider = FutureProvider<Map<String, List<Item>>>((ref) asyn
   final grouped = <String, List<Item>>{};
 
   for (var page = 1; page <= 4; page++) {
-    final response = await api.list(page: page, limit: 100);
+    // `scope: 'all'` explicitly: with no scope the server narrows a Staff or
+    // Head caller to their own holdings, so the screen showed one building and
+    // read as broken. Every role here holds `ITEM_READ`, which is the grant the
+    // whole register needs; the map is the register, grouped.
+    final response = await api.list(page: page, limit: 100, scope: 'all');
     for (final item in response.items) {
       final building = item.building.trim().isEmpty ? 'Unspecified' : item.building.trim();
       grouped.putIfAbsent(building, () => []).add(item);

@@ -18,7 +18,7 @@ import '../../widgets/app_button.dart';
 /// the UI *pretends* to enforce at zero.
 ///
 /// The copy is the app-level wording, not the item page's "Tag not found." — and
-/// the link back depends on who is looking, because "Back to the register" and
+/// the link back depends on who is looking, because "Back to browse items" and
 /// "Back to home" are different journeys.
 class NotFoundPage extends ConsumerWidget {
   const NotFoundPage({super.key});
@@ -65,7 +65,7 @@ class NotFoundPage extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpace.s5),
               AppButton(
-                label: signedIn ? 'Back to the register' : 'Back to home',
+                label: signedIn ? 'Back to browse items' : 'Back to home',
                 expand: true,
                 icon: Icons.arrow_back,
                 onPressed: () => context.go(signedIn ? '/items' : '/'),

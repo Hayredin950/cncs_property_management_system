@@ -45,6 +45,10 @@ typedef ItemQuery = ({
   String? orgUnitId,
   String? scope,
   String? sort,
+  /// The building's **name**, because that is what `GET /items?building=`
+  /// matches. It is not a permission-sensitive value: the building list is
+  /// public taxonomy, unlike the register rows it filters.
+  String? building,
 });
 
 const ItemQuery _initialItemQuery = (
@@ -54,6 +58,7 @@ const ItemQuery _initialItemQuery = (
   orgUnitId: null,
   scope: null,
   sort: null,
+  building: null,
 );
 
 class ItemQueryNotifier extends Notifier<ItemQuery> {
@@ -70,6 +75,7 @@ class ItemQueryNotifier extends Notifier<ItemQuery> {
     orgUnitId: state.orgUnitId,
     scope: state.scope,
     sort: state.sort,
+    building: state.building,
   );
 
   void setCategory(String? categoryId) => state = (
@@ -79,6 +85,7 @@ class ItemQueryNotifier extends Notifier<ItemQuery> {
     orgUnitId: state.orgUnitId,
     scope: state.scope,
     sort: state.sort,
+    building: state.building,
   );
 
   /// Picks one department (an `OrgUnit` id) inside the current scope.
@@ -89,6 +96,18 @@ class ItemQueryNotifier extends Notifier<ItemQuery> {
     orgUnitId: _clean(orgUnitId),
     scope: state.scope,
     sort: state.sort,
+    building: state.building,
+  );
+
+  /// Picks one building (by name — the server matches `buildingRef.name`).
+  void setBuilding(String? building) => state = (
+    page: 1,
+    search: state.search,
+    categoryId: state.categoryId,
+    orgUnitId: state.orgUnitId,
+    scope: state.scope,
+    sort: state.sort,
+    building: _clean(building),
   );
 
   /// Switches the view. A department filter chosen under another view is cleared,
@@ -104,6 +123,7 @@ class ItemQueryNotifier extends Notifier<ItemQuery> {
       orgUnitId: locksDepartment ? null : state.orgUnitId,
       scope: next,
       sort: state.sort,
+      building: state.building,
     );
   }
 
@@ -114,6 +134,7 @@ class ItemQueryNotifier extends Notifier<ItemQuery> {
     orgUnitId: state.orgUnitId,
     scope: state.scope,
     sort: _clean(sort),
+    building: state.building,
   );
 
   void setPage(int page) => state = (
@@ -123,6 +144,7 @@ class ItemQueryNotifier extends Notifier<ItemQuery> {
     orgUnitId: state.orgUnitId,
     scope: state.scope,
     sort: state.sort,
+    building: state.building,
   );
 
   void clear() => state = _initialItemQuery;
@@ -142,6 +164,7 @@ final activeFilterCountProvider = Provider<int>((ref) {
   final query = ref.watch(itemQueryProvider);
   return (query.categoryId == null ? 0 : 1) +
       (query.orgUnitId == null ? 0 : 1) +
+      (query.building == null ? 0 : 1) +
       (query.sort == null ? 0 : 1);
 });
 
@@ -173,6 +196,7 @@ class ItemListNotifier extends AsyncNotifier<ItemsListResponse> {
           orgUnitId: query.orgUnitId,
           scope: scope,
           sort: query.sort,
+          building: query.building,
         );
   }
 }

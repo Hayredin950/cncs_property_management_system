@@ -7,9 +7,12 @@ import '../../core/api/api_error.dart';
 import '../../data/providers/auth_provider.dart';
 import '../../data/providers/items_provider.dart';
 import '../../data/providers/taxonomy_provider.dart';
+import '../../models/building.dart';
 import '../../models/category.dart';
+import '../../models/department.dart';
 import '../../models/enums.dart';
 import '../../models/item.dart';
+import '../../models/permissions.dart';
 import '../../models/user.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
@@ -50,7 +53,6 @@ class ItemFormPage extends ConsumerStatefulWidget {
 
 class _ItemFormPageState extends ConsumerState<ItemFormPage> {
   final _name = TextEditingController();
-  final _building = TextEditingController();
   final _floor = TextEditingController();
   final _room = TextEditingController();
   final _purchaseCost = TextEditingController();
@@ -66,8 +68,20 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
   /// — doing so leaks one per frame and drops whatever the cursor was doing.
   final _ownerDisplay = TextEditingController();
 
+  /// Read-only location values in edit mode, seeded once like `_ownerDisplay` —
+  /// constructing a controller inside `build` would leak one per frame.
+  final _departmentDisplay = TextEditingController();
+  final _buildingDisplay = TextEditingController();
+
   String? _categoryId;
-  String? _department;
+
+  /// The owning department's **id**. Registration writes `orgUnitId`; the name is
+  /// only ever a display value, and sending the name is a 400.
+  String? _orgUnitId;
+
+  /// The building's **id**, `buildingId` on the wire, same reasoning.
+  String? _buildingId;
+
   String? _ownerId;
   var _condition = Condition.good;
   var _submitting = false;
@@ -85,7 +99,6 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
   void dispose() {
     for (final controller in [
       _name,
-      _building,
       _floor,
       _room,
       _purchaseCost,
@@ -96,6 +109,8 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
       _photoUrl,
       _notes,
       _ownerDisplay,
+      _departmentDisplay,
+      _buildingDisplay,
     ]) {
       controller.dispose();
     }
@@ -111,7 +126,6 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
     if (_seeded) return;
     _seeded = true;
     _name.text = item.name;
-    _building.text = item.building;
     _floor.text = item.floor;
     _room.text = item.room;
     _purchaseCost.text = item.purchaseCost ?? '';
@@ -122,9 +136,12 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
     _photoUrl.text = item.photoUrl ?? '';
     _notes.text = item.notes ?? '';
     _categoryId = item.categoryId;
-    _department = item.department;
+    _orgUnitId = item.orgUnitId;
+    _buildingId = item.buildingId;
     _ownerId = item.ownerId;
     _ownerDisplay.text = item.ownerName ?? 'No owner recorded';
+    _departmentDisplay.text = item.department;
+    _buildingDisplay.text = item.building;
     _condition = item.condition == Condition.unknown ? Condition.good : item.condition;
   }
 
@@ -155,8 +172,65 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
 
     final existing = item?.value;
     final disposed = existing?.isDisposed ?? false;
+
+    final auth = ref.watch(authProvider);
+    final user = auth.user;
+
+    /// Two separate questions, mirroring the server (SRS 4.7):
+    ///
+    ///   * **Can this viewer edit this row at all?** — custody scope. Staff edit
+    ///     what they hold, a head their own unit, the Property Officer anything.
+    ///   * **Which fields?** — only `ITEM_EDIT_IDENTITY` (the Property Officer)
+    ///     may change identity, financial and photo fields. A custodian edits the
+    ///     condition and the notes, which is the job the role was given.
+    final canEditThisItem = existing == null ||
+        (user != null &&
+            canEditItem(
+              role: user.role,
+              userId: user.id,
+              departmentId: user.departmentId,
+              ownerId: existing.ownerId,
+              holderType: existing.holderType,
+              holderId: existing.holderId,
+              orgUnitId: existing.orgUnitId,
+            ));
+
+    // The edit link can be opened directly. Refuse here rather than let the form
+    // fill in and fail on Save with a 403 the user could not have predicted.
+    if (_isEdit && existing != null && !canEditThisItem) {
+      return PageScaffold(
+        title: 'Item',
+        maxWidth: 640,
+        children: [
+          const InfoNote(
+            icon: Icons.lock_outline,
+            message: 'You can only edit items in your own custody. This item belongs to '
+                'someone else \u2014 file a transfer request if it should move to you.',
+            tone: InfoTone.neutral,
+          ),
+          const SizedBox(height: AppSpace.s4),
+          AppButton(
+            label: 'Back to the item',
+            variant: AppButtonVariant.outline,
+            expand: true,
+            onPressed: () => context.pop(),
+          ),
+        ],
+      );
+    }
+
+    final canEditIdentity = auth.canEditItemIdentity;
     final categories = ref.watch(categoriesProvider).value ?? const <Category>[];
-    final departments = ref.watch(observedDepartmentsProvider).value ?? const <String>[];
+    // The real departments and buildings exist only to fill the **create** form.
+    // In edit mode location is transfer-only and already on the row, so there is
+    // nothing to fetch — and a staff member has no `BUILDING_MANAGE` for the
+    // building list anyway.
+    final departments = _isEdit
+        ? const <Department>[]
+        : (ref.watch(departmentsProvider).value ?? const <Department>[]);
+    final buildings = _isEdit
+        ? const <Building>[]
+        : (ref.watch(buildingsProvider).value ?? const <Building>[]);
 
     return Column(
       children: [
@@ -178,7 +252,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                   ),
                 ),
 
-              _photoField(),
+              _photoField(editable: !disposed && canEditIdentity),
               const SizedBox(height: AppSpace.s5),
 
               AppFormSection(
@@ -187,7 +261,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                   AppTextField(
                     label: 'Name',
                     controller: _name,
-                    enabled: !disposed,
+                    enabled: !disposed && canEditIdentity,
                     hint: 'Dell Latitude 5420',
                     errorText: _fieldErrors['name'],
                     required: true,
@@ -195,7 +269,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                   AppSelectField<String>(
                     label: 'Category',
                     value: _categoryId,
-                    enabled: !disposed,
+                    enabled: !disposed && canEditIdentity,
                     options: [for (final category in categories) category.id],
                     labelOf: (id) => _categoryName(categories, id),
                     errorText: _fieldErrors['categoryId'],
@@ -216,20 +290,50 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                     ? 'Moving an item is an approved transfer, so these are read-only here.'
                     : null,
                 children: [
-                  AppDepartmentField(
-                    value: _department,
-                    options: departments,
-                    enabled: !disposed,
-                    errorText: _fieldErrors['department'],
-                    onChanged: (value) => setState(() => _department = value),
-                  ),
-                  AppTextField(
-                    label: 'Building',
-                    controller: _building,
-                    enabled: !disposed && !_isEdit,
-                    required: true,
-                    errorText: _fieldErrors['building'],
-                  ),
+                  if (_isEdit) ...[
+                    // Read-only, by design: a move or a re-assignment is an
+                    // approved TRANSFER, and `PUT /items/:id` refuses the column
+                    // for every role. A writable-looking field would be one whose
+                    // value silently vanishes on save.
+                    AppTextField(
+                      label: 'Department',
+                      controller: _departmentDisplay,
+                      enabled: false,
+                      helper: 'Changing the department goes through an approved transfer.',
+                    ),
+                    AppTextField(
+                      label: 'Building',
+                      controller: _buildingDisplay,
+                      enabled: false,
+                    ),
+                  ] else ...[
+                    AppSelectField<String>(
+                      label: 'Department',
+                      value: _orgUnitId,
+                      enabled: !disposed,
+                      options: [for (final department in departments) department.id],
+                      labelOf: (id) => _departmentName(departments, id),
+                      errorText: _fieldErrors['orgUnitId'],
+                      helper: departments.isEmpty
+                          ? 'No departments are available to choose from.'
+                          : 'The department that will own this item.',
+                      required: true,
+                      onChanged: (value) => setState(() => _orgUnitId = value),
+                    ),
+                    AppSelectField<String>(
+                      label: 'Building',
+                      value: _buildingId,
+                      enabled: !disposed,
+                      options: [for (final building in buildings) building.id],
+                      labelOf: (id) => _buildingName(buildings, id),
+                      errorText: _fieldErrors['buildingId'],
+                      helper: buildings.isEmpty
+                          ? 'No buildings are available to choose from.'
+                          : 'The building the item sits in.',
+                      required: true,
+                      onChanged: (value) => setState(() => _buildingId = value),
+                    ),
+                  ],
                   Row(
                     children: [
                       Expanded(
@@ -270,7 +374,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                   AppTextField(
                     label: 'Purchase cost (ETB)',
                     controller: _purchaseCost,
-                    enabled: !disposed,
+                    enabled: !disposed && canEditIdentity,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     hint: '45000',
                     required: true,
@@ -280,7 +384,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                   AppTextField(
                     label: 'Current value (ETB)',
                     controller: _currentValue,
-                    enabled: !disposed,
+                    enabled: !disposed && canEditIdentity,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     hint: 'Optional',
                     errorText: _fieldErrors['currentValue'],
@@ -305,19 +409,19 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                   AppTextField(
                     label: 'Brand',
                     controller: _brand,
-                    enabled: !disposed,
+                    enabled: !disposed && canEditIdentity,
                     hint: 'Dell',
                   ),
                   AppTextField(
                     label: 'Model',
                     controller: _model,
-                    enabled: !disposed,
+                    enabled: !disposed && canEditIdentity,
                     hint: 'Latitude 5420',
                   ),
                   AppTextField(
                     label: 'Serial number',
                     controller: _serial,
-                    enabled: !disposed,
+                    enabled: !disposed && canEditIdentity,
                     mono: true,
                   ),
                   AppTextArea(
@@ -342,7 +446,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
     );
   }
 
-  Widget _photoField() {
+  Widget _photoField({required bool editable}) {
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -361,32 +465,43 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
             categoryName: null,
             radius: AppRadius.md,
           ),
-          const SizedBox(height: AppSpace.s3),
-          Row(
-            children: [
-              Expanded(
-                child: AppButton(
-                  label: 'Camera',
-                  icon: Icons.photo_camera_outlined,
-                  variant: AppButtonVariant.outline,
-                  expand: true,
-                  loading: _uploading,
-                  onPressed: _uploading ? null : () => _pick(ImageSource.camera),
+          if (editable) ...[
+            const SizedBox(height: AppSpace.s3),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    label: 'Camera',
+                    icon: Icons.photo_camera_outlined,
+                    variant: AppButtonVariant.outline,
+                    expand: true,
+                    loading: _uploading,
+                    onPressed: _uploading ? null : () => _pick(ImageSource.camera),
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpace.s2),
-              Expanded(
-                child: AppButton(
-                  label: 'Library',
-                  icon: Icons.photo_library_outlined,
-                  variant: AppButtonVariant.outline,
-                  expand: true,
-                  onPressed: _uploading ? null : () => _pick(ImageSource.gallery),
+                const SizedBox(width: AppSpace.s2),
+                Expanded(
+                  child: AppButton(
+                    label: 'Library',
+                    icon: Icons.photo_library_outlined,
+                    variant: AppButtonVariant.outline,
+                    expand: true,
+                    onPressed: _uploading ? null : () => _pick(ImageSource.gallery),
+                  ),
                 ),
+              ],
+            ),
+          ],
+          if (!editable)
+            const Padding(
+              padding: EdgeInsets.only(top: AppSpace.s3),
+              child: Text(
+                'Photos belong to the Property Officer\u2019s record, so this one is shown '
+                'read-only.',
+                style: TextStyle(fontSize: 12, color: AppColors.aauGray500, height: 1.45),
               ),
-            ],
-          ),
-          if (_photoUrl.text.trim().isNotEmpty) ...[
+            ),
+          if (editable && _photoUrl.text.trim().isNotEmpty) ...[
             const SizedBox(height: AppSpace.s3),
             Row(
               children: [
@@ -410,7 +525,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                 ),
               ],
             ),
-          ] else ...[
+          ] else if (editable) ...[
             const SizedBox(height: AppSpace.s3),
             AppTextField(
               label: 'Or paste a photo URL',
@@ -579,31 +694,44 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
   }
 
   Future<void> _submit() async {
+    final canEditIdentity = ref.read(authProvider).canEditItemIdentity;
+
     // Client-side validation mirrors the server's own required fields, so the only
     // way to see the API's validation error is a genuine edge case rather than a
-    // form that should have caught it first.
+    // form that should have caught it first. What is required depends on the mode
+    // *and* on what this viewer may change: a staff custodian does not fill in an
+    // item's name or cost, so asking them to would be asking for a field they
+    // cannot save.
     final errors = <String, String?>{};
-    if (_name.text.trim().isEmpty) errors['name'] = 'Give the item a name.';
-    if (_categoryId == null) errors['categoryId'] = 'Choose a category.';
-    if (_department == null || _department!.trim().isEmpty) {
-      errors['department'] = 'Choose or type a department.';
+    if (!_isEdit || canEditIdentity) {
+      if (_name.text.trim().isEmpty) errors['name'] = 'Give the item a name.';
+      if (_categoryId == null) errors['categoryId'] = 'Choose a category.';
     }
-    if (_building.text.trim().isEmpty) errors['building'] = 'Required.';
-    if (_floor.text.trim().isEmpty) errors['floor'] = 'Required.';
-    if (_room.text.trim().isEmpty) errors['room'] = 'Required.';
+    if (!_isEdit) {
+      if (_orgUnitId == null || _orgUnitId!.isEmpty) {
+        errors['orgUnitId'] = 'Choose a department.';
+      }
+      if (_buildingId == null || _buildingId!.isEmpty) {
+        errors['buildingId'] = 'Choose a building.';
+      }
+      if (_floor.text.trim().isEmpty) errors['floor'] = 'Required.';
+      if (_room.text.trim().isEmpty) errors['room'] = 'Required.';
+    }
 
     final purchase = num.tryParse(_purchaseCost.text.trim());
-    if (purchase == null) {
+    if ((!_isEdit || canEditIdentity) && _purchaseCost.text.trim().isNotEmpty) {
+      if (purchase == null || purchase <= 0) {
+        errors['purchaseCost'] = 'Enter a cost greater than zero, e.g. 45000.';
+      }
+    } else if (!_isEdit && _purchaseCost.text.trim().isEmpty) {
       errors['purchaseCost'] = 'Enter the cost as a number, e.g. 45000.';
-    } else if (purchase < 0) {
-      errors['purchaseCost'] = 'A cost cannot be negative.';
     }
 
     final current = _currentValue.text.trim().isEmpty
         ? null
         : num.tryParse(_currentValue.text.trim());
-    if (_currentValue.text.trim().isNotEmpty && current == null) {
-      errors['currentValue'] = 'Enter a number, or leave this empty.';
+    if (_currentValue.text.trim().isNotEmpty && (current == null || current <= 0)) {
+      errors['currentValue'] = 'Enter a value greater than zero, or leave this empty.';
     }
     final ownerId = _ownerId ?? ref.read(currentUserProvider)?.id;
     if (!_isEdit && (ownerId == null || ownerId.isEmpty)) {
@@ -631,21 +759,31 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
       final actions = ref.read(itemActionsProvider);
 
       if (_isEdit) {
-        // The four transfer-only fields are deliberately absent, and the API module
-        // would strip them anyway — sending them would be a 400 for every role.
-        await actions.update(widget.itemId!, {
-          'name': _name.text.trim(),
-          'categoryId': _categoryId,
-          'department': _department!.trim(),
-          'purchaseCost': purchase,
-          'currentValue': current,
+        // Send only what this viewer may change. The server refuses a changed
+        // identity/financial field from a custodian (403), and resubmitting
+        // untouched fields merely to keep the map uniform invites that refusal;
+        // a staff member's save is condition and notes, the two fields SRS 4.7
+        // gives them.
+        final updates = <String, dynamic>{
           'condition': _condition.wire,
-          'brand': _blankToNull(_brand.text),
-          'model': _blankToNull(_model.text),
-          'serialNumber': _blankToNull(_serial.text),
-          'photoUrl': _blankToNull(_photoUrl.text),
           'notes': _blankToNull(_notes.text),
-        });
+        };
+        if (canEditIdentity) {
+          updates.addAll({
+            'name': _name.text.trim(),
+            'categoryId': _categoryId,
+            'purchaseCost': ?purchase,
+            'currentValue': current,
+            'brand': _blankToNull(_brand.text),
+            'model': _blankToNull(_model.text),
+            'serialNumber': _blankToNull(_serial.text),
+            'photoUrl': _blankToNull(_photoUrl.text),
+          });
+        }
+        // The transfer-only columns (building, floor, room, owner) are absent on
+        // purpose and the API module strips them anyway — sending them is a 400
+        // for every role.
+        await actions.update(widget.itemId!, updates);
         if (!mounted) return;
         showAppToast(context, message: 'Changes saved.', tone: ToastTone.success);
         context.pop();
@@ -654,8 +792,8 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
           CreateItemPayload(
             name: _name.text.trim(),
             categoryId: _categoryId!,
-            department: _department!.trim(),
-            building: _building.text.trim(),
+            orgUnitId: _orgUnitId!,
+            buildingId: _buildingId!,
             floor: _floor.text.trim(),
             room: _room.text.trim(),
             ownerId: ownerId!,
@@ -706,6 +844,20 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
     return 'Category';
   }
 
+  static String _departmentName(List<Department> departments, String id) {
+    for (final department in departments) {
+      if (department.id == id) return department.name;
+    }
+    return 'Department';
+  }
+
+  static String _buildingName(List<Building> buildings, String id) {
+    for (final building in buildings) {
+      if (building.id == id) return building.name;
+    }
+    return 'Building';
+  }
+
   static String _accountName(List<UserSummary> accounts, String id, String? currentUserId) {
     for (final account in accounts) {
       if (account.id == id) {
@@ -713,96 +865,5 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
       }
     }
     return 'Account';
-  }
-}
-
-/// The department control, in §8's **free-entry** mode.
-///
-/// There is no `GET /departments` endpoint (gap G9) — `department` is a free-text
-/// column — so registration must be able to invent a value. The control suggests the
-/// departments already observed on active items and accepts anything typed, which is
-/// the opposite of the audit's scope picker, where an exact match is required and free
-/// text would start an audit that can never complete.
-class AppDepartmentField extends StatefulWidget {
-  const AppDepartmentField({
-    super.key,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-    this.enabled = true,
-    this.errorText,
-  });
-
-  final String? value;
-  final List<String> options;
-  final ValueChanged<String?> onChanged;
-  final bool enabled;
-  final String? errorText;
-
-  @override
-  State<AppDepartmentField> createState() => _AppDepartmentFieldState();
-}
-
-class _AppDepartmentFieldState extends State<AppDepartmentField> {
-  late final _controller = TextEditingController(text: widget.value ?? '');
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Suggestions, filtered to what is not already typed. Tapping one fills the
-    // field: a phone keyboard is the wrong place to retype "Computer Science", and
-    // the audit's exact-match rule makes a typo here expensive later.
-    final typed = _controller.text.trim().toLowerCase();
-    final suggestions = [
-      for (final option in widget.options)
-        if (typed.isEmpty || option.toLowerCase().contains(typed)) option,
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AppTextField(
-          label: 'Department',
-          controller: _controller,
-          enabled: widget.enabled,
-          hint: 'Computer Science',
-          errorText: widget.errorText,
-          required: true,
-          onChanged: (value) {
-            widget.onChanged(value);
-            setState(() {});
-          },
-          helper: widget.options.isEmpty
-              ? 'There is no department list to choose from \u2014 type the name the property '
-                  'office uses.'
-              : 'Type a new department, or tap one that is already in use.',
-        ),
-        if (widget.enabled && suggestions.isNotEmpty) ...[
-          const SizedBox(height: AppSpace.s2),
-          Wrap(
-            spacing: AppSpace.s2,
-            runSpacing: AppSpace.s2,
-            children: [
-              for (final option in suggestions.take(6))
-                ActionChip(
-                  label: Text(option, style: const TextStyle(fontSize: 12.5)),
-                  backgroundColor: AppColors.aauGray100,
-                  side: const BorderSide(color: AppColors.aauGray200),
-                  onPressed: () {
-                    _controller.text = option;
-                    widget.onChanged(option);
-                    setState(() {});
-                  },
-                ),
-            ],
-          ),
-        ],
-      ],
-    );
   }
 }

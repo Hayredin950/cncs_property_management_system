@@ -84,12 +84,13 @@ void main() {
     final api = FakeApi()
       ..get('/users', <Object>[])
       ..get('/users/approvals', <Object>[])
+      ..get('/users/invites', <Object>[])
       ..get('/departments/invitable', _units())
       ..post('/users/invite', _inviteJson(email: 'newhead@cncs.aau.edu.et'), status: 201);
 
     await pumpPage(
       tester,
-      const AdminUsersPage(),
+      const AdminUsersPage(section: 'invite'),
       api: api,
       extraOverrides: [currentUserProvider.overrideWithValue(_admin)],
     );
@@ -128,12 +129,13 @@ void main() {
     final api = FakeApi()
       ..get('/users', <Object>[])
       ..get('/users/approvals', <Object>[])
+      ..get('/users/invites', <Object>[])
       ..get('/departments/invitable', _units())
       ..post('/users/invite', _inviteJson(email: 'newhead@cncs.aau.edu.et'), status: 201);
 
     await pumpPage(
       tester,
-      const AdminUsersPage(),
+      const AdminUsersPage(section: 'invite'),
       api: api,
       extraOverrides: [currentUserProvider.overrideWithValue(_admin)],
     );
@@ -156,11 +158,12 @@ void main() {
     final api = FakeApi()
       ..get('/users', <Object>[])
       ..get('/users/approvals', <Object>[])
+      ..get('/users/invites', <Object>[])
       ..get('/departments/invitable', _units());
 
     await pumpPage(
       tester,
-      const AdminUsersPage(),
+      const AdminUsersPage(section: 'invite'),
       api: api,
       extraOverrides: [currentUserProvider.overrideWithValue(_admin)],
     );
@@ -180,13 +183,14 @@ void main() {
     final api = FakeApi()
       ..get('/users', <Object>[])
       ..get('/users/approvals', <Object>[])
+      ..get('/users/invites', <Object>[])
       ..get('/departments/invitable', _units())
       ..post('/users/invite', _inviteJson(email: 'auditor@cncs.aau.edu.et', role: 'AUDITOR'),
           status: 201);
 
     await pumpPage(
       tester,
-      const AdminUsersPage(),
+      const AdminUsersPage(section: 'invite'),
       api: api,
       extraOverrides: [currentUserProvider.overrideWithValue(_admin)],
     );
@@ -214,11 +218,12 @@ void main() {
     final api = FakeApi()
       ..get('/users', <Object>[])
       ..get('/users/approvals', <Object>[])
+      ..get('/users/invites', <Object>[])
       ..get('/departments/invitable', _units());
 
     await pumpPage(
       tester,
-      const AdminUsersPage(),
+      const AdminUsersPage(section: 'invite'),
       api: api,
       extraOverrides: [currentUserProvider.overrideWithValue(_admin)],
     );

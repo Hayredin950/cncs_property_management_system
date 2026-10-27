@@ -1126,11 +1126,13 @@ requestsRouter.post(
         throw httpError(401, "Not authenticated");
       }
 
+      // The lender's answer to the borrower's hand-back, so the borrower may not
+      // file it — the same rule as confirming the return.
       const isBorrower = request.requestedById === req.user!.id;
-      const isReleasingHead = request.item.holderType === "STAFF" && request.item.holderId === req.user!.id;
       const isPropertyOfficer = returner.role === "PROPERTY_OFFICER";
-      if (!isBorrower && !isReleasingHead && !isPropertyOfficer) {
-        throw httpError(403, "Only the borrower, releasing head, or property officer can dispute this return");
+      const isReviewingOfficer = request.reviewedById === req.user!.id;
+      if (isBorrower || (!isPropertyOfficer && !isReviewingOfficer)) {
+        throw httpError(403, "Only the lender or the property officer can dispute this return");
       }
 
       // Update request status back to APPROVED (loan still active) and log dispute

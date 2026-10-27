@@ -63,11 +63,19 @@ final dashboardStatsProvider = FutureProvider<DashboardStats>((ref) async {
   );
 });
 
-/// The dashboard's preview list: for an admin, what needs review; for a staff
-/// member, their own most recent requests. The **server** makes that distinction
-/// (`GET /requests` already scopes by role), so this asks one endpoint and renders
-/// whatever came back, rather than branching on the role client-side and risking a
-/// disagreement with what the API would have returned.
+/// The dashboard's preview list: for a reviewer, the queue they decide; for a
+/// staff member, their own most recent requests.
+///
+/// **Status is part of the question, not a presentation detail.** The tile beside
+/// this list shows `GET /requests/pending-count`, which counts `PENDING` rows in the
+/// viewer's queue; the list used to ask for the newest five requests of *any*
+/// status. A Property Officer therefore read "13 Pending review" next to "Nothing
+/// waiting on you", because the five newest rows happened to be decided already.
+/// Both halves now name `PENDING`, and the section's empty state is only allowed to
+/// say "nothing" when the count agrees.
 final dashboardPreviewProvider = FutureProvider((ref) {
-  return ref.watch(requestsApiProvider).list(limit: 5);
+  final role = ref.watch(currentUserProvider)?.role;
+  return ref
+      .watch(requestsApiProvider)
+      .list(limit: 5, status: canDecideRequests(role) ? 'PENDING' : null);
 });

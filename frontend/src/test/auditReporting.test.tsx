@@ -388,6 +388,10 @@ describe("report exports (F10)", () => {
 
 describe("/map (F5.2)", () => {
   it("groups the register by building and links into each item's public page", async () => {
+    // The map is derived from the register, so it needs the same account the
+    // register does (`GET /items` is authenticate-only). It used to be a public
+    // page, which meant an anonymous visitor got a 401 instead of a map.
+    setToken("test-token");
     server.use(
       http.get(`${API}/items`, () =>
         HttpResponse.json(ITEMS_LIST([PRIVILEGED_ITEM, { ...ACCESSORY_ITEM, building: "Building 3" }])),

@@ -6,6 +6,7 @@ import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorState } from "../../components/ErrorState";
+import { SearchBar } from "../../components/SearchBar";
 import { IconButton } from "../../components/IconButton";
 import { Input } from "../../components/Input";
 import { Modal } from "../../components/Modal";
@@ -55,6 +56,13 @@ export function AdminBuildingsPage() {
   const updateMutation = useUpdateBuilding();
   const deleteMutation = useDeleteBuilding();
 
+  /**
+   * Two jobs, two tabs. The form and the list used to be stacked on one page, so
+   * the list the officer came for sat below a screenful of inputs. The same
+   * split the Accounts screen uses keeps each job one tap away.
+   */
+  const [activeTab, setActiveTab] = useState<"list" | "add">("list");
+  const [search, setSearch] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Building | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -77,6 +85,10 @@ export function AdminBuildingsPage() {
         description: values.description.trim() || undefined,
       });
       reset({ name: "", code: "", address: "", description: "" });
+      // Back to the list, where the new row is: the next question is "is it
+      // there?", and an emptied form does not answer it.
+      setActiveTab("list");
+      setSearch("");
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : "Couldn't reach the server.");
     }
@@ -110,6 +122,18 @@ export function AdminBuildingsPage() {
     }
   }
 
+  // Search is local: the college's buildings are tens of rows, and a request per
+  // keystroke would make the field feel broken.
+  const matches = (buildingsQuery.data ?? []).filter((building) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      building.name.toLowerCase().includes(query) ||
+      building.code.toLowerCase().includes(query) ||
+      (building.address ?? "").toLowerCase().includes(query)
+    );
+  });
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div>
@@ -120,6 +144,31 @@ export function AdminBuildingsPage() {
         </p>
       </div>
 
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("list")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "list"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Buildings
+          {(buildingsQuery.data ?? []).length > 0 && ` (${(buildingsQuery.data ?? []).length})`}
+        </button>
+        <button
+          onClick={() => setActiveTab("add")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "add"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Add a building
+        </button>
+      </div>
+
+      {activeTab === "add" && (
       <Card>
         <form onSubmit={handleSubmit(onCreate)} noValidate className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -153,9 +202,17 @@ export function AdminBuildingsPage() {
           )}
         </form>
       </Card>
+      )}
 
+      {activeTab === "list" && (
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Existing buildings</h2>
+        <div className="mb-3 max-w-sm">
+          <SearchBar
+            value={search}
+            onChange={setSearch}
+            placeholder="Search name, code or address"
+          />
+        </div>
 
         {buildingsQuery.isPending ? (
           <div className="flex flex-col gap-2" role="status" aria-label="Loading buildings">
@@ -179,9 +236,16 @@ export function AdminBuildingsPage() {
             No buildings yet. Add the college&apos;s first building to start registering assets against
             it.
           </Card>
+        ) : matches.length === 0 ? (
+          <Card className="flex flex-col items-start gap-1 text-sm text-slate-500">
+            <p>No building matches &ldquo;{search.trim()}&rdquo;.</p>
+            <Button variant="ghost" size="sm" onClick={() => setSearch("")}>
+              Clear the search
+            </Button>
+          </Card>
         ) : (
           <ul className="flex flex-col gap-2">
-            {(buildingsQuery.data ?? []).map((building) => {
+            {matches.map((building) => {
               const inUse = building.itemCount > 0;
               return (
                 <li key={building.id}>
@@ -236,6 +300,7 @@ export function AdminBuildingsPage() {
           </ul>
         )}
       </section>
+      )}
 
       <Modal
         open={editing !== null}

@@ -8,6 +8,7 @@ import { ItemActions } from "../../components/ItemActions";
 import { ItemDetailView } from "../../components/ItemDetailView";
 import { Skeleton, SkeletonText } from "../../components/Skeleton";
 import { ItemHistorySection } from "../items/ItemHistorySection";
+import { seesFullItemDetail } from "../../lib/permissions";
 import { ItemCustodyActions } from "../items/ItemCustodyActions";
 import { AccessoriesSection, TagRegenerateSection } from "../items/ItemStaffSections";
 import { useItemByTagId } from "../../hooks/useItems";
@@ -187,7 +188,10 @@ export function ItemDetailPage() {
                 <AccessoriesSection itemId={item.id} tagId={item.tagId} />
               </div>
 
-              <ItemHistorySection itemId={item.id} />
+              {user &&
+                seesFullItemDetail(user.role, user.id, user.departmentId, item) && (
+                  <ItemHistorySection itemId={item.id} />
+                )}
             </div>
           )}
         </div>

@@ -1,16 +1,25 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { renderWithProviders } from "../../test/utils";
-import { setToken, clearToken } from "../../lib/storage";
+import { setToken } from "../../lib/storage";
+import { server } from "../../test/msw/server";
+import { PUBLIC_ITEM } from "../../test/fixtures";
+
+const API = "http://localhost:4000/api/v1";
 
 /**
  * The Phase 1 test the plan calls the highest priority
- * (Frontend_Three_Phase_Plan.md §2): an anonymous render of `/item/:tagId`
- * contains none of the restricted fields, while a staff/admin render shows
- * them. The *server* strips the fields (`sanitizeItem`); these tests assert the
- * frontend renders exactly what each response contains — no client-side
- * re-hiding, and no privileged leakage either.
+ * (Frontend_Three_Phase_Plan.md §2): the page renders exactly the fields the
+ * response contains — no client-side re-hiding, and no privileged leakage.
+ *
+ * The original version of this file rendered `/item/:tagId` anonymously,
+ * because the route used to be a public read. Since 15 Oct every item read
+ * requires a token (`GET /items*`), so an anonymous visit is now a sign-in
+ * prompt (`shellNavigation.test.tsx` pins that). What remains worth testing is
+ * the **payload** contract: a restricted response is shown as-is, and a
+ * privileged one is not filtered by the client either.
  *
  * Field list from frontend-plan.md §5 (SRS §3.4): cost, value, owner name,
  * brand, model, serial number, notes, accessories.
@@ -18,16 +27,21 @@ import { setToken, clearToken } from "../../lib/storage";
 const RESTRICTED_STRINGS = ["ETB", "Abebe Admin", "admin@cncs.aau.edu.et", "Dell", "Latitude 5440", "DL5440-0092", "Charger kept in the drawer"];
 
 describe("/item/:tagId — field-visibility matrix", () => {
-  it("renders no restricted field for an anonymous viewer", async () => {
-    clearToken();
+  it("renders a restricted payload as-is — no field is hidden or invented client-side", async () => {
+    // A viewer outside the item's scope receives `sanitizeItem`'s short shape.
+    // The session is real; the payload is the restricted one.
+    setToken("test-token");
+    server.use(http.get(`${API}/items/:tagId`, () => HttpResponse.json(PUBLIC_ITEM)));
+
     renderWithProviders({ initialEntries: ["/item/CNCS-AB12CD34"] });
 
+    await screen.findByText("Navigation");
     const main = await screen.findByRole("main");
     await waitFor(() => {
       expect(within(main).getByText("Dell Latitude 5440")).toBeInTheDocument();
     });
 
-    // Location is public (SRS §3.4) and must be visible to everyone.
+    // Location is part of the restricted shape (SRS §3.4) and is visible.
     expect(within(main).getByText("Building 1")).toBeInTheDocument();
 
     for (const restricted of RESTRICTED_STRINGS) {
@@ -112,9 +126,21 @@ describe("/item/:tagId — staff detail & tag disclosure", () => {
 
 describe("/item/:tagId — failure states", () => {
   it("renders 410 as the designed disposed state with F7.3's exact sentence", async () => {
-    clearToken();
+    // F7.3 is still the spec even though today's token-only route returns the
+    // record to a signed-in viewer of a disposed item (backend items.ts notes
+    // the open question). The branch therefore stays tested at its contract:
+    // if the API answers 410, this is exactly what the page says.
+    setToken("test-token");
+    server.use(
+      http.get(`${API}/items/CNCS-DEAD0000`, () =>
+        HttpResponse.json({ error: "This item is no longer in service" }, { status: 410 }),
+      ),
+    );
     renderWithProviders({ initialEntries: ["/item/CNCS-DEAD0000"] });
 
+    // Wait for the guarded page to settle: `RequireAuth` paints its own
+    // skeleton inside the shell while `/auth/me` rehydrates the stored token.
+    await screen.findByText("Navigation");
     const main = await screen.findByRole("main");
     expect(await within(main).findByText("This item is no longer in service")).toBeInTheDocument();
     // It is not a generic error page: no retry button, calm tone.
@@ -122,9 +148,10 @@ describe("/item/:tagId — failure states", () => {
   });
 
   it("renders 404 for an unknown tag with the tag echoed back", async () => {
-    clearToken();
+    setToken("test-token");
     renderWithProviders({ initialEntries: ["/item/CNCS-NOPE0000"] });
 
+    await screen.findByText("Navigation");
     const main = await screen.findByRole("main");
     expect(await within(main).findByText("Tag not found")).toBeInTheDocument();
     expect(within(main).getByText(/CNCS-NOPE0000/)).toBeInTheDocument();

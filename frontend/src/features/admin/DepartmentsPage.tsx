@@ -196,9 +196,12 @@ export function DepartmentsPage() {
               { value: "", label: "Choose a person…" },
               ...accounts
                 .filter(
+                  // The server's `activate-head` accepts only an account that
+                  // already holds DEPARTMENT_HEAD (anything else is its 400), so
+                  // the picker offers exactly that set rather than a list that
+                  // can only fail.
                   (account: UserSummary) =>
-                    account.accountStatus === "ACTIVE" &&
-                    (account.role === "STAFF" || account.role === "DEPARTMENT_HEAD"),
+                    account.accountStatus === "ACTIVE" && account.role === "DEPARTMENT_HEAD",
                 )
                 .map((account: UserSummary) => ({
                   value: account.id,

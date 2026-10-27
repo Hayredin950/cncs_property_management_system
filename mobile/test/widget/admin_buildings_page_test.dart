@@ -8,50 +8,52 @@ import 'package:flutter_test/flutter_test.dart';
 import '../support/fake_api.dart';
 import '../support/pump.dart';
 
-const _officer = AuthUser(
-  id: 'user-officer',
-  fullName: 'Daniel Mekonnen',
-  email: 'officer@cncs.aau.edu.et',
-  role: Role.propertyOfficer,
+const _admin = AuthUser(
+  id: 'user-admin',
+  fullName: 'Admin User',
+  email: 'admin@cncs.aau.edu.et',
+  role: Role.systemAdmin,
   createdAt: '2026-10-22T08:00:00.000Z',
 );
 
 /// `GET /buildings` answers a page of rows with the item count the delete rule
 /// keys off.
 Map<String, Object?> _buildings() => {
-      'data': [
-        {
-          'id': 'building-cncs',
-          'name': 'CNCS Building',
-          'code': 'CNCS',
-          'address': 'North campus',
-          'itemCount': 77,
-        },
-        {
-          'id': 'building-phys',
-          'name': 'Physics Building',
-          'code': 'PHYS',
-          'address': null,
-          'itemCount': 0,
-        },
-      ],
-    };
+  'data': [
+    {
+      'id': 'building-cncs',
+      'name': 'CNCS Building',
+      'code': 'CNCS',
+      'address': 'North campus',
+      'itemCount': 77,
+    },
+    {
+      'id': 'building-phys',
+      'name': 'Physics Building',
+      'code': 'PHYS',
+      'address': null,
+      'itemCount': 0,
+    },
+  ],
+};
 
 /// The buildings screen: two jobs, two tabs, and a list you can search.
 ///
-/// It used to be one long page — the add form first, the list the officer came
-/// for below it — so on a phone the row you wanted was a scroll away from the
-/// heading. The tabs are the Accounts screen's pattern, and the search is local
-/// because these are tens of rows, not pages of them.
+/// It used to be one long page — the add form first, the list the administrator
+/// came for below it — so on a phone the row you wanted was a scroll away from
+/// the heading. The tabs are the Accounts screen's pattern, and the search is
+/// local because these are tens of rows, not pages of them.
 void main() {
-  testWidgets('the add form is its own tab, not a screenful above the list', (tester) async {
+  testWidgets('the add form is its own tab, not a screenful above the list', (
+    tester,
+  ) async {
     final api = FakeApi()..get('/buildings', _buildings());
 
     await pumpPage(
       tester,
       const AdminBuildingsPage(),
       api: api,
-      extraOverrides: [currentUserProvider.overrideWithValue(_officer)],
+      extraOverrides: [currentUserProvider.overrideWithValue(_admin)],
     );
     await pumpUntilFound(tester, find.text('CNCS Building'));
 
@@ -66,14 +68,16 @@ void main() {
     await pumpUntilFound(tester, find.text('CNCS Building'));
   });
 
-  testWidgets('the search narrows the list, and says so when nothing matches', (tester) async {
+  testWidgets('the search narrows the list, and says so when nothing matches', (
+    tester,
+  ) async {
     final api = FakeApi()..get('/buildings', _buildings());
 
     await pumpPage(
       tester,
       const AdminBuildingsPage(),
       api: api,
-      extraOverrides: [currentUserProvider.overrideWithValue(_officer)],
+      extraOverrides: [currentUserProvider.overrideWithValue(_admin)],
     );
     await pumpUntilFound(tester, find.text('CNCS Building'));
     expect(find.text('Physics Building'), findsOneWidget);

@@ -32,9 +32,15 @@ export interface DepartmentRow {
  * A college's departments are not a fixed list forever: a new programme means
  * a new department, and the register has to be able to hold it. Before this,
  * adding one meant writing to the database by hand.
+ *
+ * **Two tabs, like Buildings.** The form used to open in a modal over the list,
+ * which on a phone meant a dialog covering the department you were checking
+ * against and a list underneath you could not scroll to. The administrator's
+ * two jobs now sit side by side — "Existing" and "Add" — and adding returns to
+ * the list, because the next question is always "is it there?".
  */
 export function DepartmentsPage() {
-  const [addOpen, setAddOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"list" | "add">("list");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [acceptsSelfReg, setAcceptsSelfReg] = useState(true);
@@ -65,9 +71,10 @@ export function DepartmentsPage() {
         acceptsSelfReg,
       });
       setCreated(response.department.name);
-      setAddOpen(false);
       setName("");
       setCode("");
+      // Back to the list, where the new row is.
+      setActiveTab("list");
       await departmentsQuery.refetch();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't add the department.");
@@ -80,101 +87,176 @@ export function DepartmentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Departments</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            The departments of the college, who heads each one, and whether their staff may ask
-            for an account online.
-          </p>
-        </div>
-        <Button onClick={() => setAddOpen(true)} leftIcon={<Plus className="h-4 w-4" />}>
-          Add a department
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Departments</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          The departments of the college, who heads each one, and whether their staff may ask
+          for an account online.
+        </p>
       </div>
 
-      {created && (
-        <p role="status" className="rounded-md border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-800">
-          {created} has been added. It has no head yet — a request from it waits for a system
-          administrator until one is appointed.
-        </p>
-      )}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("list")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "list"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Existing departments
+          {departments.length > 0 && ` (${departments.length})`}
+        </button>
+        <button
+          onClick={() => setActiveTab("add")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "add"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Add a department
+        </button>
+      </div>
 
-      {departmentsQuery.isPending ? (
+      {activeTab === "add" && (
         <Card>
-          <div role="status" aria-label="Loading departments">
-            <SkeletonText lines={4} />
+          <div className="flex flex-col gap-4">
+            <Input
+              label="Name"
+              placeholder="Environmental Engineering"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+            />
+            <Input
+              label="Code"
+              placeholder="ENVE"
+              hint="Short and unique — the letters people will see on a tag."
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              required
+            />
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={acceptsSelfReg}
+                onChange={(event) => setAcceptsSelfReg(event.target.checked)}
+              />
+              Staff of this department may ask for an account online
+            </label>
+            {error && (
+              <p role="alert" className="text-sm text-danger-700">
+                {error}
+              </p>
+            )}
+            <div className="flex justify-end">
+              <Button
+                leftIcon={<Plus className="h-4 w-4" />}
+                loading={busy}
+                disabled={!name.trim() || !code.trim()}
+                onClick={submit}
+              >
+                Add the department
+              </Button>
+            </div>
           </div>
         </Card>
-      ) : departmentsQuery.isError ? (
-        <ErrorState
-          heading="Couldn't load the departments"
-          body={departmentsQuery.error instanceof Error ? departmentsQuery.error.message : undefined}
-          action={
-            <Button size="sm" onClick={() => departmentsQuery.refetch()}>
-              Try again
-            </Button>
-          }
-        />
-      ) : departments.length === 0 ? (
-        <EmptyState
-          icon={<Building2 className="h-8 w-8" />}
-          heading="No departments yet"
-          body="Add the college's first department to start registering assets against it."
-        />
-      ) : (
-        <Card className="flex flex-col gap-0 p-0">
-          <ul className="flex flex-col divide-y divide-slate-200">
-            {departments.map((department) => (
-              <li
-                key={department.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900">
-                    {department.name}{" "}
-                    <span className="tag-id text-xs text-slate-500">{department.code}</span>
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {department.head ? (
-                      <>Head: {department.head.fullName}</>
-                    ) : (
-                      <>No head appointed</>
+      )}
+
+      {activeTab === "list" && (
+        <>
+          {created && (
+            <p
+              role="status"
+              className="rounded-md border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-800"
+            >
+              {created} has been added. It has no head yet — a request from it waits for a
+              system administrator until one is appointed.
+            </p>
+          )}
+
+          {departmentsQuery.isPending ? (
+            <Card>
+              <div role="status" aria-label="Loading departments">
+                <SkeletonText lines={4} />
+              </div>
+            </Card>
+          ) : departmentsQuery.isError ? (
+            <ErrorState
+              heading="Couldn't load the departments"
+              body={
+                departmentsQuery.error instanceof Error
+                  ? departmentsQuery.error.message
+                  : undefined
+              }
+              action={
+                <Button size="sm" onClick={() => departmentsQuery.refetch()}>
+                  Try again
+                </Button>
+              }
+            />
+          ) : departments.length === 0 ? (
+            <EmptyState
+              icon={<Building2 className="h-8 w-8" />}
+              heading="No departments yet"
+              body="Add the college's first department to start registering assets against it."
+            />
+          ) : (
+            <Card className="flex flex-col gap-0 p-0">
+              <ul className="flex flex-col divide-y divide-slate-200">
+                {departments.map((department) => (
+                  <li
+                    key={department.id}
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">
+                        {department.name}{" "}
+                        <span className="tag-id text-xs text-slate-500">{department.code}</span>
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {department.head ? (
+                          <>Head: {department.head.fullName}</>
+                        ) : (
+                          <>No head appointed</>
+                        )}
+                        {" · "}
+                        {department.staffCount} staff
+                        {" · "}
+                        {department.acceptsSelfReg
+                          ? "accepts online account requests"
+                          : "does not accept online account requests"}
+                      </p>
+                    </div>
+                    {!department.head && (
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md border border-warning-200 bg-warning-50 px-2 py-1 text-xs text-warning-800">
+                          Headless
+                        </span>
+                        {/* The handover. The unit's held items move to
+                            "returned unverified" and the new head verifies them
+                            one by one; the items the previous head held
+                            personally are not moved to them — a role change never
+                            moves personal custody. */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setAppointing(department);
+                            setNewHeadId("");
+                          }}
+                        >
+                          Appoint a head
+                        </Button>
+                      </div>
                     )}
-                    {" · "}
-                    {department.staffCount} staff
-                    {" · "}
-                    {department.acceptsSelfReg
-                      ? "accepts online account requests"
-                      : "does not accept online account requests"}
-                  </p>
-                </div>
-                {!department.head && (
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-md border border-warning-200 bg-warning-50 px-2 py-1 text-xs text-warning-800">
-                      Headless
-                    </span>
-                    {/* The handover. The unit's held items move to
-                        "returned unverified" and the new head verifies them
-                        one by one; the items the previous head held
-                        personally are not moved to them — a role change never
-                        moves personal custody. */}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setAppointing(department);
-                        setNewHeadId("");
-                      }}
-                    >
-                      Appoint a head
-                    </Button>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Card>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </>
       )}
 
       <Modal
@@ -233,47 +315,6 @@ export function DepartmentsPage() {
               }}
             >
               Appoint
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a department">
-        <div className="flex flex-col gap-4">
-          <Input
-            label="Name"
-            placeholder="Environmental Engineering"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-          />
-          <Input
-            label="Code"
-            placeholder="ENVE"
-            hint="Short and unique — the letters people will see on a tag."
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            required
-          />
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={acceptsSelfReg}
-              onChange={(event) => setAcceptsSelfReg(event.target.checked)}
-            />
-            Staff of this department may ask for an account online
-          </label>
-          {error && (
-            <p role="alert" className="text-sm text-danger-700">
-              {error}
-            </p>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>
-              Cancel
-            </Button>
-            <Button size="sm" loading={busy} disabled={!name.trim() || !code.trim()} onClick={submit}>
-              Add the department
             </Button>
           </div>
         </div>

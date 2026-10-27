@@ -523,8 +523,9 @@ class _TabSlot extends StatelessWidget {
 /// A sheet rather than a sixth tab, so the things that are not daily work — the
 /// audits, the reports, the administration screens — are one-handed and out of
 /// the way (§5.5). It deliberately does not repeat what the top bar or a tab
-/// already offers: no notification bell, no change-password, no second profile
-/// row.
+/// already offers: no notification bell, no change-password. Sign out is the
+/// exception: it is a one-tap row here for every role, because that is where a
+/// person looks for it at the end of the day.
 Future<void> showMoreSheet(BuildContext context, WidgetRef ref) {
   final auth = ref.read(authProvider);
   final user = auth.user;
@@ -702,20 +703,41 @@ Future<void> showMoreSheet(BuildContext context, WidgetRef ref) {
               ),
           ],
           const Divider(height: 1),
-          // One row, not two: "Profile" and "Account and sign out" both opened
-          // the same screen, so the sheet looked like it offered two different
-          // actions. The account role's Profile is a tab on its bar, so its
-          // sheet offers nothing here. No Change password either — the Profile
-          // screen owns the account actions.
+          // Profile is the account screen. It is a tab on the administrator's
+          // bar already, so its row is skipped there; the sign-out row below is
+          // not, because it is the one control people come to this sheet for.
           if (!auth.canManageAccounts)
             _MoreRow(
               icon: Icons.person_outline,
-              label: 'Profile and sign out',
+              label: 'Profile',
               onTap: () {
                 Navigator.of(context).pop();
                 context.push('/profile');
               },
             ),
+          // Signing out is its own row in every role's sheet. It used to be
+          // folded into "Profile and sign out", which made one label read as a
+          // single combined action and hid the confirmation behind a screen
+          // nobody opens at the end of the day.
+          _MoreRow(
+            icon: Icons.logout,
+            label: 'Sign out',
+            onTap: () async {
+              final navigator = Navigator.of(context);
+              final authNotifier = ref.read(authProvider.notifier);
+              final confirmed = await showConfirmDialog(
+                context,
+                title: 'Sign out?',
+                body: 'You will need your email and password to sign back in.',
+                confirmLabel: 'Sign out',
+                destructive: true,
+                icon: Icons.logout,
+              );
+              if (!confirmed) return;
+              navigator.pop();
+              await authNotifier.logout();
+            },
+          ),
           const SizedBox(height: AppSpace.s4),
         ],
       ),
@@ -761,9 +783,9 @@ class _MoreRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // No destructive row lives in this sheet any more: Sign out and the account
-    // actions moved to Profile, so a tone parameter here would be a branch no
-    // caller takes.
+    // Not a tone switch: the sheet's one destructive row (Sign out) is styled
+    // like the rest and guarded by a confirmation, because a red row is not
+    // what makes an action safe.
     const color = AppColors.aauGray800;
 
     return InkWell(

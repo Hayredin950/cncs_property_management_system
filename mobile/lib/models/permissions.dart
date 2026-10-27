@@ -50,6 +50,9 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.accountDeactivatePrivileged,
     Capability.systemConfig,
     Capability.userRead,
+    // The college's buildings are the register's vocabulary, not asset data:
+    // the administrator owns the list (27 Oct), the office reads it.
+    Capability.buildingManage,
   },
   Role.propertyOfficer: {
     Capability.itemCreate,
@@ -59,7 +62,6 @@ const Map<Role, Set<Capability>> _grants = {
     Capability.itemVoid,
     Capability.itemReadAll,
     Capability.itemRead,
-    Capability.buildingManage,
     Capability.tagManage,
     Capability.categoryManage,
     Capability.requestDecide,

@@ -5,12 +5,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { server } from "./msw/server";
 import { renderWithProviders } from "./utils";
 import { setToken } from "../lib/storage";
-import { OFFICER_USER } from "./fixtures";
+import { SYSTEM_ADMIN_USER } from "./fixtures";
 
 const API = "http://localhost:4000/api/v1";
 
 /**
- * `/admin/buildings` — the Property Officer's building list.
+ * `/admin/buildings` — the administrator's building list. (It moved from the
+ * Property Officer to the System Admin on 27 Oct: a building is college-wide
+ * vocabulary, like a department.)
  *
  * The screen used to be one long page: the add form first, the list the officer
  * came for below it. On a laptop that is a scroll; on a phone it meant the row
@@ -30,7 +32,7 @@ const BUILDINGS = [
 describe("/admin/buildings — two tabs and a searchable list", () => {
   beforeEach(() => {
     server.use(
-      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: OFFICER_USER })),
+      http.get(`${API}/auth/me`, () => HttpResponse.json({ user: SYSTEM_ADMIN_USER })),
       http.get(`${API}/buildings`, () => HttpResponse.json({ data: BUILDINGS })),
     );
   });

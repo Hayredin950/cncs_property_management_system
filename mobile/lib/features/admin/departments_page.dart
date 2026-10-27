@@ -13,6 +13,7 @@ import '../../widgets/app_card.dart';
 import '../../widgets/app_fields.dart';
 import '../../widgets/feedback.dart';
 import '../../widgets/page_scaffold.dart';
+import '../../widgets/segmented_tabs.dart';
 import '../../widgets/states.dart';
 
 /// `/admin/departments` — the college's departments, and who heads each.
@@ -43,6 +44,11 @@ class _DepartmentsPageState extends ConsumerState<DepartmentsPage> {
   Object? _formError;
   String? _busyUnitId;
 
+  /// Which half of the screen is showing: the list of units, or the form that
+  /// adds one. They were stacked on one page, so the form pushed the list —
+  /// the reason somebody opened the screen — below the fold.
+  var _section = 0;
+
   @override
   void dispose() {
     _name.dispose();
@@ -63,112 +69,140 @@ class _DepartmentsPageState extends ConsumerState<DepartmentsPage> {
         await ref.read(adminDepartmentsProvider.future);
       },
       children: [
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Add a department',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.aauGray900,
-                ),
-              ),
-              const SizedBox(height: 2),
-              const Text(
-                'It is created with no head. A request from a unit without one waits for a '
-                'system administrator until a head is appointed.',
-                style: TextStyle(fontSize: 12.5, color: AppColors.aauGray500, height: 1.4),
-              ),
-              const SizedBox(height: AppSpace.s4),
-              AppTextField(
-                label: 'Name',
-                controller: _name,
-                hint: 'Environmental Engineering',
-                errorText: _nameError,
-                enabled: !_creating,
-                required: true,
-              ),
-              const SizedBox(height: AppSpace.stack),
-              AppTextField(
-                label: 'Code',
-                controller: _code,
-                hint: 'ENVE',
-                errorText: _codeError,
-                helper: 'Short and unique \u2014 the letters people see on a tag.',
-                enabled: !_creating,
-                uppercase: true,
-                required: true,
-              ),
-              const SizedBox(height: AppSpace.s2),
-              CheckboxListTile(
-                value: _acceptsSelfReg,
-                onChanged: _creating
-                    ? null
-                    : (value) => setState(() => _acceptsSelfReg = value ?? true),
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: const Text(
-                  'Staff of this department may request an account online',
-                  style: TextStyle(fontSize: 13, color: AppColors.aauGray700),
-                ),
-              ),
-              if (_formError != null) ...[
-                const SizedBox(height: AppSpace.s2),
-                InlineError(error: _formError!),
-              ],
-              const SizedBox(height: AppSpace.s3),
-              AppButton(
-                label: 'Add a department',
-                icon: Icons.add_business_outlined,
-                expand: true,
-                loading: _creating,
-                onPressed: _creating ? null : _create,
-              ),
-            ],
-          ),
+        SegmentedTabs(
+          labels: const ['Existing departments', 'Add a department'],
+          index: _section,
+          onChanged: (index) => setState(() => _section = index),
         ),
-
-        const SizedBox(height: AppSpace.s6),
-        departments.when(
-          loading: () => const SkeletonList(count: 4, height: 84),
-          error: (error, _) => InlineError(
-            error: error,
-            onRetry: () => ref.invalidate(adminDepartmentsProvider),
-          ),
-          data: (units) {
-            final departments = units.where((unit) => unit.isDepartment).toList();
-            if (departments.isEmpty) {
-              return const AppCard(
-                child: Text(
-                  'No departments yet. Add the college\u2019s first one to start registering '
-                  'assets against it.',
-                  style: TextStyle(fontSize: 13.5, color: AppColors.aauGray500, height: 1.5),
-                ),
-              );
-            }
-            return Column(
+        if (_section == 1)
+          AppCard(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SectionHeader(
-                  title: '${departments.length} '
-                      '${departments.length == 1 ? 'department' : 'departments'}',
-                  subtitle: 'Headless units still accept items; the approval queue falls back '
-                      'to a system administrator until someone is appointed.',
-                ),
-                for (final department in departments) ...[
-                  _DepartmentCard(
-                    department: department,
-                    busy: _busyUnitId == department.id,
-                    onAppoint: () => _appoint(department),
+                const Text(
+                  'Add a department',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.aauGray900,
                   ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'It is created with no head. A request from a unit without one waits for a '
+                  'system administrator until a head is appointed.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.aauGray500,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.s4),
+                AppTextField(
+                  label: 'Name',
+                  controller: _name,
+                  hint: 'Environmental Engineering',
+                  errorText: _nameError,
+                  enabled: !_creating,
+                  required: true,
+                ),
+                const SizedBox(height: AppSpace.stack),
+                AppTextField(
+                  label: 'Code',
+                  controller: _code,
+                  hint: 'ENVE',
+                  errorText: _codeError,
+                  helper: 'Short and unique \u2014 the letters people see on a tag.',
+                  enabled: !_creating,
+                  uppercase: true,
+                  required: true,
+                ),
+                const SizedBox(height: AppSpace.s2),
+                // The card paints its own background, and a ListTile paints
+                // its ink on the nearest Material — without this layer the
+                // checkbox's splash is hidden behind the card.
+                Material(
+                  type: MaterialType.transparency,
+                  child: CheckboxListTile(
+                    value: _acceptsSelfReg,
+                    onChanged: _creating
+                        ? null
+                        : (value) =>
+                              setState(() => _acceptsSelfReg = value ?? true),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text(
+                      'Staff of this department may request an account online',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.aauGray700,
+                      ),
+                    ),
+                  ),
+                ),
+                if (_formError != null) ...[
                   const SizedBox(height: AppSpace.s2),
+                  InlineError(error: _formError!),
                 ],
+                const SizedBox(height: AppSpace.s3),
+                AppButton(
+                  label: 'Add a department',
+                  icon: Icons.add_business_outlined,
+                  expand: true,
+                  loading: _creating,
+                  onPressed: _creating ? null : _create,
+                ),
               ],
-            );
-          },
-        ),
+            ),
+          ),
+
+        if (_section == 0)
+          departments.when(
+            loading: () => const SkeletonList(count: 4, height: 84),
+            error: (error, _) => InlineError(
+              error: error,
+              onRetry: () => ref.invalidate(adminDepartmentsProvider),
+            ),
+            data: (units) {
+              final departments = units
+                  .where((unit) => unit.isDepartment)
+                  .toList();
+              if (departments.isEmpty) {
+                return const AppCard(
+                  child: Text(
+                    'No departments yet. Add the college\u2019s first one to start registering '
+                    'assets against it.',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      color: AppColors.aauGray500,
+                      height: 1.5,
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SectionHeader(
+                    title:
+                        '${departments.length} '
+                        '${departments.length == 1 ? 'department' : 'departments'}',
+                    subtitle:
+                        'Headless units still accept items; the approval queue falls back '
+                        'to a system administrator until someone is appointed.',
+                  ),
+                  for (final department in departments) ...[
+                    _DepartmentCard(
+                      department: department,
+                      busy: _busyUnitId == department.id,
+                      onAppoint: () => _appoint(department),
+                    ),
+                    const SizedBox(height: AppSpace.s2),
+                  ],
+                ],
+              );
+            },
+          ),
       ],
     );
   }
@@ -200,7 +234,12 @@ class _DepartmentsPageState extends ConsumerState<DepartmentsPage> {
       if (!mounted) return;
       _name.clear();
       _code.clear();
-      setState(() => _acceptsSelfReg = true);
+      setState(() {
+        _acceptsSelfReg = true;
+        // Back to the list, where the new row is: the next question is "is it
+        // there?", and an emptied form does not answer it.
+        _section = 0;
+      });
       showAppToast(
         context,
         message: '$name has been added. It has no head yet.',
@@ -232,14 +271,16 @@ class _DepartmentsPageState extends ConsumerState<DepartmentsPage> {
     // rather than a list that can only fail.
     final candidates = [
       for (final account in accounts)
-        if (account.role == Role.departmentHead && account.accountStatus == AccountStatus.active)
+        if (account.role == Role.departmentHead &&
+            account.accountStatus == AccountStatus.active)
           account,
     ];
 
     if (candidates.isEmpty) {
       showAppToast(
         context,
-        message: 'No Department Head account is available to appoint. Invite one first, then '
+        message:
+            'No Department Head account is available to appoint. Invite one first, then '
             'appoint them here.',
         tone: ToastTone.info,
       );
@@ -283,7 +324,8 @@ class _DepartmentsPageState extends ConsumerState<DepartmentsPage> {
     final confirmed = await showConfirmDialog(
       context,
       title: 'Appoint ${chosen.fullName}?',
-      body: '${chosen.fullName} becomes the head of ${department.name}. The unit\u2019s held '
+      body:
+          '${chosen.fullName} becomes the head of ${department.name}. The unit\u2019s held '
           'items move to "returned unverified" and the new head verifies them one by one. '
           'Items a previous head held personally stay with them \u2014 a role change never '
           'moves personal custody.',
@@ -305,9 +347,13 @@ class _DepartmentsPageState extends ConsumerState<DepartmentsPage> {
         );
       }
     } on ApiError catch (error) {
-      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+      if (mounted) {
+        showAppToast(context, message: error.message, tone: ToastTone.error);
+      }
     } on NetworkError catch (error) {
-      if (mounted) showAppToast(context, message: error.message, tone: ToastTone.error);
+      if (mounted) {
+        showAppToast(context, message: error.message, tone: ToastTone.error);
+      }
     } finally {
       if (mounted) setState(() => _busyUnitId = null);
     }
@@ -378,7 +424,10 @@ class _DepartmentCard extends StatelessWidget {
                     Text(
                       '${department.staffCount} staff \u00b7 '
                       '${department.acceptsSelfReg ? 'accepts online account requests' : 'does not accept online account requests'}',
-                      style: const TextStyle(fontSize: 11.5, color: AppColors.aauGray400),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.aauGray400,
+                      ),
                     ),
                   ],
                 ),

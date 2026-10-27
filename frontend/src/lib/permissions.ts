@@ -68,6 +68,9 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "ACCOUNT_DEACTIVATE_PRIVILEGED",
     "SYSTEM_CONFIG",
     "USER_READ",
+    // Building management moved from the office to the administrator on
+    // 27 Oct (see `backend/src/services/permissions.ts`).
+    "BUILDING_MANAGE",
   ],
   PROPERTY_OFFICER: [
     "ITEM_CREATE",
@@ -77,7 +80,6 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "ITEM_VOID",
     "ITEM_READ_ALL",
     "ITEM_READ",
-    "BUILDING_MANAGE",
     "TAG_MANAGE",
     "CATEGORY_MANAGE",
     "REQUEST_DECIDE",

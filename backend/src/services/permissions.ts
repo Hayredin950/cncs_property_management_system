@@ -95,6 +95,11 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "ACCOUNT_DEACTIVATE_PRIVILEGED",
     "SYSTEM_CONFIG",
     "USER_READ",
+    // Buildings are the register's vocabulary, like departments and categories,
+    // not asset data. The administrator owns the list; the office reads it.
+    // Moved here from PROPERTY_OFFICER on 27 Oct at the college's request: a
+    // building is a college-wide fact, and the office's job is the register.
+    "BUILDING_MANAGE",
   ],
   // The single college-level operational role (spec 2.1.2).
   PROPERTY_OFFICER: [
@@ -105,7 +110,6 @@ const GRANTS: Record<UserRole, readonly Capability[]> = {
     "ITEM_VOID",
     "ITEM_READ_ALL",
     "ITEM_READ",
-    "BUILDING_MANAGE",
     "TAG_MANAGE",
     "CATEGORY_MANAGE",
     "REQUEST_DECIDE",

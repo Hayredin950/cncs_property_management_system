@@ -206,9 +206,20 @@ export const appRoutes: RouteObject[] = [
             children: [
               { path: "/items/new", element: <ItemFormPage mode="create" /> },
               { path: "/admin/categories", element: <AdminCategoriesPage /> },
-              // The college's buildings. The endpoint existed and nothing
-              // reached it, so the register's building filter could not be
-              // spelled one way — see `AdminBuildingsPage.tsx`.
+            ],
+          },
+
+          // The college's buildings. The endpoint existed and nothing reached
+          // it, so the register's building filter could not be spelled one way
+          // — see `AdminBuildingsPage.tsx`. The list is the administrator's
+          // (27 Oct); the office only reads it, through the item form.
+          {
+            element: (
+              <RequireAuth roles={["SYSTEM_ADMIN"]}>
+                <Outlet />
+              </RequireAuth>
+            ),
+            children: [
               { path: "/admin/buildings", element: <AdminBuildingsPage /> },
             ],
           },

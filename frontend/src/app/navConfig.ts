@@ -10,6 +10,7 @@ import {
   ScanLine,
   ShieldCheck,
   Tag,
+  UserRound,
   ScrollText,
   type LucideIcon,
 } from "lucide-react";
@@ -87,6 +88,10 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Requests", mobileLabel: "Requests", to: "/requests", icon: ClipboardList, roles: ["PROPERTY_OFFICER"], phase: 2, badge: "pending-count" },
   { label: "Department Requests", mobileLabel: "Requests", to: "/requests", icon: ClipboardList, roles: ["DEPARTMENT_HEAD"], phase: 2, badge: "pending-count" },
   { label: "My Requests", mobileLabel: "Requests", to: "/requests?mine=true", icon: ClipboardList, roles: ["STAFF"], phase: 2 },
+  // The account screen. The phone reaches it through More; on the web it is a
+  // sidebar row for every role, because there was no page that answered "what
+  // is this account, and how do I change its password?".
+  { label: "Profile", to: "/profile", icon: UserRound, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 2 },
   { label: "Notifications", mobileLabel: "Alerts", to: "/notifications", icon: Bell, roles: ["SYSTEM_ADMIN", "PROPERTY_OFFICER", "DEPARTMENT_HEAD", "STAFF", "AUDITOR"], phase: 2, badge: "unread-notifications" },
   { label: "New item", to: "/items/new", icon: Tag, roles: ["PROPERTY_OFFICER"], phase: 2 },
   { label: "Active Audit", mobileLabel: "Audit", to: "/audit/new", icon: ClipboardCheck, roles: ["AUDITOR"], phase: 3 },

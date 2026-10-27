@@ -11,6 +11,7 @@ import { AuditReportPage } from "../features/audits/AuditReportPage";
 import { AuditScanPage } from "../features/audits/AuditScanPage";
 import { AcceptInvitePage } from "../features/auth/AcceptInvitePage";
 import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
+import { ProfilePage } from "../features/profile/ProfilePage";
 import { ForgotPasswordPage } from "../features/auth/ForgotPasswordPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { RequestAccountPage } from "../features/auth/RequestAccountPage";
@@ -171,6 +172,8 @@ export const appRoutes: RouteObject[] = [
           // Reachable by any signed-in role; `RequireAuth` funnels a forced
           // password change here from every other screen.
           { path: "/change-password", element: <ChangePasswordPage /> },
+          // The account screen the phone has had all along.
+          { path: "/profile", element: <ProfilePage /> },
           { path: "/notifications", element: <NotificationsPage /> },
           // Department detail page (DEPARTMENT_HEAD only)
           {

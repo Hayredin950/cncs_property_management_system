@@ -434,6 +434,57 @@ describe("POST /auth/account-requests", () => {
     expect(prisma.user.create).not.toHaveBeenCalled();
   });
 
+  /**
+   * The regression that blocked every sign-up on the deployment (28 Oct): the
+   * web form's select carries a unit **id**, and it was posted under
+   * `department`, which the server resolves as a **name**. Every applicant was
+   * told "Unknown department. Pick one from the list." after picking one.
+   *
+   * The client now sends `departmentId`; these two cases pin both halves of the
+   * fix so the key/value pair cannot drift again.
+   */
+  it("resolves the unit from departmentId, the key both clients now send", async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+    vi.mocked(prisma.orgUnit.findFirst).mockResolvedValueOnce(CS_UNIT as never);
+    mockTransaction();
+
+    const res = await request(app)
+      .post("/auth/account-requests")
+      .send({
+        ...REQUEST_BODY,
+        department: undefined,
+        departmentId: "f68bf808-2ce1-441e-b16c-13d421255ac7",
+      });
+
+    expect(res.status).toBe(201);
+    expect(prisma.orgUnit.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "f68bf808-2ce1-441e-b16c-13d421255ac7" },
+      }),
+    );
+    const call = vi.mocked(prisma.user.create).mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(call.data.orgUnitId).toBe("unit-cs");
+  });
+
+  it("still accepts a UUID sent under department, so a rolled-back client can sign up", async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(null);
+    vi.mocked(prisma.orgUnit.findFirst).mockResolvedValueOnce(CS_UNIT as never);
+    mockTransaction();
+
+    const res = await request(app)
+      .post("/auth/account-requests")
+      .send({ ...REQUEST_BODY, department: "f68bf808-2ce1-441e-b16c-13d421255ac7" });
+
+    expect(res.status).toBe(201);
+    expect(prisma.orgUnit.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "f68bf808-2ce1-441e-b16c-13d421255ac7" },
+      }),
+    );
+  });
+
   it("refuses a request from an address outside the institution", async () => {
     const res = await request(app)
       .post("/auth/account-requests")

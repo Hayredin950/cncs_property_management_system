@@ -95,6 +95,19 @@ function emailDomainAllowed(email: string): boolean {
 }
 
 /**
+ * `department` is documented as a unit **name** and `departmentId` as the id —
+ * but the web form shipped for a while sending the id under `department`, so
+ * every applicant who picked "Computer Science" from the list was told
+ * "Unknown department. Pick one from the list." (found 28 Oct, on the live app).
+ *
+ * Both clients now send `departmentId`. This fallback keeps a rollback to the
+ * older bundle able to sign up — the same reasoning as the retained `updatedAt`
+ * default (MASTER-TODO P2-9): the fix must not depend on the browser having the
+ * new bundle yet.
+ */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
  * `POST /auth/account-requests` — ask for an account (spec 3.1.2).
  *
  * This is the door the supervisor's feedback asked for. Anyone may knock; nobody
@@ -161,9 +174,15 @@ router.post(
       // Resolve the unit. A request has to land in a real unit or the queue has
       // no way to scope it to a head — a request naming a unit that does not
       // exist is refused, not filed as orphaned.
+      //
+      // `departmentId` wins when present. A `department` that looks like a UUID
+      // is treated as an id too, so an already-deployed client that sent the id
+      // under the name field keeps working (see `UUID_PATTERN`).
+      const unitId =
+        departmentId ?? (department && UUID_PATTERN.test(department) ? department : undefined);
       const unit = await prisma.orgUnit.findFirst({
-        where: departmentId
-          ? { id: departmentId }
+        where: unitId
+          ? { id: unitId }
           : { name: { equals: department!, mode: "insensitive" } },
         select: { id: true, name: true, isActive: true, acceptsSelfReg: true },
       });

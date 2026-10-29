@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_error.dart';
 import '../../data/providers/core_providers.dart';
+import '../../data/providers/taxonomy_provider.dart';
+import '../../models/department.dart';
 import '../../models/user.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_button.dart';
@@ -33,6 +35,13 @@ class _RequestAccountPageState extends ConsumerState<RequestAccountPage> {
   final _fieldErrors = <String, String?>{};
   AccountRequestResponse? _submitted;
 
+  /// The chosen `GET /departments` id, sent to the server as `departmentId`.
+  ///
+  /// The request has to name a real unit — the server refuses one that does not
+  /// exist, and the approval queue is scoped to the unit's head. That is why this
+  /// is a picker over the server's list rather than a free-text field.
+  String? _departmentId;
+
   @override
   void dispose() {
     _fullName.dispose();
@@ -45,10 +54,12 @@ class _RequestAccountPageState extends ConsumerState<RequestAccountPage> {
     final fullName = _fullName.text.trim();
     final email = _email.text.trim();
     final password = _password.text;
+    final departmentId = _departmentId;
 
     final errors = <String, String?>{};
     if (fullName.isEmpty) errors['fullName'] = 'Enter your full name.';
     if (email.isEmpty || !email.contains('@')) errors['email'] = 'Enter a valid email address.';
+    if (departmentId == null) errors['departmentId'] = 'Choose your department.';
     if (password.length < 8) errors['password'] = 'At least 8 characters.';
 
     setState(() {
@@ -65,6 +76,7 @@ class _RequestAccountPageState extends ConsumerState<RequestAccountPage> {
             fullName: fullName,
             email: email,
             password: password,
+            departmentId: departmentId!,
           );
       if (!mounted) return;
       setState(() => _submitted = result);
@@ -81,6 +93,14 @@ class _RequestAccountPageState extends ConsumerState<RequestAccountPage> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// The id is what the form stores and sends; the name is what the field shows.
+  String _departmentName(List<Department> departments, String id) {
+    for (final department in departments) {
+      if (department.id == id) return department.name;
+    }
+    return id;
   }
 
   @override
@@ -130,6 +150,9 @@ class _RequestAccountPageState extends ConsumerState<RequestAccountPage> {
   }
 
   Widget _form() {
+    final departmentsAsync = ref.watch(departmentsProvider);
+    final departments = departmentsAsync.value ?? const <Department>[];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -164,6 +187,21 @@ class _RequestAccountPageState extends ConsumerState<RequestAccountPage> {
           keyboardType: TextInputType.emailAddress,
           errorText: _fieldErrors['email'],
           enabled: !_submitting,
+          required: true,
+        ),
+        const SizedBox(height: AppSpace.stack),
+        AppSelectField<String>(
+          label: 'Department',
+          value: _departmentId,
+          options: departments.map((department) => department.id).toList(),
+          labelOf: (id) => _departmentName(departments, id),
+          onChanged: (id) => setState(() => _departmentId = id),
+          hint: departmentsAsync.isLoading ? 'Loading departments…' : 'Select your department',
+          helper: departmentsAsync.hasError
+              ? 'The department list could not be loaded. Check your connection and try again.'
+              : 'The unit whose head will review your request.',
+          errorText: _fieldErrors['departmentId'],
+          enabled: !_submitting && departments.isNotEmpty,
           required: true,
         ),
         const SizedBox(height: AppSpace.stack),

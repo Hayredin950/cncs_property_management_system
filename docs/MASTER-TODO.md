@@ -91,6 +91,11 @@
   *Fix:* make it a deactivation (status change + `tokenVersion` bump + items → `REVERTED_UNVERIFIED` + custody `HOLDER_DEACTIVATED` event + `AdminActionLog` row). Never remove an account that has a trail.
   *Evidence:* a deactivated account's old token → **401**; the row still exists with `accountStatus: DEACTIVATED`.
 
+- [x] **P1-9 The account-request department field was wrong on both clients (live, 28 Oct).**
+  *Cause:* the web form sent the `OrgUnit` id under the key `department`, which the server reads as a unit *name*; every real sign-up was refused `400 "Unknown department. Pick one from the list."` The phone sent no department at all → `400 "Department is required"`. The suites stayed green because the web test's MSW route answers a blind `201` and the backend test posted a unit *name*, so the two representations never met.
+  *Fix:* both clients send `departmentId` (the `GET /departments` id). The server takes `departmentId` first, then treats a UUID under `department` as an id, then falls back to a name — so a browser still holding the old bundle can sign up during rollout. The phone's form gained a department picker (required, "Choose your department."), and the guest header dropped its links to auth-gated `/items`, `/map` and `/dashboard`.
+  *Evidence:* backend tests for id lookup and uuid-under-`department`; web test asserts `departmentId` and the absence of `department`; mobile widget test picks Computer Science and asserts `departmentId: dept-cs`; live probe recorded in `KNOWLEDGE-BASE.md` §13.
+
 ---
 
 ## 2. Phase 2 — Database & migrations (reproducible from zero)

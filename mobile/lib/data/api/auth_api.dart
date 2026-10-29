@@ -88,14 +88,27 @@ class AuthApi {
     return LoginResponse.fromJson(json);
   }
 
+  /// `departmentId` is the `OrgUnit` **id** from `GET /departments`, not its name.
+  ///
+  /// The server reads a field called `department` as a unit *name*; this used to
+  /// send nothing at all, so every real request from the phone was refused with
+  /// "Department is required" (found 28 Oct, on the live app). The web form had
+  /// the matching bug in the other direction — it sent the id under `department`
+  /// and was told "Unknown department". Both now send `departmentId`.
   Future<AccountRequestResponse> requestAccount({
     required String fullName,
     required String email,
     required String password,
+    required String departmentId,
   }) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/auth/account-requests',
-      body: {'fullName': fullName, 'email': email, 'password': password},
+      body: {
+        'fullName': fullName,
+        'email': email,
+        'password': password,
+        'departmentId': departmentId,
+      },
     );
     return AccountRequestResponse.fromJson(json);
   }

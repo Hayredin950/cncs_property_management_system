@@ -58,8 +58,13 @@ describe("RequestAccountPage", () => {
         fullName: "New Person",
         email: "new.person@aau.edu.et",
         password: "SecurePass1",
-        /** The unit id from the API, not a display name baked into the client. */
-        department: "unit-bio",
+        /**
+         * The key is `departmentId`, and it is the whole point of this assertion:
+         * the server resolves `department` as a unit **name**, so posting the id
+         * there was refused with "Unknown department. Pick one from the list."
+         * on the live app (28 Oct) while this test asserted the same wrong key.
+         */
+        departmentId: "unit-bio",
       }),
     );
 

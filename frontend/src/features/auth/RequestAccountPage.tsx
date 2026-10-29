@@ -20,7 +20,13 @@ const requestSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
   email: z.string().trim().email("Enter a valid email"),
   password: z.string().min(8, "At least 8 characters"),
-  department: z.string().trim().min(1, "Department is required"),
+  /**
+   * The unit **id** from `GET /departments`, sent to the server as
+   * `departmentId`. It used to be called `department`, which the server reads as
+   * a name — so every real sign-up was refused with "Unknown department" while
+   * the mocked test, asserting the same wrong key, stayed green.
+   */
+  departmentId: z.string().trim().min(1, "Department is required"),
 });
 
 type RequestFormValues = z.infer<typeof requestSchema>;
@@ -150,8 +156,8 @@ export function RequestAccountPage() {
                 label="Department"
                 options={departments.map((d) => ({ value: d.id, label: d.name }))}
                 placeholder="Select your department"
-                error={errors.department?.message}
-                {...register("department")}
+                error={errors.departmentId?.message}
+                {...register("departmentId")}
                 required
               />
             )}

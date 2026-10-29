@@ -88,8 +88,11 @@ export const PUBLIC_NAV: AauNavEntry[] = [
       {
         heading: "Find an asset",
         links: [
-          { label: "All items", to: "/items" },
-          { label: "Browse by building", to: "/map" },
+          // The register is `RequireAuth`-guarded, so a bare `/items` sends the
+          // visitor to a sign-in redirect with no explanation. Naming the door
+          // honestly — and carrying `next` — is what makes this link land on the
+          // login form and then on the register (P6-3).
+          { label: "Sign in to browse", to: "/login?next=/items" },
         ],
       },
       {
@@ -106,15 +109,15 @@ export const PUBLIC_NAV: AauNavEntry[] = [
         heading: "This system",
         links: [
           { label: "Property register home", to: "/" },
-          { label: "Recently added", to: "/items" },
+          { label: "Request an account", to: "/request-account" },
         ],
       },
       {
         heading: "For staff",
-        links: [
-          { label: "Staff sign in", to: "/login" },
-          { label: "Staff portal", to: "/dashboard" },
-        ],
+        // `/dashboard` is inside the signed-in shell: a visitor following it was
+        // bounced to `/login` and told nothing. The sign-in link is the same
+        // destination without the detour.
+        links: [{ label: "Staff sign in", to: "/login" }],
       },
     ],
   },

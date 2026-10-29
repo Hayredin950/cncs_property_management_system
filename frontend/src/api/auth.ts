@@ -16,6 +16,15 @@ export interface AccountRequestPayload {
   fullName: string;
   email: string;
   password: string;
+  /**
+   * The `OrgUnit` id the applicant picked from `GET /departments`.
+   *
+   * It must be `departmentId`, not `department`: the server resolves
+   * `department` as a **name**, so sending the id under that key made every
+   * sign-up answer "Unknown department. Pick one from the list." even though
+   * the person had just picked one (found on the live app, 28 Oct).
+   */
+  departmentId: string;
 }
 
 /**
